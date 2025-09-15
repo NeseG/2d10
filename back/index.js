@@ -14,6 +14,7 @@ const dndRoutes = require('./routes/dnd');
 const dndLocalRoutes = require('./routes/dnd-local');
 const purseRoutes = require('./routes/purse');
 const campaignRoutes = require('./routes/campaigns');
+const grimoireRoutes = require('./routes/grimoire');
 // const sessionRoutes = require('./routes/sessions');
 
 const app = express();
@@ -58,6 +59,7 @@ app.use('/api/dnd', dndRoutes);
 app.use('/api/dnd-local', dndLocalRoutes);
 app.use('/api/purse', purseRoutes);
 app.use('/api/campaigns', campaignRoutes);
+app.use('/api/grimoire', grimoireRoutes);
 // app.use('/api/sessions', sessionRoutes);
 
 // Route de test
@@ -76,6 +78,7 @@ app.get('/', (req, res) => {
       dndLocal: '/api/dnd-local',
       purse: '/api/purse',
       campaigns: '/api/campaigns',
+      grimoire: '/api/grimoire',
       sessions: '/api/sessions',
       health: '/health'
     }

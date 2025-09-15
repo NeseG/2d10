@@ -249,6 +249,26 @@ CREATE TABLE IF NOT EXISTS session_attendance (
     UNIQUE(session_id, character_id)
 );
 
+-- Créer la table du grimoire des personnages
+CREATE TABLE IF NOT EXISTS character_grimoire (
+    id SERIAL PRIMARY KEY,
+    character_id INTEGER REFERENCES characters(id) ON DELETE CASCADE,
+    spell_id INTEGER, -- ID du sort dans la table dnd_spells
+    spell_slug VARCHAR(200), -- Slug du sort pour référence
+    spell_name VARCHAR(300) NOT NULL, -- Nom du sort (pour éviter les jointures)
+    spell_level INTEGER NOT NULL, -- Niveau du sort
+    spell_school VARCHAR(100), -- École de magie
+    is_prepared BOOLEAN DEFAULT false, -- Sort préparé (pour les classes qui préparent)
+    is_known BOOLEAN DEFAULT true, -- Sort connu (pour les classes spontanées)
+    times_prepared INTEGER DEFAULT 0, -- Nombre de fois préparé
+    times_cast INTEGER DEFAULT 0, -- Nombre de fois lancé
+    notes TEXT, -- Notes personnelles sur le sort
+    learned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- Quand le sort a été appris
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(character_id, spell_slug)
+);
+
 -- Créer les index pour les nouvelles tables
 CREATE INDEX IF NOT EXISTS idx_campaigns_gm_id ON campaigns(gm_id);
 CREATE INDEX IF NOT EXISTS idx_campaigns_status ON campaigns(status);
@@ -258,3 +278,7 @@ CREATE INDEX IF NOT EXISTS idx_campaign_characters_campaign_id ON campaign_chara
 CREATE INDEX IF NOT EXISTS idx_campaign_characters_character_id ON campaign_characters(character_id);
 CREATE INDEX IF NOT EXISTS idx_session_attendance_session_id ON session_attendance(session_id);
 CREATE INDEX IF NOT EXISTS idx_session_attendance_character_id ON session_attendance(character_id);
+CREATE INDEX IF NOT EXISTS idx_character_grimoire_character_id ON character_grimoire(character_id);
+CREATE INDEX IF NOT EXISTS idx_character_grimoire_spell_slug ON character_grimoire(spell_slug);
+CREATE INDEX IF NOT EXISTS idx_character_grimoire_level ON character_grimoire(spell_level);
+CREATE INDEX IF NOT EXISTS idx_character_grimoire_prepared ON character_grimoire(is_prepared);
