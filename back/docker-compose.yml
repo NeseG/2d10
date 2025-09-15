@@ -33,6 +33,7 @@ services:
       - "3000:3000"
     environment:
       DATABASE_URL: "postgresql://2d10:2d10password@db:5432/2d10?schema=public"
+      
     volumes:
       - .:/usr/src/app
       - /usr/src/app/node_modules

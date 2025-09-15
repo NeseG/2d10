@@ -2,6 +2,43 @@
 
 Un système complet de gestion de personnages D&D 5e avec intégration API Open5e.
 
+## 📋 Sommaire
+
+### 📖 Documentation
+- [Documentation](#-documentation)
+- [Installation Rapide](#-installation-rapide)
+
+### ✨ Fonctionnalités
+- [Gestion des Personnages](#️-gestion-des-personnages)
+- [Inventaire et Équipement](#-inventaire-et-équipement)
+- [Grimoire des Sorts](#-grimoire-des-sorts)
+- [Intégration D&D](#-intégration-dd)
+- [Gestion de Campagnes](#-gestion-de-campagnes)
+- [Administration](#-administration)
+
+### 🔧 Technique
+- [Technologies](#-technologies)
+- [API Endpoints](#-api-endpoints)
+  - [Authentification](#-authentification)
+  - [Administration (Admin seulement)](#-administration-admin-seulement)
+  - [Personnages](#️-personnages)
+  - [Inventaire et Bourse](#-inventaire-et-bourse)
+  - [Objets et Équipement](#️-objets-et-équipement)
+  - [Grimoire des Sorts](#-grimoire-des-sorts-1)
+  - [Campagnes](#-campagnes)
+  - [Sessions de Jeu](#-sessions-de-jeu)
+  - [D&D (API Externe - Open5e)](#-dd-api-externe---open5e)
+  - [D&D (Base Locale)](#-dd-base-locale)
+  - [Utilitaires](#-utilitaires)
+
+### 🧪 Tests et Utilisation
+- [Tests](#-tests)
+- [Exemples d'Utilisation](#-exemples-dutilisation)
+- [Contribution](#-contribution)
+- [Support](#-support)
+
+---
+
 ## 📚 Documentation
 
 - **[Documentation API Complète](./COMPLETE_API_DOCUMENTATION.md)** - Référence complète de l'API

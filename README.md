@@ -79,35 +79,16 @@ cd ../front/
 
 L'API 2d10 propose **63 endpoints** organisés en 11 catégories principales :
 
-### 🔐 Authentification (3 endpoints)
-- Inscription, connexion, profil utilisateur
-
-### 👑 Administration (2 endpoints)
-- Gestion des utilisateurs et statistiques
-
-### 🧙‍♂️ Personnages (6 endpoints)
-- CRUD complet des personnages + statistiques
-
-### 🎒 Inventaire et Bourse (6 endpoints)
-- Gestion de l'inventaire et de la bourse
-
-### ⚔️ Objets et Équipement (6 endpoints)
-- Catalogue d'objets et système d'équipement
-
-### 📖 Grimoire des Sorts (8 endpoints)
-- Gestion complète des sorts et grimoire
-
-### 🏰 Campagnes (8 endpoints)
-- CRUD des campagnes + gestion des personnages
-
-### 🎲 Sessions de Jeu (7 endpoints)
-- Gestion des sessions et présence
-
-### 🎲 D&D (13 endpoints)
-- API externe Open5e + base locale
-
-### 🔧 Utilitaires (2 endpoints)
-- Informations API et santé
+- 🔐 **Authentification** (3 endpoints)
+- 👑 **Administration** (2 endpoints)
+- 🧙‍♂️ **Personnages** (6 endpoints)
+- 🎒 **Inventaire et Bourse** (6 endpoints)
+- ⚔️ **Objets et Équipement** (6 endpoints)
+- 📖 **Grimoire des Sorts** (8 endpoints)
+- 🏰 **Campagnes** (8 endpoints)
+- 🎲 **Sessions de Jeu** (7 endpoints)
+- 🎲 **D&D** (13 endpoints)
+- 🔧 **Utilitaires** (2 endpoints)
 
 > **📖 Voir la [documentation complète des endpoints](back/README.md#-api-endpoints) pour tous les détails**
 
