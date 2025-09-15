@@ -2,7 +2,16 @@
 
 Une application complète de gestion de personnages D&D 5e avec intégration de l'API Open5e pour accéder aux données officielles du jeu.
 
-## ✨ Fonctionnalités
+## 📋 Sommaire
+
+- [Vue d'ensemble](#-vue-densemble)
+- [Architecture](#-architecture)
+- [Installation](#-installation)
+- [Documentation](#-documentation)
+- [Démarrage Rapide](#-démarrage-rapide)
+- [Contribution](#-contribution)
+
+## 🌟 Vue d'ensemble
 
 ### 🧙‍♂️ Gestion des Personnages
 - Création et gestion de personnages D&D 5e
@@ -16,13 +25,25 @@ Une application complète de gestion de personnages D&D 5e avec intégration de 
 - Gestion de la bourse (pièces d'or, d'argent, etc.)
 - Catalogue d'objets avec propriétés détaillées
 
+### 📖 Grimoire des Sorts
+- Gestion des sorts connus et préparés
+- Recherche et ajout de sorts depuis la base D&D
+- Système de préparation pour les classes préparatrices
+- Suivi des lancements et statistiques
+
+### 🏰 Gestion de Campagnes
+- Création et gestion de campagnes
+- Attribution de personnages aux campagnes
+- Sessions de jeu et suivi des parties
+- Gestion de la présence aux sessions
+
 ### 🔐 Authentification et Administration
 - Système d'authentification JWT sécurisé
 - Gestion des rôles (User, GM, Admin)
 - Panel d'administration complet
 - Statistiques globales
 
-### 🌟 Intégration D&D 5e (Nouveau !)
+### 🌟 Intégration D&D 5e
 - **Sorts** : Accès à tous les sorts avec descriptions complètes
 - **Monstres** : Base de données complète des créatures
 - **Armes & Armures** : Catalogue officiel avec propriétés
@@ -56,54 +77,52 @@ cd ../front/
 
 ## 📡 API Endpoints
 
-### Authentification
-- `POST /api/auth/register` - Inscription
-- `POST /api/auth/login` - Connexion
-- `GET /api/auth/profile` - Profil utilisateur
-- `POST /api/auth/logout` - Déconnexion
+L'API 2d10 propose **63 endpoints** organisés en 11 catégories principales :
 
-### Personnages
-- `GET /api/characters` - Liste des personnages
-- `POST /api/characters` - Créer un personnage
-- `GET /api/characters/:id` - Détails d'un personnage
-- `PUT /api/characters/:id` - Modifier un personnage
-- `DELETE /api/characters/:id` - Supprimer un personnage
+### 🔐 Authentification (3 endpoints)
+- Inscription, connexion, profil utilisateur
 
-### Inventaire
-- `GET /api/inventory/:characterId` - Inventaire d'un personnage
-- `POST /api/inventory/:characterId/items` - Ajouter un objet
-- `PUT /api/inventory/:characterId/items/:id` - Modifier un objet
-- `DELETE /api/inventory/:characterId/items/:id` - Supprimer un objet
+### 👑 Administration (2 endpoints)
+- Gestion des utilisateurs et statistiques
 
-### Équipement
-- `GET /api/equipment/:characterId` - Équipement d'un personnage
-- `POST /api/equipment/:characterId/equip` - Équiper un objet
-- `POST /api/equipment/:characterId/unequip` - Déséquiper un objet
+### 🧙‍♂️ Personnages (6 endpoints)
+- CRUD complet des personnages + statistiques
 
-### D&D Data (Nouveau !)
-- `GET /api/dnd/spells` - Sorts D&D
-- `GET /api/dnd/monsters` - Monstres D&D
-- `GET /api/dnd/weapons` - Armes D&D
-- `GET /api/dnd/armor` - Armures D&D
-- `GET /api/dnd/races` - Races D&D
-- `GET /api/dnd/classes` - Classes D&D
-- `GET /api/dnd/search` - Recherche globale
+### 🎒 Inventaire et Bourse (6 endpoints)
+- Gestion de l'inventaire et de la bourse
 
-## 🧪 Tests avec Postman
+### ⚔️ Objets et Équipement (6 endpoints)
+- Catalogue d'objets et système d'équipement
 
-### Collections Disponibles
-1. **2d10_API_Collection.postman_collection.json** - API principale
-2. **DND_Postman_Collection.json** - Routes D&D spécifiques
+### 📖 Grimoire des Sorts (8 endpoints)
+- Gestion complète des sorts et grimoire
 
-### Configuration
-1. Importer les collections dans Postman
-2. Configurer l'environnement :
-   - `baseUrl`: `http://localhost:3000`
-   - `authToken`: Token JWT (récupéré via login)
+### 🏰 Campagnes (8 endpoints)
+- CRUD des campagnes + gestion des personnages
 
-### Compte de Test
+### 🎲 Sessions de Jeu (7 endpoints)
+- Gestion des sessions et présence
+
+### 🎲 D&D (13 endpoints)
+- API externe Open5e + base locale
+
+### 🔧 Utilitaires (2 endpoints)
+- Informations API et santé
+
+> **📖 Voir la [documentation complète des endpoints](back/README.md#-api-endpoints) pour tous les détails**
+
+## 🧪 Tests
+
+### 📋 Collections Postman
+- **[Collection Complète](back/2d10_Complete_API_Collection.postman_collection.json)** - Tous les endpoints (63 routes)
+- **Configuration** : `baseUrl: http://localhost:3000`
+- **Authentification** : Token JWT automatique
+
+### 🔑 Compte de Test
 - **Email** : `admin@2d10.com`
 - **Mot de passe** : `admin123`
+
+> **📖 Voir le [guide de test complet](back/README.md#-tests) pour plus de détails**
 
 ## 🏗️ Architecture
 
@@ -135,10 +154,17 @@ cd ../front/
 
 ## 📚 Documentation
 
-- [API Documentation](back/API_DOCUMENTATION.md) - Documentation API principale
-- [D&D Integration](back/README_DND_INTEGRATION.md) - Guide d'intégration D&D
-- [D&D API Reference](back/DND_API_DOCUMENTATION.md) - Référence API D&D
-- [Postman Guide](back/POSTMAN_GUIDE.md) - Guide d'utilisation Postman
+### 📖 Documentation Générale
+- **[Backend Documentation](back/README.md)** - Documentation complète du backend
+- **[Frontend Documentation](front/README.md)** - Documentation du frontend (à venir)
+
+### 🔧 Documentation Technique
+- **[API Documentation Complète](back/COMPLETE_API_DOCUMENTATION.md)** - Référence complète de l'API
+- **[Collection Postman](back/2d10_Complete_API_Collection.postman_collection.json)** - Collection de test complète
+
+### 🎲 Guides Spécialisés
+- **[Guide d'intégration D&D](back/README_DND_INTEGRATION.md)** - Guide d'utilisation des fonctionnalités D&D
+- **[Guide Postman](back/POSTMAN_GUIDE.md)** - Guide d'utilisation Postman
 
 ## 🔧 Configuration
 
