@@ -194,7 +194,7 @@ L'API 2d10 propose **63 endpoints** organisés en 11 catégories principales :
 ## 🧪 Tests
 
 ### 📋 Collections Postman
-- **[Collection Complète](back/2d10_Complete_API_Collection.postman_collection.json)** - Tous les endpoints (63 routes)
+- **[Collection Complète](back/postman/2d10_Complete_API_Collection.postman_collection.json)** - Tous les endpoints (63 routes)
 - **Configuration** : `baseUrl: http://localhost:3000`
 - **Authentification** : Token JWT automatique
 
@@ -212,7 +212,10 @@ L'API 2d10 propose **63 endpoints** organisés en 11 catégories principales :
 │   ├── routes/             # Routes API
 │   ├── middleware/         # Middleware d'authentification
 │   ├── services/           # Services (D&D API)
-│   ├── *.postman_*.json    # Collections Postman
+│   ├── postman/            # Collections et guides Postman
+│   │   ├── *.postman_*.json # Collections Postman
+│   │   ├── POSTMAN_GUIDE.md # Guide d'utilisation
+│   │   └── generate-*.js    # Scripts de génération
 │   └── *.md               # Documentation
 ├── front/                  # Frontend (à venir)
 └── README.md              # Ce fichier
@@ -240,11 +243,11 @@ L'API 2d10 propose **63 endpoints** organisés en 11 catégories principales :
 
 ### 🔧 Documentation Technique
 - **[API Documentation Complète](back/COMPLETE_API_DOCUMENTATION.md)** - Référence complète de l'API
-- **[Collection Postman](back/2d10_Complete_API_Collection.postman_collection.json)** - Collection de test complète
+- **[Collection Postman](back/postman/2d10_Complete_API_Collection.postman_collection.json)** - Collection de test complète
 
 ### 🎲 Guides Spécialisés
 - **[Guide d'intégration D&D](back/README_DND_INTEGRATION.md)** - Guide d'utilisation des fonctionnalités D&D
-- **[Guide Postman](back/POSTMAN_GUIDE.md)** - Guide d'utilisation Postman
+- **[Guide Postman](back/postman/POSTMAN_GUIDE.md)** - Guide d'utilisation Postman
 
 ## 🔧 Configuration
 
