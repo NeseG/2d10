@@ -136,7 +136,7 @@ INSERT INTO item_types (name, description) VALUES
     ('Potion', 'Consommables magiques'),
     ('Parchemin', 'Sorts sur parchemin'),
     ('Gemme', 'Pierres précieuses et gemmes'),
-    ('Outils', 'Outils d\'artisanat et de profession'),
+    ('Outils', 'Outils d''artisanat et de profession'),
     ('Vêtement', 'Vêtements et accessoires'),
     ('Nourriture', 'Nourriture et boissons'),
     ('Autre', 'Autres objets divers')
@@ -165,7 +165,7 @@ INSERT INTO items (name, description, item_type_id, weight, value_gold, rarity) 
     ('Armure de cuir', 'Protection légère en cuir', 2, 10.0, 10.0, 'common'),
     ('Bouclier', 'Protection supplémentaire', 3, 6.0, 10.0, 'common'),
     ('Potion de soins', 'Restaure 2d4+2 points de vie', 5, 0.5, 50.0, 'common'),
-    ('Sac à dos', 'Contient 30 livres d\'équipement', 9, 5.0, 2.0, 'common'),
+    ('Sac à dos', 'Contient 30 livres d''équipement', 9, 5.0, 2.0, 'common'),
     ('Torche', 'Source de lumière', 9, 1.0, 0.01, 'common'),
     ('Rations', 'Nourriture pour une journée', 10, 2.0, 0.5, 'common')
 ON CONFLICT DO NOTHING;
@@ -184,3 +184,77 @@ CREATE INDEX IF NOT EXISTS idx_items_rarity ON items(rarity);
 CREATE INDEX IF NOT EXISTS idx_character_inventory_character_id ON character_inventory(character_id);
 CREATE INDEX IF NOT EXISTS idx_character_inventory_item_id ON character_inventory(item_id);
 CREATE INDEX IF NOT EXISTS idx_character_purse_character_id ON character_purse(character_id);
+
+-- Créer la table des parties (campaigns)
+CREATE TABLE IF NOT EXISTS campaigns (
+    id SERIAL PRIMARY KEY,
+    gm_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    setting VARCHAR(100), -- ex: "Forgotten Realms", "Eberron", "Homebrew"
+    max_players INTEGER DEFAULT 6,
+    current_players INTEGER DEFAULT 0,
+    status VARCHAR(20) DEFAULT 'active', -- active, paused, completed, cancelled
+    start_date DATE,
+    end_date DATE,
+    notes TEXT,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Créer la table des sessions de jeu
+CREATE TABLE IF NOT EXISTS game_sessions (
+    id SERIAL PRIMARY KEY,
+    campaign_id INTEGER REFERENCES campaigns(id) ON DELETE CASCADE,
+    session_number INTEGER NOT NULL,
+    title VARCHAR(100),
+    description TEXT,
+    session_date DATE NOT NULL,
+    start_time TIME,
+    end_time TIME,
+    location VARCHAR(100),
+    notes TEXT,
+    xp_awarded INTEGER DEFAULT 0,
+    gold_awarded DECIMAL(10,2) DEFAULT 0,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(campaign_id, session_number)
+);
+
+-- Créer la table d'association personnages-parties
+CREATE TABLE IF NOT EXISTS campaign_characters (
+    id SERIAL PRIMARY KEY,
+    campaign_id INTEGER REFERENCES campaigns(id) ON DELETE CASCADE,
+    character_id INTEGER REFERENCES characters(id) ON DELETE CASCADE,
+    joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    left_at TIMESTAMP,
+    status VARCHAR(20) DEFAULT 'active', -- active, left, kicked
+    notes TEXT,
+    is_active BOOLEAN DEFAULT true,
+    UNIQUE(campaign_id, character_id)
+);
+
+-- Créer la table de présence aux sessions
+CREATE TABLE IF NOT EXISTS session_attendance (
+    id SERIAL PRIMARY KEY,
+    session_id INTEGER REFERENCES game_sessions(id) ON DELETE CASCADE,
+    character_id INTEGER REFERENCES characters(id) ON DELETE CASCADE,
+    attended BOOLEAN DEFAULT true,
+    xp_earned INTEGER DEFAULT 0,
+    gold_earned DECIMAL(10,2) DEFAULT 0,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(session_id, character_id)
+);
+
+-- Créer les index pour les nouvelles tables
+CREATE INDEX IF NOT EXISTS idx_campaigns_gm_id ON campaigns(gm_id);
+CREATE INDEX IF NOT EXISTS idx_campaigns_status ON campaigns(status);
+CREATE INDEX IF NOT EXISTS idx_game_sessions_campaign_id ON game_sessions(campaign_id);
+CREATE INDEX IF NOT EXISTS idx_game_sessions_date ON game_sessions(session_date);
+CREATE INDEX IF NOT EXISTS idx_campaign_characters_campaign_id ON campaign_characters(campaign_id);
+CREATE INDEX IF NOT EXISTS idx_campaign_characters_character_id ON campaign_characters(character_id);
+CREATE INDEX IF NOT EXISTS idx_session_attendance_session_id ON session_attendance(session_id);
+CREATE INDEX IF NOT EXISTS idx_session_attendance_character_id ON session_attendance(character_id);

@@ -10,6 +10,11 @@ const characterRoutes = require('./routes/characters');
 const inventoryRoutes = require('./routes/inventory');
 const itemRoutes = require('./routes/items');
 const equipmentRoutes = require('./routes/equipment');
+const dndRoutes = require('./routes/dnd');
+const dndLocalRoutes = require('./routes/dnd-local');
+const purseRoutes = require('./routes/purse');
+const campaignRoutes = require('./routes/campaigns');
+// const sessionRoutes = require('./routes/sessions');
 
 const app = express();
 const port = config.port;
@@ -49,6 +54,11 @@ app.use('/api/characters', characterRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/items', itemRoutes);
 app.use('/api/equipment', equipmentRoutes);
+app.use('/api/dnd', dndRoutes);
+app.use('/api/dnd-local', dndLocalRoutes);
+app.use('/api/purse', purseRoutes);
+app.use('/api/campaigns', campaignRoutes);
+// app.use('/api/sessions', sessionRoutes);
 
 // Route de test
 app.get('/', (req, res) => {
@@ -62,6 +72,11 @@ app.get('/', (req, res) => {
       inventory: '/api/inventory',
       items: '/api/items',
       equipment: '/api/equipment',
+      dnd: '/api/dnd',
+      dndLocal: '/api/dnd-local',
+      purse: '/api/purse',
+      campaigns: '/api/campaigns',
+      sessions: '/api/sessions',
       health: '/health'
     }
   });

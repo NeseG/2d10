@@ -286,6 +286,90 @@ router.delete('/:id', authenticateToken, checkCharacterOwnership, async (req, re
   }
 });
 
+// Obtenir tous les personnages avec leurs bourses
+router.get('/with-purses', authenticateToken, async (req, res) => {
+  try {
+    console.log('Début de la route with-purses');
+    const userId = req.user.id;
+    const userRole = req.user.role_name;
+    console.log('User ID:', userId, 'Role:', userRole);
+
+    // D'abord, récupérer tous les personnages
+    const charactersResult = await pool.query(`
+      SELECT c.*, u.username as owner_username, u.email as owner_email
+      FROM characters c
+      JOIN users u ON c.user_id = u.id
+      WHERE c.is_active = true
+      ORDER BY c.created_at DESC
+    `);
+    
+    console.log('Personnages trouvés:', charactersResult.rows.length);
+    const characters = charactersResult.rows;
+
+    // Récupérer les bourses pour chaque personnage
+    const charactersWithPurses = [];
+    
+    for (const character of characters) {
+      try {
+        const purseResult = await pool.query(
+          'SELECT * FROM character_purse WHERE character_id = $1',
+          [character.id]
+        );
+
+        let purse = {
+          copper_pieces: 0,
+          silver_pieces: 0,
+          electrum_pieces: 0,
+          gold_pieces: 0,
+          platinum_pieces: 0,
+          updated_at: character.created_at
+        };
+
+        if (purseResult.rows.length > 0) {
+          purse = purseResult.rows[0];
+        }
+
+        // Calculer la valeur totale en pièces d'or
+        const totalGoldValue = 
+          (purse.copper_pieces / 100) +
+          (purse.silver_pieces / 10) +
+          (purse.electrum_pieces / 2) +
+          purse.gold_pieces +
+          (purse.platinum_pieces * 10);
+
+        charactersWithPurses.push({
+          ...character,
+          purse: purse,
+          total_gold_value: totalGoldValue
+        });
+      } catch (error) {
+        console.error(`Erreur lors de la récupération de la bourse pour le personnage ${character.id}:`, error);
+        charactersWithPurses.push({
+          ...character,
+          purse: {
+            copper_pieces: 0,
+            silver_pieces: 0,
+            electrum_pieces: 0,
+            gold_pieces: 0,
+            platinum_pieces: 0,
+            updated_at: character.created_at
+          },
+          total_gold_value: 0
+        });
+      }
+    }
+
+    console.log('Retour de la réponse');
+    res.json({
+      success: true,
+      characters: charactersWithPurses
+    });
+  } catch (error) {
+    console.error('Erreur lors de la récupération des personnages avec bourses:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 // Obtenir les statistiques des personnages (admin/gm seulement)
 router.get('/stats/overview', authenticateToken, requireRole(['admin', 'gm']), async (req, res) => {
   try {

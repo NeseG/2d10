@@ -55,8 +55,40 @@ const requireRole = (roles) => {
   };
 };
 
+// Middleware pour vérifier la propriété d'un personnage
+const checkCharacterOwnership = async (req, res, next) => {
+  try {
+    const { characterId } = req.params;
+    const userId = req.user.id;
+    const userRole = req.user.role_name;
+
+    // Les admins et GM peuvent accéder à tous les personnages
+    if (userRole === 'admin' || userRole === 'gm') {
+      return next();
+    }
+
+    // Vérifier que le personnage appartient à l'utilisateur
+    const result = await pool.query(
+      'SELECT id FROM characters WHERE id = $1 AND user_id = $2',
+      [characterId, userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(403).json({ 
+        error: 'Accès refusé. Ce personnage ne vous appartient pas.' 
+      });
+    }
+
+    next();
+  } catch (error) {
+    console.error('Erreur lors de la vérification de propriété:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+};
+
 module.exports = {
   authenticateToken,
   requireAdmin,
-  requireRole
+  requireRole,
+  checkCharacterOwnership
 };
