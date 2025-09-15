@@ -72,52 +72,102 @@ npm start
 
 ## 📡 API Endpoints
 
-### Authentification
+### 🔐 Authentification
 - `POST /api/auth/register` - Inscription
 - `POST /api/auth/login` - Connexion
 - `GET /api/auth/profile` - Profil utilisateur
 
-### Personnages
+### 👑 Administration (Admin seulement)
+- `GET /api/admin/users` - Liste des utilisateurs
+- `GET /api/admin/stats` - Statistiques générales
+
+### 🧙‍♂️ Personnages
 - `GET /api/characters` - Liste des personnages
 - `POST /api/characters` - Créer un personnage
+- `GET /api/characters/:id` - Détails d'un personnage
 - `PUT /api/characters/:id` - Modifier un personnage
+- `DELETE /api/characters/:id` - Supprimer un personnage
+- `GET /api/characters/stats` - Statistiques des personnages
 
-### D&D (Open5e)
-- `GET /api/dnd/spells` - Sorts
-- `GET /api/dnd/monsters` - Monstres
-- `GET /api/dnd/weapons` - Armes
-- `GET /api/dnd/armor` - Armures
+### 🎒 Inventaire et Bourse
+- `GET /api/inventory/:id` - Inventaire d'un personnage
+- `POST /api/inventory/:id/items` - Ajouter un objet
+- `PUT /api/inventory/:id/items/:itemId` - Modifier un objet
+- `DELETE /api/inventory/:id/items/:itemId` - Supprimer un objet
+- `GET /api/purse/:id` - Bourse d'un personnage
+- `POST /api/purse/:id/add` - Ajouter de l'argent
+- `POST /api/purse/:id/spend` - Dépenser de l'argent
 
-### D&D (Local)
-- `GET /api/dnd-local/spells` - Sorts locaux
-- `GET /api/dnd-local/monsters` - Monstres locaux
-- `GET /api/dnd-local/items` - Items locaux
+### ⚔️ Objets et Équipement
+- `GET /api/items` - Catalogue d'objets
+- `POST /api/items` - Créer un objet (Admin/GM)
+- `PUT /api/items/:id` - Modifier un objet (Admin/GM)
+- `DELETE /api/items/:id` - Supprimer un objet (Admin/GM)
+- `GET /api/equipment/:id` - Équipement d'un personnage
+- `POST /api/equipment/:id/equip` - Équiper un objet
+- `POST /api/equipment/:id/unequip` - Déséquiper un objet
 
-### Campagnes
+### 📖 Grimoire des Sorts
+- `GET /api/grimoire/:id` - Grimoire d'un personnage
+- `POST /api/grimoire/:id/spells` - Ajouter un sort
+- `PUT /api/grimoire/:id/spells/:spellId` - Modifier un sort
+- `DELETE /api/grimoire/:id/spells/:spellId` - Supprimer un sort
+- `GET /api/grimoire/:id/search` - Rechercher des sorts
+- `POST /api/grimoire/:id/prepare` - Préparer des sorts
+- `POST /api/grimoire/:id/cast/:spellId` - Lancer un sort
+- `GET /api/grimoire/:id/stats` - Statistiques du grimoire
+
+### 🏰 Campagnes
 - `GET /api/campaigns` - Liste des campagnes
 - `POST /api/campaigns` - Créer une campagne
 - `GET /api/campaigns/:id` - Détails d'une campagne
+- `PUT /api/campaigns/:id` - Modifier une campagne
+- `DELETE /api/campaigns/:id` - Supprimer une campagne
 - `POST /api/campaigns/:id/characters` - Ajouter un personnage
+- `DELETE /api/campaigns/:id/characters/:charId` - Retirer un personnage
+- `GET /api/campaigns/:id/stats` - Statistiques d'une campagne
 
-### Sessions
+### 🎲 Sessions de Jeu
 - `GET /api/sessions/campaign/:id` - Sessions d'une campagne
 - `POST /api/sessions` - Créer une session
+- `GET /api/sessions/:id` - Détails d'une session
+- `PUT /api/sessions/:id` - Modifier une session
+- `DELETE /api/sessions/:id` - Supprimer une session
 - `POST /api/sessions/:id/attendance` - Marquer la présence
+- `PUT /api/sessions/:id/attendance/:charId` - Modifier la présence
 
-### Grimoire
-- `GET /api/grimoire/:id` - Grimoire d'un personnage
-- `POST /api/grimoire/:id/spells` - Ajouter un sort
-- `GET /api/grimoire/:id/search` - Rechercher des sorts
-- `POST /api/grimoire/:id/prepare` - Préparer des sorts
+### 🎲 D&D (API Externe - Open5e)
+- `GET /api/dnd/spells` - Sorts (API externe)
+- `GET /api/dnd/monsters` - Monstres (API externe)
+- `GET /api/dnd/weapons` - Armes (API externe)
+- `GET /api/dnd/armor` - Armures (API externe)
+- `GET /api/dnd/races` - Races (API externe)
+- `GET /api/dnd/classes` - Classes (API externe)
+
+### 🎲 D&D (Base Locale)
+- `GET /api/dnd-local/spells` - Sorts locaux
+- `GET /api/dnd-local/monsters` - Monstres locaux
+- `GET /api/dnd-local/weapons` - Armes locales
+- `GET /api/dnd-local/armor` - Armures locales
+- `GET /api/dnd-local/races` - Races locales
+- `GET /api/dnd-local/classes` - Classes locales
+- `GET /api/dnd-local/search` - Recherche globale
+
+### 🔧 Utilitaires
+- `GET /` - Informations de l'API
+- `GET /health` - État de santé de l'API
 
 > Voir la [documentation complète](./COMPLETE_API_DOCUMENTATION.md) pour tous les endpoints.
 
 ## 🧪 Tests
 
 ### Avec Postman
-1. Importer `2d10_API_Collection.postman_collection.json`
-2. Importer `2d10_Environment.postman_environment.json`
-3. Suivre le [Guide Postman](./POSTMAN_GUIDE.md)
+1. Importer `2d10_Complete_API_Collection.postman_collection.json`
+2. Configurer les variables d'environnement :
+   - `baseUrl` : `http://localhost:3000`
+   - `authToken` : (sera automatiquement rempli après login)
+3. Commencer par la requête "Login" pour obtenir un token
+4. Toutes les autres requêtes utiliseront automatiquement le token
 
 ### Avec curl
 ```bash
