@@ -7,6 +7,7 @@ Une application complète de gestion de personnages D&D 5e avec intégration de 
 - [Vue d'ensemble](#-vue-densemble)
 - [Architecture](#-architecture)
 - [Installation](#-installation)
+- [Initialisation avec Docker Compose](#-initialisation-avec-docker-compose)
 - [Documentation](#-documentation)
 - [Démarrage Rapide](#-démarrage-rapide)
 - [Contribution](#-contribution)
@@ -74,6 +75,104 @@ npm start
 cd ../front/
 # Installation frontend
 ```
+
+## 🐳 Initialisation avec Docker Compose
+
+### Prérequis
+- Docker et Docker Compose installés
+- Port 3000 et 5432 disponibles
+
+### Démarrage rapide avec Docker
+```bash
+# 1. Cloner le repository
+git clone <repository-url>
+cd 2d10
+
+# 2. Naviguer vers le dossier backend
+cd back/
+
+# 3. Démarrer les services avec Docker Compose
+docker-compose up -d
+
+# 4. Vérifier que les services sont démarrés
+docker-compose ps
+```
+
+### Services Docker
+- **Backend API** : `http://localhost:3000`
+- **PostgreSQL** : `localhost:5432`
+- **Base de données** : `2d10_db`
+
+### Commandes utiles
+```bash
+# Voir les logs
+docker-compose logs -f
+
+# Arrêter les services
+docker-compose down
+
+# Redémarrer les services
+docker-compose restart
+
+# Reconstruire les images
+docker-compose up --build -d
+```
+
+### Configuration automatique
+Docker Compose configure automatiquement :
+- ✅ Base de données PostgreSQL
+- ✅ Initialisation du schéma
+- ✅ Variables d'environnement
+- ✅ Réseau interne entre les services
+
+### Synchronisation des données D&D
+Une fois les services démarrés, synchronisez les données D&D officielles :
+
+```bash
+# Option 1 : Synchronisation simple (recommandée)
+docker-compose exec backend npm run sync-dnd
+
+# Option 2 : Synchronisation complète
+docker-compose exec backend npm run sync-dnd-full
+
+# Option 3 : Synchronisation avancée
+docker-compose exec backend npm run sync-dnd-advanced
+```
+
+#### 🔧 Types de synchronisation disponibles :
+
+- **🟢 Simple** (`sync-dnd`) : Synchronisation basique des sorts uniquement
+- **🟡 Complète** (`sync-dnd-full`) : Sorts + monstres + armes + armures + items
+- **🔴 Avancée** (`sync-dnd-advanced`) : Synchronisation complète avec options avancées
+
+#### ⚙️ Fonctionnalités de la synchronisation avancée :
+
+- **📊 Tables dédiées** : Crée des tables spécialisées (`dnd_spells`, `dnd_monsters`, etc.)
+- **🔄 Gestion des conflits** : Mise à jour intelligente des données existantes
+- **📈 Logs détaillés** : Suivi complet des synchronisations dans `sync_log`
+- **⚡ Options flexibles** :
+  - `--force` : Forcer la synchronisation même si des données existent
+  - `--clear` : Vider les tables avant synchronisation
+  - `--dry-run` : Mode simulation sans insertion
+  - `--limit N` : Limiter le nombre d'éléments
+  - `--spells`, `--monsters`, `--weapons`, `--armor`, `--items` : Synchroniser des types spécifiques
+
+#### 💡 Exemples d'utilisation avancée :
+```bash
+# Synchroniser seulement les sorts et armes
+docker-compose exec backend node scripts/sync-dnd-advanced.js --spells --weapons
+
+# Mode simulation pour voir ce qui serait synchronisé
+docker-compose exec backend node scripts/sync-dnd-advanced.js --dry-run
+
+# Forcer la synchronisation complète
+docker-compose exec backend node scripts/sync-dnd-advanced.js --all --force
+
+# Synchroniser seulement 100 items
+docker-compose exec backend node scripts/sync-dnd-advanced.js --items --limit 100
+```
+
+> **💡 Avantage** : Aucune installation manuelle requise, tout fonctionne en un seul commande !
 
 ## 📡 API Endpoints
 
@@ -189,7 +288,16 @@ NODE_ENV=development
    npm start
    ```
 
-4. **Tester l'API**
+4. **Synchroniser les données D&D** (optionnel)
+   ```bash
+   # Synchronisation simple
+   npm run sync-dnd
+   
+   # Ou synchronisation complète
+   npm run sync-dnd-full
+   ```
+
+5. **Tester l'API**
    - Ouvrir Postman
    - Importer les collections
    - Tester les endpoints
