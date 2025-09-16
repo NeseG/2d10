@@ -54,14 +54,23 @@ Une application complète de gestion de personnages D&D 5e avec intégration de 
 
 ## 🚀 Installation Rapide
 
-### Option 1 : Installation Automatique
+### Option 1 : Docker (Recommandé)
+```bash
+# Backend uniquement
+docker-compose --profile back up -d
+
+# Application complète (à venir)
+docker-compose --profile full up -d
+```
+
+### Option 2 : Installation Automatique
 ```bash
 cd back/
 chmod +x install.sh
 ./install.sh
 ```
 
-### Option 2 : Installation Manuelle
+### Option 3 : Installation Manuelle
 ```bash
 # Backend
 cd back/
@@ -75,6 +84,8 @@ npm start
 cd ../front/
 # Installation frontend
 ```
+
+> **🐳 Voir le [guide Docker](DOCKER.md) pour plus d'options**
 
 ## 🐳 Initialisation avec Docker Compose
 
