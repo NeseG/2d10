@@ -7,7 +7,7 @@ Une application complète de gestion de personnages D&D 5e avec intégration de 
 - [Vue d'ensemble](#-vue-densemble)
 - [Architecture](#-architecture)
 - [Installation](#-installation)
-- [Initialisation avec Docker Compose](#-initialisation-avec-docker-compose)
+- [Docker](#-docker)
 - [Documentation](#-documentation)
 - [Démarrage Rapide](#-démarrage-rapide)
 - [Contribution](#-contribution)
@@ -85,56 +85,131 @@ cd ../front/
 # Installation frontend
 ```
 
-> **🐳 Voir le [guide Docker](DOCKER.md) pour plus d'options**
+## 🐳 Docker
 
-## 🐳 Initialisation avec Docker Compose
+### 📋 Profils Disponibles
 
-### Prérequis
-- Docker et Docker Compose installés
-- Port 3000 et 5432 disponibles
-
-### Démarrage rapide avec Docker
+#### 🔧 Backend uniquement
 ```bash
-# 1. Cloner le repository
-git clone <repository-url>
-cd 2d10
+docker-compose --profile back up -d
+```
+- Base de données PostgreSQL
+- Interface pgAdmin
+- Backend Node.js/Express
 
-# 2. Naviguer vers le dossier backend
-cd back/
+#### 🎨 Frontend uniquement (à venir)
+```bash
+docker-compose --profile front up -d
+```
+- Frontend React/Vue/Angular
+- Dépend du backend
 
-# 3. Démarrer les services avec Docker Compose
-docker-compose up -d
+#### 🚀 Application complète (à venir)
+```bash
+docker-compose --profile full up -d
+```
+- Backend + Frontend + Base de données
+- Configuration de développement
 
-# 4. Vérifier que les services sont démarrés
-docker-compose ps
+#### 🏭 Production (à venir)
+```bash
+docker-compose --profile production up -d
+```
+- Backend + Frontend + Nginx
+- Configuration de production
+
+### 🚀 Commandes Utiles
+
+#### Démarrer les services
+```bash
+# Backend uniquement
+docker-compose --profile back up -d
+
+# Application complète (à venir)
+docker-compose --profile full up -d
+
+# Production (à venir)
+docker-compose --profile production up -d
 ```
 
-### Services Docker
-- **Backend API** : `http://localhost:3000`
-- **PostgreSQL** : `localhost:5432`
-- **Base de données** : `2d10_db`
-
-### Commandes utiles
+#### Gestion des services
 ```bash
-# Voir les logs
-docker-compose logs -f
-
 # Arrêter les services
 docker-compose down
 
-# Redémarrer les services
-docker-compose restart
+# Voir les logs
+docker-compose logs
+
+# Service spécifique
+docker-compose logs back
+docker-compose logs db
 
 # Reconstruire les images
-docker-compose up --build -d
+docker-compose build --no-cache
 ```
 
-### Configuration automatique
-Docker Compose configure automatiquement :
-- ✅ Base de données PostgreSQL
-- ✅ Initialisation du schéma
-- ✅ Variables d'environnement
-- ✅ Réseau interne entre les services
+#### Accès aux services
+- **Backend API** : http://localhost:3000
+- **pgAdmin** : http://localhost:5050
+- **Frontend** : http://localhost:3001 (à venir)
+- **Nginx** : http://localhost:80 (production)
+
+### 🔧 Configuration
+
+#### Variables d'environnement
+Les variables sont définies dans le docker-compose.yml :
+- `DATABASE_URL` : URL de connexion PostgreSQL
+- `JWT_SECRET` : Clé secrète JWT
+- `NODE_ENV` : Environnement (development/production)
+
+#### Volumes
+- `db_data` : Données PostgreSQL persistantes
+- `./back:/usr/src/app` : Code source backend (développement)
+
+### 🛠️ Développement
+
+#### Mode développement
+```bash
+# Démarrer seulement la base de données
+docker-compose up db pgadmin -d
+
+# Lancer le backend en local
+cd back/
+npm install
+npm run dev
+```
+
+#### Mode production
+```bash
+# Construire et démarrer en production
+docker-compose --profile production up --build -d
+```
+
+### 🔍 Dépannage
+
+#### Vérifier l'état des conteneurs
+```bash
+docker-compose ps
+```
+
+#### Accéder aux conteneurs
+```bash
+# Backend
+docker-compose exec back sh
+
+# Base de données
+docker-compose exec db psql -U 2d10 -d 2d10
+```
+
+#### Nettoyer
+```bash
+# Supprimer les conteneurs et volumes
+docker-compose down -v
+
+# Supprimer les images
+docker-compose down --rmi all
+```
+
 
 ### Synchronisation des données D&D
 Une fois les services démarrés, synchronisez les données D&D officielles :
