@@ -238,16 +238,17 @@ L'API 2d10 propose **63 endpoints** organisés en 11 catégories principales :
 ## 📚 Documentation
 
 ### 📖 Documentation Générale
+- **[Documentation Complète](docs/README.md)** - Index de toute la documentation
 - **[Backend Documentation](back/README.md)** - Documentation complète du backend
 - **[Frontend Documentation](front/README.md)** - Documentation du frontend (à venir)
 
 ### 🔧 Documentation Technique
-- **[API Documentation Complète](back/COMPLETE_API_DOCUMENTATION.md)** - Référence complète de l'API
-- **[Collection Postman](back/postman/2d10_Complete_API_Collection.postman_collection.json)** - Collection de test complète
+- **[API Documentation Complète](docs/COMPLETE_API_DOCUMENTATION.md)** - Référence complète de l'API
+- **[Collection Postman](back/2d10_Complete_API_Collection.postman_collection.json)** - Collection de test complète
 
 ### 🎲 Guides Spécialisés
-- **[Guide d'intégration D&D](back/README_DND_INTEGRATION.md)** - Guide d'utilisation des fonctionnalités D&D
-- **[Guide Postman](back/postman/POSTMAN_GUIDE.md)** - Guide d'utilisation Postman
+- **[Guide d'intégration D&D](docs/README_DND_INTEGRATION.md)** - Guide d'utilisation des fonctionnalités D&D
+- **[Guide Postman](docs/POSTMAN_GUIDE.md)** - Guide d'utilisation Postman
 
 ## 🔧 Configuration
 
