@@ -8,7 +8,12 @@
     "dev": "nodemon index.js",
     "sync-dnd": "node scripts/sync-dnd-simple.js",
     "sync-dnd-full": "node scripts/sync-dnd-data.js",
-    "sync-dnd-advanced": "node scripts/sync-dnd-advanced.js"
+    "sync-dnd-advanced": "node scripts/sync-dnd-advanced.js",
+    "prisma:generate": "prisma generate",
+    "prisma:push": "prisma db push",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio",
+    "prisma:seed": "node prisma/seed.js"
   },
   "dependencies": {
     "express": "^4.18.2",
@@ -17,7 +22,9 @@
     "jsonwebtoken": "^9.0.2",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
-    "axios": "^1.6.0"
+    "axios": "^1.6.0",
+    "prisma": "^5.7.0",
+    "@prisma/client": "^5.7.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

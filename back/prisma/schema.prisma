@@ -1,0 +1,339 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Modèle User
+model User {
+  id        Int      @id @default(autoincrement())
+  username  String   @unique
+  email     String   @unique
+  password  String
+  roleId    Int
+  role      Role     @relation(fields: [roleId], references: [id])
+  characters Character[]
+  campaigns Campaign[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
+}
+
+// Modèle Role
+model Role {
+  id    Int    @id @default(autoincrement())
+  name  String @unique
+  users User[]
+
+  @@map("roles")
+}
+
+// Modèle Character
+model Character {
+  id              Int      @id @default(autoincrement())
+  userId          Int
+  user            User     @relation(fields: [userId], references: [id])
+  name            String
+  race            String
+  class           String
+  level           Int
+  background      String?
+  alignment       String?
+  experiencePoints Int     @default(0)
+  hitPoints       Int
+  armorClass      Int
+  speed           Int?
+  strength        Int
+  dexterity       Int
+  constitution    Int
+  intelligence    Int
+  wisdom          Int
+  charisma        Int
+  description     String?
+  notes           String?
+  isActive        Boolean  @default(true)
+  grimoire        Grimoire[]
+  inventory       Inventory[]
+  equipment       Equipment[]
+  purse           Purse?
+  campaignCharacters CampaignCharacter[]
+  sessionAttendance SessionAttendance[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("characters")
+}
+
+// Modèle ItemType
+model ItemType {
+  id          Int    @id @default(autoincrement())
+  name        String @unique
+  description String?
+  items       Item[]
+
+  @@map("item_types")
+}
+
+// Modèle Item
+model Item {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?
+  typeId      Int
+  type        ItemType @relation(fields: [typeId], references: [id])
+  weight      Float?
+  value       Float?
+  rarity      String?
+  properties  String?  // JSON string for additional properties
+  isActive    Boolean  @default(true)
+  inventory   Inventory[]
+  equipment   Equipment[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("items")
+}
+
+// Modèle EquipmentSlot
+model EquipmentSlot {
+  id          Int    @id @default(autoincrement())
+  name        String @unique
+  description String?
+  equipment   Equipment[]
+
+  @@map("equipment_slots")
+}
+
+// Modèle Inventory
+model Inventory {
+  id          Int      @id @default(autoincrement())
+  characterId Int
+  character   Character @relation(fields: [characterId], references: [id])
+  itemId      Int
+  item        Item     @relation(fields: [itemId], references: [id])
+  quantity    Int      @default(1)
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([characterId, itemId])
+  @@map("character_inventory")
+}
+
+// Modèle Equipment
+model Equipment {
+  id          Int           @id @default(autoincrement())
+  characterId Int
+  character   Character     @relation(fields: [characterId], references: [id])
+  itemId      Int
+  item        Item          @relation(fields: [itemId], references: [id])
+  slotId      Int
+  slot        EquipmentSlot @relation(fields: [slotId], references: [id])
+  isEquipped  Boolean       @default(false)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@unique([characterId, slotId])
+  @@map("character_equipment")
+}
+
+// Modèle Purse
+model Purse {
+  id          Int      @id @default(autoincrement())
+  characterId Int      @unique
+  character   Character @relation(fields: [characterId], references: [id])
+  gold        Int      @default(0)
+  silver      Int      @default(0)
+  copper      Int      @default(0)
+  platinum    Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("character_purse")
+}
+
+// Modèle Campaign
+model Campaign {
+  id            Int      @id @default(autoincrement())
+  gmId          Int
+  gm            User     @relation(fields: [gmId], references: [id])
+  name          String
+  description   String?
+  setting       String?
+  maxPlayers    Int      @default(4)
+  currentPlayers Int     @default(0)
+  status        String   @default("active")
+  characters    CampaignCharacter[]
+  sessions      GameSession[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("campaigns")
+}
+
+// Modèle GameSession
+model GameSession {
+  id          Int      @id @default(autoincrement())
+  campaignId  Int
+  campaign    Campaign @relation(fields: [campaignId], references: [id])
+  sessionNumber Int
+  title       String
+  description String?
+  sessionDate String   // YYYY-MM-DD format
+  startTime   String?  // HH:MM format
+  endTime     String?  // HH:MM format
+  location    String?
+  notes       String?
+  xpAwarded   Int      @default(0)
+  goldAwarded Float    @default(0)
+  isActive    Boolean  @default(true)
+  attendance  SessionAttendance[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("game_sessions")
+}
+
+// Modèle CampaignCharacter
+model CampaignCharacter {
+  id          Int      @id @default(autoincrement())
+  campaignId  Int
+  campaign    Campaign @relation(fields: [campaignId], references: [id])
+  characterId Int
+  character   Character @relation(fields: [characterId], references: [id])
+  notes       String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([campaignId, characterId])
+  @@map("campaign_characters")
+}
+
+// Modèle SessionAttendance
+model SessionAttendance {
+  id          Int      @id @default(autoincrement())
+  sessionId   Int
+  session     GameSession @relation(fields: [sessionId], references: [id])
+  characterId Int
+  character   Character @relation(fields: [characterId], references: [id])
+  attended    Boolean  @default(false)
+  xpEarned    Int      @default(0)
+  goldEarned  Float    @default(0)
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([sessionId, characterId])
+  @@map("session_attendance")
+}
+
+// Modèle Grimoire
+model Grimoire {
+  id          Int      @id @default(autoincrement())
+  characterId Int
+  character   Character @relation(fields: [characterId], references: [id])
+  spellId     Int?
+  spellSlug   String
+  spellName   String
+  spellLevel  Int
+  spellSchool String?
+  isPrepared  Boolean  @default(false)
+  isKnown     Boolean  @default(true)
+  timesPrepared Int    @default(0)
+  timesCast   Int      @default(0)
+  notes       String?
+  learnedAt   DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([characterId, spellSlug])
+  @@map("character_grimoire")
+}
+
+// Modèles D&D (pour les données synchronisées)
+model DndSpell {
+  id          Int      @id @default(autoincrement())
+  slug        String   @unique
+  name        String
+  level       Int
+  school      String
+  castingTime String?
+  range       String?
+  components  String?
+  duration    String?
+  description String?
+  higherLevel String?
+  ritual      Boolean  @default(false)
+  concentration Boolean @default(false)
+  createdAt   DateTime @default(now())
+
+  @@map("dnd_spells")
+}
+
+model DndMonster {
+  id              Int      @id @default(autoincrement())
+  slug            String   @unique
+  name            String
+  size            String?
+  type            String?
+  subtype         String?
+  alignment       String?
+  armorClass      Int?
+  hitPoints       Int?
+  hitDice         String?
+  speed           String?
+  strength        Int?
+  dexterity       Int?
+  constitution    Int?
+  intelligence    Int?
+  wisdom          Int?
+  charisma        Int?
+  challengeRating String?
+  xp              Int?
+  description     String?
+  createdAt       DateTime @default(now())
+
+  @@map("dnd_monsters")
+}
+
+model DndWeapon {
+  id          Int      @id @default(autoincrement())
+  slug        String   @unique
+  name        String
+  category    String?
+  weaponType  String?
+  damage      String?
+  damageType  String?
+  properties  String?
+  weight      Float?
+  cost        String?
+  description String?
+  createdAt   DateTime @default(now())
+
+  @@map("dnd_weapons")
+}
+
+model DndArmor {
+  id          Int      @id @default(autoincrement())
+  slug        String   @unique
+  name        String
+  category    String?
+  armorType   String?
+  armorClass  Int?
+  strength    Int?
+  stealth     String?
+  weight      Float?
+  cost        String?
+  description String?
+  createdAt   DateTime @default(now())
+
+  @@map("dnd_armor")
+}
