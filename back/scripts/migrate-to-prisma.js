@@ -58,3 +58,4 @@ async function migrateToPrisma() {
 
 // Exécuter la migration
 migrateToPrisma();
+

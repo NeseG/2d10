@@ -12,16 +12,17 @@ datasource db {
 
 // Modèle User
 model User {
-  id        Int      @id @default(autoincrement())
-  username  String   @unique
-  email     String   @unique
-  password  String
-  roleId    Int
-  role      Role     @relation(fields: [roleId], references: [id])
-  characters Character[]
-  campaigns Campaign[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           Int      @id @default(autoincrement())
+  username     String   @unique
+  email        String   @unique
+  passwordHash String
+  isActive     Boolean  @default(true)
+  roleId       Int
+  role         Role     @relation(fields: [roleId], references: [id])
+  characters   Character[]
+  campaigns    Campaign[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   @@map("users")
 }

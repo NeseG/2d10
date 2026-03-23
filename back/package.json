@@ -5,7 +5,9 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
+    "start:prisma": "node index-prisma.js",
     "dev": "nodemon index.js",
+    "dev:prisma": "nodemon index-prisma.js",
     "sync-dnd": "node scripts/sync-dnd-simple.js",
     "sync-dnd-full": "node scripts/sync-dnd-data.js",
     "sync-dnd-advanced": "node scripts/sync-dnd-advanced.js",
@@ -13,7 +15,11 @@
     "prisma:push": "prisma db push",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
-    "prisma:seed": "node prisma/seed.js"
+    "prisma:seed": "node prisma/seed.js",
+    "migrate:routes": "node scripts/migrate-to-prisma-routes.js",
+    "test:prisma-routes": "node test-prisma-routes.js",
+    "test:prisma-simple": "node test-prisma-simple.js",
+    "rollback:routes": "node scripts/rollback-to-postgres.js"
   },
   "dependencies": {
     "express": "^4.18.2",
