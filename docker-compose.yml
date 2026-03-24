@@ -11,6 +11,11 @@ services:
       POSTGRES_DB: 2d10
     ports:
       - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U 2d10 -d 2d10"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
     volumes:
       - db_data:/var/lib/postgresql/data
     networks:
@@ -27,7 +32,8 @@ services:
     ports:
       - "5050:80"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     networks:
       - 2d10_network
 
@@ -38,6 +44,7 @@ services:
       dockerfile: Dockerfile
     container_name: 2d10_backend
     restart: always
+    command: sh -c "npm ci && npm run prisma:generate && npm run prisma:push && npx prisma db seed && npm start"
     ports:
       - "3000:3000"
     environment:
@@ -46,31 +53,33 @@ services:
       JWT_SECRET: your-super-secret-jwt-key-change-this-in-production
       JWT_EXPIRES_IN: 24h
       PORT: 3000
-      # Prisma
-      PRISMA_GENERATE_DATAPROXY: "false"
     volumes:
       - ./back:/usr/src/app
       - /usr/src/app/node_modules
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     networks:
       - 2d10_network
     profiles:
       - back
       - full
 
-  # Frontend (à venir)
+  # Frontend React (Vite)
   front:
-    build:
-      context: ./front
-      dockerfile: Dockerfile
+    image: node:20-alpine
     container_name: 2d10_frontend
     restart: always
+    working_dir: /usr/src/app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
     ports:
-      - "3001:3001"
+      - "5173:5173"
     environment:
-      REACT_APP_API_URL: http://localhost:3000
-      NODE_ENV: production
+      VITE_API_BASE_URL: http://localhost:3000
+      NODE_ENV: development
+    volumes:
+      - ./front:/usr/src/app
+      - /usr/src/app/node_modules
     depends_on:
       - back
     networks:

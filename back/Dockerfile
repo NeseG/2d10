@@ -4,6 +4,9 @@ FROM node:18-alpine
 # Définir le répertoire de travail
 WORKDIR /usr/src/app
 
+# Prisma a besoin des libs OpenSSL dans Alpine
+RUN apk add --no-cache openssl libc6-compat
+
 # Copier les fichiers package.json et package-lock.json (si ils existent)
 COPY package*.json ./
 

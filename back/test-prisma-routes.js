@@ -3,14 +3,34 @@ const request = require('supertest');
 const bcrypt = require('bcryptjs');
 const prisma = require('./lib/prisma');
 
-// Import des nouvelles routes
+// Import des routes Prisma
 const adminRoutes = require('./routes/admin-prisma');
 const authRoutes = require('./routes/auth-prisma');
+const characterRoutes = require('./routes/characters-prisma');
+const campaignRoutes = require('./routes/campaigns-prisma');
+const dndRoutes = require('./routes/dnd-prisma');
+const dndLocalRoutes = require('./routes/dnd-local-prisma');
+const itemRoutes = require('./routes/items-prisma');
+const purseRoutes = require('./routes/purse-prisma');
+const inventoryRoutes = require('./routes/inventory-prisma');
+const equipmentRoutes = require('./routes/equipment-prisma');
+const grimoireRoutes = require('./routes/grimoire-prisma');
+const sessionsRoutes = require('./routes/sessions-prisma');
 
 const app = express();
 app.use(express.json());
 app.use('/admin', adminRoutes);
 app.use('/auth', authRoutes);
+app.use('/characters', characterRoutes);
+app.use('/campaigns', campaignRoutes);
+app.use('/dnd', dndRoutes);
+app.use('/dnd-local', dndLocalRoutes);
+app.use('/items', itemRoutes);
+app.use('/purse', purseRoutes);
+app.use('/inventory', inventoryRoutes);
+app.use('/equipment', equipmentRoutes);
+app.use('/grimoire', grimoireRoutes);
+app.use('/sessions', sessionsRoutes);
 
 // Fonction pour créer des données de test
 async function setupTestData() {
@@ -22,14 +42,39 @@ async function setupTestData() {
       create: { name: 'admin' }
     });
 
+    const gmRole = await prisma.role.upsert({
+      where: { name: 'gm' },
+      update: {},
+      create: { name: 'gm' }
+    });
+
     const userRole = await prisma.role.upsert({
       where: { name: 'user' },
       update: {},
       create: { name: 'user' }
     });
 
-    console.log('✅ Rôles de test créés');
-    return { adminRole, userRole };
+    // Créer un admin de test
+    const adminHash = await bcrypt.hash('admin123', 10);
+    await prisma.user.upsert({
+      where: { email: 'admin@example.com' },
+      update: {
+        username: 'adminuser',
+        passwordHash: adminHash,
+        roleId: adminRole.id,
+        isActive: true
+      },
+      create: {
+        username: 'adminuser',
+        email: 'admin@example.com',
+        passwordHash: adminHash,
+        roleId: adminRole.id,
+        isActive: true
+      }
+    });
+
+    console.log('✅ Données de base de test créées');
+    return { adminRole, gmRole, userRole };
   } catch (error) {
     console.error('❌ Erreur lors de la création des données de test:', error);
     throw error;
@@ -39,7 +84,48 @@ async function setupTestData() {
 // Fonction pour nettoyer les données de test
 async function cleanupTestData() {
   try {
-    // Supprimer les utilisateurs de test
+    // Supprimer les données liées puis les utilisateurs de test
+    const users = await prisma.user.findMany({
+      where: { email: { in: ['test@example.com', 'admin@example.com'] } },
+      select: { id: true }
+    });
+    const userIds = users.map((u) => u.id);
+
+    const characters = await prisma.character.findMany({
+      where: { userId: { in: userIds } },
+      select: { id: true }
+    });
+    const characterIds = characters.map((c) => c.id);
+
+    await prisma.sessionAttendance.deleteMany({
+      where: { characterId: { in: characterIds } }
+    });
+    await prisma.grimoire.deleteMany({
+      where: { characterId: { in: characterIds } }
+    });
+    await prisma.equipment.deleteMany({
+      where: { characterId: { in: characterIds } }
+    });
+    await prisma.inventory.deleteMany({
+      where: { characterId: { in: characterIds } }
+    });
+    await prisma.purse.deleteMany({
+      where: { characterId: { in: characterIds } }
+    });
+    await prisma.campaignCharacter.deleteMany({
+      where: { characterId: { in: characterIds } }
+    });
+    await prisma.character.deleteMany({
+      where: { id: { in: characterIds } }
+    });
+
+    await prisma.gameSession.deleteMany({
+      where: { campaign: { gmId: { in: userIds } } }
+    });
+    await prisma.campaign.deleteMany({
+      where: { gmId: { in: userIds } }
+    });
+
     await prisma.user.deleteMany({
       where: {
         email: {
@@ -54,7 +140,7 @@ async function cleanupTestData() {
   }
 }
 
-// Tests des routes auth
+// Tests des routes auth (retourne token user + token admin)
 async function testAuthRoutes() {
   console.log('\n🔐 Test des routes d\'authentification...');
   
@@ -76,26 +162,44 @@ async function testAuthRoutes() {
       console.log('  ❌ Échec de l\'inscription:', registerResponse.body);
     }
 
-    // Test de connexion
-    console.log('  🔑 Test de connexion...');
-    const loginResponse = await request(app)
+    // Test de connexion user
+    console.log('  🔑 Test de connexion user...');
+    const userLoginResponse = await request(app)
       .post('/auth/login')
       .send({
         email: 'test@example.com',
         password: 'password123'
       });
 
-    if (loginResponse.status === 200) {
-      console.log('  ✅ Connexion réussie');
-      return loginResponse.body.token;
+    let userToken = null;
+    if (userLoginResponse.status === 200) {
+      console.log('  ✅ Connexion user réussie');
+      userToken = userLoginResponse.body.token;
     } else {
-      console.log('  ❌ Échec de la connexion:', loginResponse.body);
-      return null;
+      console.log('  ❌ Échec connexion user:', userLoginResponse.body);
     }
 
+    // Test de connexion admin
+    console.log('  🔑 Test de connexion admin...');
+    const adminLoginResponse = await request(app)
+      .post('/auth/login')
+      .send({
+        email: 'admin@example.com',
+        password: 'admin123'
+      });
+
+    let adminToken = null;
+    if (adminLoginResponse.status === 200) {
+      console.log('  ✅ Connexion admin réussie');
+      adminToken = adminLoginResponse.body.token;
+    } else {
+      console.log('  ❌ Échec connexion admin:', adminLoginResponse.body);
+    }
+
+    return { userToken, adminToken };
   } catch (error) {
     console.error('  ❌ Erreur lors des tests auth:', error);
-    return null;
+    return { userToken: null, adminToken: null };
   }
 }
 
@@ -156,6 +260,93 @@ async function testAdminRoutes(token) {
   }
 }
 
+function assertNotServerError(label, response) {
+  if (response.status >= 500) {
+    console.log(`  ❌ ${label}: statut ${response.status}`, response.body);
+    return false;
+  }
+  console.log(`  ✅ ${label}: statut ${response.status}`);
+  return true;
+}
+
+// Smoke tests des routes migrées récemment
+async function testMigratedRoutes(userToken, adminToken) {
+  console.log('\n🧪 Smoke tests des routes Prisma migrées...');
+
+  if (!userToken || !adminToken) {
+    console.log('  ❌ Tokens manquants, smoke tests ignorés');
+    return;
+  }
+
+  // Créer un personnage de test pour les routes characterId
+  const testUser = await prisma.user.findUnique({
+    where: { email: 'test@example.com' },
+    select: { id: true }
+  });
+
+  const testCharacter = await prisma.character.create({
+    data: {
+      userId: testUser.id,
+      name: 'Smoke Character',
+      race: 'Human',
+      class: 'Wizard',
+      level: 1,
+      hitPoints: 10,
+      armorClass: 10,
+      strength: 10,
+      dexterity: 10,
+      constitution: 10,
+      intelligence: 10,
+      wisdom: 10,
+      charisma: 10
+    }
+  });
+
+  const characterId = testCharacter.id;
+
+  // DND / DND local
+  assertNotServerError(
+    'GET /dnd/info',
+    await request(app).get('/dnd/info').set('Authorization', `Bearer ${userToken}`)
+  );
+  assertNotServerError(
+    'GET /dnd-local/spells',
+    await request(app).get('/dnd-local/spells').set('Authorization', `Bearer ${userToken}`)
+  );
+
+  // Items / purse / inventory / equipment / grimoire
+  assertNotServerError(
+    'GET /items',
+    await request(app).get('/items').set('Authorization', `Bearer ${userToken}`)
+  );
+  assertNotServerError(
+    'GET /purse/:characterId',
+    await request(app).get(`/purse/${characterId}`).set('Authorization', `Bearer ${userToken}`)
+  );
+  assertNotServerError(
+    'GET /inventory/:characterId',
+    await request(app).get(`/inventory/${characterId}`).set('Authorization', `Bearer ${userToken}`)
+  );
+  assertNotServerError(
+    'GET /equipment/:characterId',
+    await request(app).get(`/equipment/${characterId}`).set('Authorization', `Bearer ${userToken}`)
+  );
+  assertNotServerError(
+    'GET /grimoire/:characterId',
+    await request(app).get(`/grimoire/${characterId}`).set('Authorization', `Bearer ${userToken}`)
+  );
+
+  // Campaigns / sessions
+  assertNotServerError(
+    'GET /campaigns (admin)',
+    await request(app).get('/campaigns').set('Authorization', `Bearer ${adminToken}`)
+  );
+  assertNotServerError(
+    'GET /sessions/stats/overview (admin)',
+    await request(app).get('/sessions/stats/overview').set('Authorization', `Bearer ${adminToken}`)
+  );
+}
+
 // Fonction principale de test
 async function runTests() {
   console.log('🚀 Démarrage des tests des routes Prisma...\n');
@@ -165,10 +356,13 @@ async function runTests() {
     await setupTestData();
     
     // Tests des routes auth
-    const token = await testAuthRoutes();
+    const { userToken, adminToken } = await testAuthRoutes();
     
     // Tests des routes admin
-    await testAdminRoutes(token);
+    await testAdminRoutes(adminToken);
+
+    // Smoke tests routes récemment migrées
+    await testMigratedRoutes(userToken, adminToken);
     
     console.log('\n✅ Tests terminés !');
     

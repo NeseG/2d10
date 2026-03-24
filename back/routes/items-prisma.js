@@ -1,19 +1,16 @@
 const express = require('express');
-const { Pool } = require('pg');
+const prisma = require('../lib/prisma');
 const { authenticateToken, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
 
 // Obtenir tous les types d'objets
 router.get('/types', authenticateToken, async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM item_types ORDER BY name');
-    
+    const itemTypes = await prisma.$queryRawUnsafe('SELECT * FROM item_types ORDER BY name');
+
     res.json({
-      item_types: result.rows
+      item_types: itemTypes,
     });
   } catch (error) {
     console.error('Erreur lors de la récupération des types d\'objets:', error);
@@ -25,7 +22,7 @@ router.get('/types', authenticateToken, async (req, res) => {
 router.get('/', authenticateToken, async (req, res) => {
   try {
     const { type, rarity, search, magical } = req.query;
-    
+
     let query = `
       SELECT i.*, it.name as item_type
       FROM items i
@@ -33,38 +30,33 @@ router.get('/', authenticateToken, async (req, res) => {
       WHERE 1=1
     `;
     const values = [];
-    let paramCount = 1;
 
     if (type) {
-      query += ` AND it.name ILIKE $${paramCount}`;
       values.push(`%${type}%`);
-      paramCount++;
+      query += ` AND it.name ILIKE $${values.length}`;
     }
 
     if (rarity) {
-      query += ` AND i.rarity = $${paramCount}`;
       values.push(rarity);
-      paramCount++;
+      query += ` AND i.rarity = $${values.length}`;
     }
 
     if (magical !== undefined) {
-      query += ` AND i.is_magical = $${paramCount}`;
       values.push(magical === 'true');
-      paramCount++;
+      query += ` AND i.is_magical = $${values.length}`;
     }
 
     if (search) {
-      query += ` AND (i.name ILIKE $${paramCount} OR i.description ILIKE $${paramCount + 1})`;
-      values.push(`%${search}%`, `%${search}%`);
-      paramCount += 2;
+      values.push(`%${search}%`);
+      query += ` AND (i.name ILIKE $${values.length} OR i.description ILIKE $${values.length})`;
     }
 
-    query += ` ORDER BY i.name ASC`;
+    query += ' ORDER BY i.name ASC';
 
-    const result = await pool.query(query, values);
+    const items = await prisma.$queryRawUnsafe(query, ...values);
 
     res.json({
-      items: result.rows
+      items,
     });
   } catch (error) {
     console.error('Erreur lors de la récupération des objets:', error);
@@ -75,21 +67,27 @@ router.get('/', authenticateToken, async (req, res) => {
 // Obtenir un objet par ID
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) {
+      return res.status(400).json({ error: 'ID invalide' });
+    }
 
-    const result = await pool.query(`
+    const items = await prisma.$queryRawUnsafe(
+      `
       SELECT i.*, it.name as item_type
       FROM items i
       JOIN item_types it ON i.item_type_id = it.id
       WHERE i.id = $1
-    `, [id]);
+      `,
+      id,
+    );
 
-    if (result.rows.length === 0) {
+    if (items.length === 0) {
       return res.status(404).json({ error: 'Objet non trouvé' });
     }
 
     res.json({
-      item: result.rows[0]
+      item: items[0],
     });
   } catch (error) {
     console.error('Erreur lors de la récupération de l\'objet:', error);
@@ -108,28 +106,37 @@ router.post('/', authenticateToken, requireRole(['admin', 'gm']), async (req, re
       value_gold = 0,
       rarity = 'common',
       is_magical = false,
-      properties
+      properties,
     } = req.body;
 
     if (!name || !item_type_id) {
       return res.status(400).json({ error: 'Nom et type d\'objet requis' });
     }
 
-    // Vérifier que le type d'objet existe
-    const typeResult = await pool.query('SELECT id FROM item_types WHERE id = $1', [item_type_id]);
-    if (typeResult.rows.length === 0) {
+    const typeRows = await prisma.$queryRawUnsafe('SELECT id FROM item_types WHERE id = $1', item_type_id);
+    if (typeRows.length === 0) {
       return res.status(400).json({ error: 'Type d\'objet invalide' });
     }
 
-    const result = await pool.query(`
+    const created = await prisma.$queryRawUnsafe(
+      `
       INSERT INTO items (name, description, item_type_id, weight, value_gold, rarity, is_magical, properties)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING *
-    `, [name, description, item_type_id, weight, value_gold, rarity, is_magical, properties]);
+      `,
+      name,
+      description,
+      item_type_id,
+      weight,
+      value_gold,
+      rarity,
+      is_magical,
+      properties,
+    );
 
     res.status(201).json({
       message: 'Objet créé avec succès',
-      item: result.rows[0]
+      item: created[0],
     });
   } catch (error) {
     console.error('Erreur lors de la création de l\'objet:', error);
@@ -140,7 +147,11 @@ router.post('/', authenticateToken, requireRole(['admin', 'gm']), async (req, re
 // Mettre à jour un objet (Admin/GM seulement)
 router.put('/:id', authenticateToken, requireRole(['admin', 'gm']), async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) {
+      return res.status(400).json({ error: 'ID invalide' });
+    }
+
     const {
       name,
       description,
@@ -149,65 +160,47 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'gm']), async (req, 
       value_gold,
       rarity,
       is_magical,
-      properties
+      properties,
     } = req.body;
 
     const updates = [];
     const values = [];
-    let paramCount = 1;
 
     if (name !== undefined) {
-      updates.push(`name = $${paramCount}`);
       values.push(name);
-      paramCount++;
+      updates.push(`name = $${values.length}`);
     }
-
     if (description !== undefined) {
-      updates.push(`description = $${paramCount}`);
       values.push(description);
-      paramCount++;
+      updates.push(`description = $${values.length}`);
     }
-
     if (item_type_id !== undefined) {
-      // Vérifier que le type d'objet existe
-      const typeResult = await pool.query('SELECT id FROM item_types WHERE id = $1', [item_type_id]);
-      if (typeResult.rows.length === 0) {
+      const typeRows = await prisma.$queryRawUnsafe('SELECT id FROM item_types WHERE id = $1', item_type_id);
+      if (typeRows.length === 0) {
         return res.status(400).json({ error: 'Type d\'objet invalide' });
       }
-      
-      updates.push(`item_type_id = $${paramCount}`);
       values.push(item_type_id);
-      paramCount++;
+      updates.push(`item_type_id = $${values.length}`);
     }
-
     if (weight !== undefined) {
-      updates.push(`weight = $${paramCount}`);
       values.push(weight);
-      paramCount++;
+      updates.push(`weight = $${values.length}`);
     }
-
     if (value_gold !== undefined) {
-      updates.push(`value_gold = $${paramCount}`);
       values.push(value_gold);
-      paramCount++;
+      updates.push(`value_gold = $${values.length}`);
     }
-
     if (rarity !== undefined) {
-      updates.push(`rarity = $${paramCount}`);
       values.push(rarity);
-      paramCount++;
+      updates.push(`rarity = $${values.length}`);
     }
-
     if (is_magical !== undefined) {
-      updates.push(`is_magical = $${paramCount}`);
       values.push(is_magical);
-      paramCount++;
+      updates.push(`is_magical = $${values.length}`);
     }
-
     if (properties !== undefined) {
-      updates.push(`properties = $${paramCount}`);
       values.push(properties);
-      paramCount++;
+      updates.push(`properties = $${values.length}`);
     }
 
     if (updates.length === 0) {
@@ -215,21 +208,23 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'gm']), async (req, 
     }
 
     values.push(id);
-
-    const result = await pool.query(`
-      UPDATE items 
-      SET ${updates.join(', ')} 
-      WHERE id = $${paramCount}
+    const updated = await prisma.$queryRawUnsafe(
+      `
+      UPDATE items
+      SET ${updates.join(', ')}
+      WHERE id = $${values.length}
       RETURNING *
-    `, values);
+      `,
+      ...values,
+    );
 
-    if (result.rows.length === 0) {
+    if (updated.length === 0) {
       return res.status(404).json({ error: 'Objet non trouvé' });
     }
 
     res.json({
       message: 'Objet mis à jour avec succès',
-      item: result.rows[0]
+      item: updated[0],
     });
   } catch (error) {
     console.error('Erreur lors de la mise à jour de l\'objet:', error);
@@ -240,28 +235,29 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'gm']), async (req, 
 // Supprimer un objet (Admin seulement)
 router.delete('/:id', authenticateToken, requireRole(['admin']), async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) {
+      return res.status(400).json({ error: 'ID invalide' });
+    }
 
-    // Vérifier si l'objet est utilisé dans des inventaires
-    const usageResult = await pool.query(
+    const usageRows = await prisma.$queryRawUnsafe(
       'SELECT COUNT(*) as count FROM character_inventory WHERE item_id = $1',
-      [id]
+      id,
     );
 
-    if (parseInt(usageResult.rows[0].count) > 0) {
-      return res.status(400).json({ 
-        error: 'Impossible de supprimer cet objet car il est utilisé dans des inventaires' 
+    if (parseInt(usageRows[0].count, 10) > 0) {
+      return res.status(400).json({
+        error: 'Impossible de supprimer cet objet car il est utilisé dans des inventaires',
       });
     }
 
-    const result = await pool.query('DELETE FROM items WHERE id = $1 RETURNING name', [id]);
-
-    if (result.rows.length === 0) {
+    const deleted = await prisma.$queryRawUnsafe('DELETE FROM items WHERE id = $1 RETURNING name', id);
+    if (deleted.length === 0) {
       return res.status(404).json({ error: 'Objet non trouvé' });
     }
 
     res.json({
-      message: `Objet "${result.rows[0].name}" supprimé avec succès`
+      message: `Objet "${deleted[0].name}" supprimé avec succès`,
     });
   } catch (error) {
     console.error('Erreur lors de la suppression de l\'objet:', error);
@@ -273,23 +269,26 @@ router.delete('/:id', authenticateToken, requireRole(['admin']), async (req, res
 router.post('/types', authenticateToken, requireRole(['admin']), async (req, res) => {
   try {
     const { name, description } = req.body;
-
     if (!name) {
       return res.status(400).json({ error: 'Nom du type d\'objet requis' });
     }
 
-    const result = await pool.query(`
+    const created = await prisma.$queryRawUnsafe(
+      `
       INSERT INTO item_types (name, description)
       VALUES ($1, $2)
       RETURNING *
-    `, [name, description]);
+      `,
+      name,
+      description,
+    );
 
     res.status(201).json({
       message: 'Type d\'objet créé avec succès',
-      item_type: result.rows[0]
+      item_type: created[0],
     });
   } catch (error) {
-    if (error.code === '23505') { // Unique constraint violation
+    if (error.code === '23505') {
       return res.status(400).json({ error: 'Un type d\'objet avec ce nom existe déjà' });
     }
     console.error('Erreur lors de la création du type d\'objet:', error);

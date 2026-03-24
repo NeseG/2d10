@@ -1,10 +1,6 @@
 const jwt = require('jsonwebtoken');
-const { Pool } = require('pg');
 const config = require('../config');
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
+const prisma = require('../lib/prisma');
 
 // Middleware pour vérifier le token JWT
 const authenticateToken = async (req, res, next) => {
@@ -18,17 +14,32 @@ const authenticateToken = async (req, res, next) => {
   try {
     const decoded = jwt.verify(token, config.jwtSecret);
     
-    // Vérifier que l'utilisateur existe toujours en base
-    const result = await pool.query(
-      'SELECT u.*, r.name as role_name FROM users u JOIN roles r ON u.role_id = r.id WHERE u.id = $1 AND u.is_active = true',
-      [decoded.userId]
-    );
+    // Vérifier que l'utilisateur existe toujours en base via Prisma
+    const user = await prisma.user.findFirst({
+      where: {
+        id: decoded.userId,
+        isActive: true
+      },
+      include: {
+        role: true
+      }
+    });
 
-    if (result.rows.length === 0) {
+    if (!user) {
       return res.status(401).json({ error: 'Utilisateur non trouvé ou inactif' });
     }
 
-    req.user = result.rows[0];
+    // Garder un format compatible avec les routes existantes
+    req.user = {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      role_id: user.roleId,
+      role_name: user.role.name,
+      is_active: user.isActive,
+      created_at: user.createdAt,
+      updated_at: user.updatedAt
+    };
     next();
   } catch (error) {
     return res.status(403).json({ error: 'Token invalide' });
@@ -67,13 +78,16 @@ const checkCharacterOwnership = async (req, res, next) => {
       return next();
     }
 
-    // Vérifier que le personnage appartient à l'utilisateur
-    const result = await pool.query(
-      'SELECT id FROM characters WHERE id = $1 AND user_id = $2',
-      [characterId, userId]
-    );
+    // Vérifier que le personnage appartient à l'utilisateur via Prisma
+    const character = await prisma.character.findFirst({
+      where: {
+        id: parseInt(characterId, 10),
+        userId
+      },
+      select: { id: true }
+    });
 
-    if (result.rows.length === 0) {
+    if (!character) {
       return res.status(403).json({ 
         error: 'Accès refusé. Ce personnage ne vous appartient pas.' 
       });
