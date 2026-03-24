@@ -171,6 +171,10 @@ model Campaign {
   maxPlayers    Int      @default(4)
   currentPlayers Int     @default(0)
   status        String   @default("active")
+  startDate     DateTime?
+  endDate       DateTime?
+  notes         String?
+  isActive      Boolean  @default(true)
   characters    CampaignCharacter[]
   sessions      GameSession[]
   createdAt     DateTime @default(now())
@@ -209,6 +213,9 @@ model CampaignCharacter {
   campaign    Campaign @relation(fields: [campaignId], references: [id])
   characterId Int
   character   Character @relation(fields: [characterId], references: [id])
+  joinedAt    DateTime @default(now())
+  leftAt      DateTime?
+  status      String   @default("active")
   notes       String?
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())

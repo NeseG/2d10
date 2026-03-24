@@ -7,15 +7,15 @@ const prisma = require('./lib/prisma');
 const authRoutes = require('./routes/auth-prisma');
 const adminRoutes = require('./routes/admin-prisma');
 const characterRoutes = require('./routes/characters-prisma');
-const inventoryRoutes = require('./routes/inventory');
-const itemRoutes = require('./routes/items');
-const equipmentRoutes = require('./routes/equipment');
-const dndRoutes = require('./routes/dnd');
-const dndLocalRoutes = require('./routes/dnd-local');
-const purseRoutes = require('./routes/purse');
-const campaignRoutes = require('./routes/campaigns');
-const grimoireRoutes = require('./routes/grimoire');
-// const sessionRoutes = require('./routes/sessions');
+const inventoryRoutes = require('./routes/inventory-prisma');
+const itemRoutes = require('./routes/items-prisma');
+const equipmentRoutes = require('./routes/equipment-prisma');
+const dndRoutes = require('./routes/dnd-prisma');
+const dndLocalRoutes = require('./routes/dnd-local-prisma');
+const purseRoutes = require('./routes/purse-prisma');
+const campaignRoutes = require('./routes/campaigns-prisma');
+const grimoireRoutes = require('./routes/grimoire-prisma');
+const sessionRoutes = require('./routes/sessions-prisma');
 
 const app = express();
 const port = config.port;
@@ -54,7 +54,7 @@ app.use('/api/dnd-local', dndLocalRoutes);
 app.use('/api/purse', purseRoutes);
 app.use('/api/campaigns', campaignRoutes);
 app.use('/api/grimoire', grimoireRoutes);
-// app.use('/api/sessions', sessionRoutes);
+app.use('/api/sessions', sessionRoutes);
 
 // Route de test
 app.get('/', (req, res) => {

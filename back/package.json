@@ -4,9 +4,9 @@
   "description": "2d10 Node.js Application",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
+    "start": "node index-prisma.js",
     "start:prisma": "node index-prisma.js",
-    "dev": "nodemon index.js",
+    "dev": "nodemon index-prisma.js",
     "dev:prisma": "nodemon index-prisma.js",
     "sync-dnd": "node scripts/sync-dnd-simple.js",
     "sync-dnd-full": "node scripts/sync-dnd-data.js",
@@ -16,21 +16,23 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "prisma:seed": "node prisma/seed.js",
-    "migrate:routes": "node scripts/migrate-to-prisma-routes.js",
     "test:prisma-routes": "node test-prisma-routes.js",
     "test:prisma-simple": "node test-prisma-simple.js",
     "rollback:routes": "node scripts/rollback-to-postgres.js"
   },
+  "prisma": {
+    "seed": "node prisma/seed.js"
+  },
   "dependencies": {
-    "express": "^4.18.2",
-    "pg": "^8.11.3",
+    "@prisma/client": "5.7.0",
+    "axios": "^1.6.0",
     "bcryptjs": "^2.4.3",
-    "jsonwebtoken": "^9.0.2",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
-    "axios": "^1.6.0",
-    "prisma": "^5.7.0",
-    "@prisma/client": "^5.7.0"
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.11.3",
+    "prisma": "5.7.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
