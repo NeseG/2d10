@@ -42,6 +42,7 @@
 - [CRUD Campagnes](#gestion-des-campagnes)
 - [Personnages de campagne](#personnages-de-campagne)
 - [Sessions de jeu](#sessions-de-jeu)
+- [Chat de session live](#chat-de-session-live)
 - [Statistiques des campagnes](#statistiques-des-campagnes)
 
 ### 🎲 Données D&D 5e importées (`/api/dnd5e`)
@@ -726,6 +727,53 @@ Content-Type: application/json
 ```
 
 Le personnage doit déjà être rattaché à la campagne de la session.
+
+### Chat de session live
+
+Historique HTTP et diffusion en temps réel via WebSocket (`session_chat`). Les participants autorisés (même périmètre que la session live) peuvent lire et poster.
+
+**Liste des messages**
+
+```
+GET /api/sessions/:sessionId/chat/messages?limit=50&before_id=<optionnel>
+Authorization: Bearer <token>
+```
+
+Réponse : `{ "success": true, "messages": [ ... ] }`. Chaque message contient `id`, `user_id`, `display_name`, `body`, `created_at`, et éventuellement **`image_url`** (chemin relatif API vers la pièce jointe) si une image est associée.
+
+**Message texte**
+
+```
+POST /api/sessions/:sessionId/chat/messages
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{ "body": "Texte du message" }
+```
+
+Corps obligatoire, 2000 caractères maximum.
+
+**Message avec image**
+
+```
+POST /api/sessions/:sessionId/chat/messages/upload
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+```
+
+- Champ fichier : **`image`** (JPEG, PNG, GIF ou WebP, 5 Mo max).
+- Champ optionnel : **`body`** (légende, 2000 caractères max).
+
+Réponse `201` : `{ "success": true, "message": { ... } }` avec `image_url` renseigné.
+
+**Téléchargement / affichage d’une image**
+
+```
+GET /api/sessions/:sessionId/chat/attachments/:filename
+Authorization: Bearer <token>
+```
+
+Le client doit envoyer le JWT (par exemple requête `fetch` avec en-tête `Authorization`) : un simple `<img src="...">` sans en-tête ne fonctionnera pas.
 
 ### État de jeu en session (PV, dés de vie) — joueur, MJ de la campagne ou admin
 

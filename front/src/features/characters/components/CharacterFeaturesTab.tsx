@@ -3,7 +3,7 @@ import type { FormEvent } from 'react'
 import { apiDelete, apiGet, apiPost, apiPut } from '../../../shared/api/client'
 import { useSnackbar } from '../../../app/hooks/useSnackbar'
 
-type FeatureCategory =
+export type FeatureCategory =
   | 'CLASS_FEATURE'
   | 'RACIAL_TRAIT'
   | 'FEAT'
@@ -18,7 +18,7 @@ type CharacterFeature = {
   description?: string | null
 }
 
-const CATEGORY_LABELS: Array<{ value: FeatureCategory; label: string }> = [
+export const CATEGORY_LABELS: Array<{ value: FeatureCategory; label: string }> = [
   { value: 'CLASS_FEATURE', label: 'Capacité de classe' },
   { value: 'RACIAL_TRAIT', label: 'Traits raciaux' },
   { value: 'FEAT', label: 'Dons' },
@@ -26,8 +26,25 @@ const CATEGORY_LABELS: Array<{ value: FeatureCategory; label: string }> = [
   { value: 'OTHER_PROFICIENCIES_AND_LANGUAGES', label: 'Autres maîtrises et langues' },
 ]
 
-export function CharacterFeaturesTab(props: { characterId: string; token: string }) {
-  const { characterId, token } = props
+export type SessionLiveTraitsAccordionState = Record<FeatureCategory, boolean>
+
+export const DEFAULT_SESSION_LIVE_TRAITS_ACCORDIONS: SessionLiveTraitsAccordionState = {
+  CLASS_FEATURE: true,
+  RACIAL_TRAIT: true,
+  FEAT: true,
+  PERSONALITY_AND_BACKGROUND: true,
+  OTHER_PROFICIENCIES_AND_LANGUAGES: true,
+}
+
+export function CharacterFeaturesTab(props: {
+  characterId: string
+  token: string
+  sessionView?: boolean
+  sessionTraitsAccordions?: SessionLiveTraitsAccordionState
+  onSessionTraitsAccordionsChange?: (patch: Partial<SessionLiveTraitsAccordionState>) => void
+}) {
+  const { characterId, token, sessionView = false } = props
+  const { sessionTraitsAccordions, onSessionTraitsAccordionsChange } = props
   const { showSnackbar } = useSnackbar()
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -37,11 +54,26 @@ export function CharacterFeaturesTab(props: { characterId: string; token: string
 
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
+  const [isFeatureDetailsOpen, setIsFeatureDetailsOpen] = useState(false)
+  const [selectedFeature, setSelectedFeature] = useState<CharacterFeature | null>(null)
+  const [fallbackSessionTraitsAccordions, setFallbackSessionTraitsAccordions] =
+    useState<SessionLiveTraitsAccordionState>(DEFAULT_SESSION_LIVE_TRAITS_ACCORDIONS)
   const [form, setForm] = useState<{ category: FeatureCategory; name: string; description: string }>(() => ({
     category: 'CLASS_FEATURE',
     name: '',
     description: '',
   }))
+
+  const effectiveSessionTraitsAccordions =
+    sessionTraitsAccordions !== undefined ? sessionTraitsAccordions : fallbackSessionTraitsAccordions
+
+  function patchTraitsAccordions(patch: Partial<SessionLiveTraitsAccordionState>) {
+    if (onSessionTraitsAccordionsChange) {
+      onSessionTraitsAccordionsChange(patch)
+    } else {
+      setFallbackSessionTraitsAccordions((prev) => ({ ...prev, ...patch }))
+    }
+  }
 
   async function loadFeatures() {
     if (!characterId) return
@@ -110,6 +142,11 @@ export function CharacterFeaturesTab(props: { characterId: string; token: string
       description: feature.description ?? '',
     })
     setIsModalOpen(true)
+  }
+
+  function openFeatureDetails(feature: CharacterFeature) {
+    setSelectedFeature(feature)
+    setIsFeatureDetailsOpen(true)
   }
 
   async function saveInline(feature: CharacterFeature) {
@@ -211,145 +248,174 @@ export function CharacterFeaturesTab(props: { characterId: string; token: string
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
-        <button className="btn" type="button" onClick={openCreate}>
-          Ajouter
-        </button>
-      </div>
+      {!sessionView ? (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
+          <button className="btn" type="button" onClick={openCreate}>
+            Ajouter
+          </button>
+        </div>
+      ) : null}
 
       {loading ? <p>Chargement…</p> : null}
 
       {CATEGORY_LABELS.map((cat) => {
         const items = grouped.get(cat.value) ?? []
+        const isOpen = sessionView ? Boolean(effectiveSessionTraitsAccordions[cat.value]) : true
         return (
-          <div key={cat.value} style={{ marginBottom: '1rem' }}>
-            <h4 style={{ marginBottom: '0.25rem' }}>{cat.label}</h4>
-            {items.length === 0 ? (
-              <p style={{ color: 'var(--muted)' }}>Aucun élément.</p>
-            ) : (
-              <>
-                {/* Desktop/tablet: table */}
-                <div className="table-wrap character-features-table-wrap">
-                  <table className="table inventory-items-table character-features-table">
-                    <thead>
-                      <tr>
-                        <th>Nom</th>
-                        <th>Description</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {items.map((feature) => (
-                        <tr key={feature.id}>
-                          <td data-label="Nom">{feature.name}</td>
-                          <td data-label="Description">
-                            <div className="feature-desc">{feature.description?.trim() ? feature.description : '—'}</div>
-                          </td>
-                          <td data-label="Actions">
-                            <div className="feature-actions">
-                              <button className="btn btn-secondary btn-small" type="button" onClick={() => openEdit(feature)}>
-                                Éditer
-                              </button>
-                              <button
-                                className="btn btn-secondary btn-small"
-                                type="button"
-                                disabled={saving}
-                                onClick={() => void handleDelete(feature)}
-                              >
-                                Supprimer
-                              </button>
-                            </div>
-                          </td>
+          <details
+            key={cat.value}
+            className="character-skills-accordion"
+            open={isOpen}
+            onToggle={(e) => {
+              if (!sessionView) return
+              patchTraitsAccordions({ [cat.value]: e.currentTarget.open } as Partial<SessionLiveTraitsAccordionState>)
+            }}
+          >
+            <summary className="character-skills-accordion-summary">{cat.label}</summary>
+            <div className="character-skills-accordion-panel">
+              {items.length === 0 ? (
+                <p style={{ color: 'var(--muted)', margin: 0 }}>Aucun élément.</p>
+              ) : (
+                <>
+                  {/* Table (même comportement que l’inventaire : scroll horizontal si besoin) */}
+                  <div className="table-wrap inventory-table-wrap character-features-table-wrap">
+                    <table className="table inventory-items-table character-features-table">
+                      <thead>
+                        <tr>
+                          <th>Nom</th>
+                          <th>Description</th>
+                          {!sessionView ? <th></th> : null}
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {items.map((feature) => (
+                          <tr key={feature.id} className="clickable-row" onClick={() => openFeatureDetails(feature)}>
+                            <td data-label="Nom">{feature.name}</td>
+                            <td data-label="Description">
+                              <div className="feature-desc">
+                                {feature.description?.trim() ? feature.description : '—'}
+                              </div>
+                            </td>
+                            {!sessionView ? (
+                              <td data-label="Actions">
+                                <div className="feature-actions">
+                                  <button
+                                    className="btn btn-secondary btn-small"
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      openEdit(feature)
+                                    }}
+                                  >
+                                    Éditer
+                                  </button>
+                                  <button
+                                    className="btn btn-secondary btn-small"
+                                    type="button"
+                                    disabled={saving}
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      void handleDelete(feature)
+                                    }}
+                                  >
+                                    Supprimer
+                                  </button>
+                                </div>
+                              </td>
+                            ) : null}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
 
-                {/* Mobile: cards */}
-                <div className="feature-cards">
-                  {items.map((feature) => (
-                    <div key={feature.id} className="feature-card">
-                      <div className="feature-card-title">
-                        <select
-                          className="feature-card-select"
-                          value={draftById[feature.id]?.category ?? feature.category}
-                          disabled={Boolean(savingById[feature.id])}
-                          onChange={(event) =>
-                            setDraftById((p) => ({
-                              ...p,
-                              [feature.id]: {
-                                category: event.target.value as FeatureCategory,
-                                name: p[feature.id]?.name ?? feature.name ?? '',
-                                description: p[feature.id]?.description ?? feature.description ?? '',
-                              },
-                            }))
-                          }
-                          onBlur={() => void saveInline(feature)}
-                        >
-                          {CATEGORY_LABELS.map((c) => (
-                            <option key={c.value} value={c.value}>
-                              {c.label}
-                            </option>
-                          ))}
-                        </select>
-                        <input
-                          className="feature-card-input"
-                          type="text"
-                          value={draftById[feature.id]?.name ?? feature.name ?? ''}
+                  {/* Mobile: cards */}
+                  <div className="feature-cards">
+                    {items.map((feature) => (
+                      <div key={feature.id} className="feature-card">
+                        <div className="feature-card-title">
+                          <select
+                            className="feature-card-select"
+                            value={draftById[feature.id]?.category ?? feature.category}
+                            disabled={Boolean(savingById[feature.id])}
+                            onChange={(event) =>
+                              setDraftById((p) => ({
+                                ...p,
+                                [feature.id]: {
+                                  category: event.target.value as FeatureCategory,
+                                  name: p[feature.id]?.name ?? feature.name ?? '',
+                                  description: p[feature.id]?.description ?? feature.description ?? '',
+                                },
+                              }))
+                            }
+                            onBlur={() => void saveInline(feature)}
+                          >
+                            {CATEGORY_LABELS.map((c) => (
+                              <option key={c.value} value={c.value}>
+                                {c.label}
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            className="feature-card-input"
+                            type="text"
+                            value={draftById[feature.id]?.name ?? feature.name ?? ''}
+                            disabled={Boolean(savingById[feature.id])}
+                            onChange={(event) =>
+                              setDraftById((p) => ({
+                                ...p,
+                                [feature.id]: {
+                                  category: p[feature.id]?.category ?? feature.category,
+                                  name: event.target.value,
+                                  description: p[feature.id]?.description ?? feature.description ?? '',
+                                },
+                              }))
+                            }
+                            onBlur={() => void saveInline(feature)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') {
+                                ;(event.target as HTMLInputElement).blur()
+                              }
+                            }}
+                          />
+                        </div>
+                        <textarea
+                          className="feature-card-textarea"
+                          rows={4}
+                          value={draftById[feature.id]?.description ?? feature.description ?? ''}
                           disabled={Boolean(savingById[feature.id])}
                           onChange={(event) =>
                             setDraftById((p) => ({
                               ...p,
                               [feature.id]: {
                                 category: p[feature.id]?.category ?? feature.category,
-                                name: event.target.value,
-                                description: p[feature.id]?.description ?? feature.description ?? '',
+                                name: p[feature.id]?.name ?? feature.name ?? '',
+                                description: event.target.value,
                               },
                             }))
                           }
                           onBlur={() => void saveInline(feature)}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter') {
-                              ;(event.target as HTMLInputElement).blur()
-                            }
-                          }}
                         />
+                        {savingById[feature.id] ? (
+                          <p style={{ color: 'var(--muted)', margin: '0.25rem 0 0' }}>Sauvegarde…</p>
+                        ) : null}
+                        <div className="feature-card-actions">
+                          <button
+                            className="btn btn-secondary btn-small"
+                            type="button"
+                            disabled={saving}
+                            onClick={() => void handleDelete(feature)}
+                          >
+                            Supprimer
+                          </button>
+                        </div>
                       </div>
-                      <textarea
-                        className="feature-card-textarea"
-                        rows={4}
-                        value={draftById[feature.id]?.description ?? feature.description ?? ''}
-                        disabled={Boolean(savingById[feature.id])}
-                        onChange={(event) =>
-                          setDraftById((p) => ({
-                            ...p,
-                            [feature.id]: {
-                              category: p[feature.id]?.category ?? feature.category,
-                              name: p[feature.id]?.name ?? feature.name ?? '',
-                              description: event.target.value,
-                            },
-                          }))
-                        }
-                        onBlur={() => void saveInline(feature)}
-                      />
-                      {savingById[feature.id] ? <p style={{ color: 'var(--muted)', margin: '0.25rem 0 0' }}>Sauvegarde…</p> : null}
-                      <div className="feature-card-actions">
-                        <button
-                          className="btn btn-secondary btn-small"
-                          type="button"
-                          disabled={saving}
-                          onClick={() => void handleDelete(feature)}
-                        >
-                          Supprimer
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          </details>
         )
       })}
 
@@ -400,6 +466,33 @@ export function CharacterFeaturesTab(props: { characterId: string; token: string
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      ) : null}
+
+      {isFeatureDetailsOpen && selectedFeature ? (
+        <div className="modal-backdrop" onClick={() => setIsFeatureDetailsOpen(false)}>
+          <div className="modal-card" onClick={(event) => event.stopPropagation()}>
+            <div className="item-details-header">
+              <span className="item-details-header-name">{selectedFeature.name}</span>
+              <div className="item-details-header-meta">
+                <span className="item-details-header-type">
+                  {CATEGORY_LABELS.find((c) => c.value === selectedFeature.category)?.label ?? selectedFeature.category}
+                </span>
+              </div>
+            </div>
+
+            <div className="item-details">
+              <p>
+                <strong>Description</strong> {selectedFeature.description?.trim() ? selectedFeature.description : '—'}
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+              <button className="btn btn-secondary" type="button" onClick={() => setIsFeatureDetailsOpen(false)}>
+                Fermer
+              </button>
+            </div>
           </div>
         </div>
       ) : null}

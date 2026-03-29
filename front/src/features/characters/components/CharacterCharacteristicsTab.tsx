@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSnackbar } from '../../../app/hooks/useSnackbar'
 import { apiGet, apiPut } from '../../../shared/api/client'
+import { ItemDetailsModal, type ItemDetail } from '../../inventory/components/ItemDetailsModal'
 
 const DND_5E_RACES = [
   'Humain',
@@ -266,6 +267,7 @@ type InventoryLineForSession = {
   category?: string | null
   is_equipped?: boolean
   properties?: unknown
+  quantity?: number
 }
 
 type SessionEquippedWeaponRow = {
@@ -274,28 +276,6 @@ type SessionEquippedWeaponRow = {
   name: string
   damage: string
   propertiesLabel: string
-}
-
-type ItemDetail = {
-  id: number
-  index?: string
-  name: string
-  type?: string
-  category?: string | null
-  subcategory?: string | null
-  cost?: string | null
-  weight?: number | null
-  description?: string | null
-  damage?: string | null
-  damageType?: string | null
-  range?: string | null
-  armorClass?: number | null
-  stealthDisadvantage?: boolean | null
-  properties?: unknown
-  raw?: unknown
-  isActive?: boolean
-  createdAt?: string | null
-  updatedAt?: string | null
 }
 
 function isEquippedWeaponRow(row: InventoryLineForSession): boolean {
@@ -313,6 +293,21 @@ function isEquippedNonWeaponRow(row: InventoryLineForSession): boolean {
   return t !== 'weapon'
 }
 
+function isConsumableRow(row: InventoryLineForSession): boolean {
+  const t = String(row.type || '')
+    .trim()
+    .toLowerCase()
+  return t === 'consumable' || t === 'ammunition'
+}
+
+type SessionConsumableRow = {
+  id: number
+  item_id: number | null
+  name: string
+  quantity: number
+  categoryLabel: string
+}
+
 type SessionEquippedOtherRow = {
   id: number
   item_id: number | null
@@ -321,14 +316,39 @@ type SessionEquippedOtherRow = {
   categoryLabel: string
 }
 
+/** Accordéons session live (souvent pilotés par la page pour survivre aux changements d’onglet). */
+export type SessionLiveAccordionState = {
+  skills: boolean
+  weapons: boolean
+  consumables: boolean
+  items: boolean
+}
+
+export const DEFAULT_SESSION_LIVE_ACCORDIONS: SessionLiveAccordionState = {
+  skills: false,
+  weapons: true,
+  consumables: true,
+  items: true,
+}
+
 export function CharacterCharacteristicsTab(props: {
   characterId: string
   token: string
   onNameLoaded?: (name: string) => void
   sessionView?: boolean
   sessionId?: string
+  sessionLiveAccordions?: SessionLiveAccordionState
+  onSessionLiveAccordionsChange?: (patch: Partial<SessionLiveAccordionState>) => void
 }) {
-  const { characterId, token, onNameLoaded, sessionView = false, sessionId } = props
+  const {
+    characterId,
+    token,
+    onNameLoaded,
+    sessionView = false,
+    sessionId,
+    sessionLiveAccordions,
+    onSessionLiveAccordionsChange,
+  } = props
   const { showSnackbar } = useSnackbar()
   const [loading, setLoading] = useState(true)
   const lastPersistedKeyRef = useRef('')
@@ -385,10 +405,49 @@ export function CharacterCharacteristicsTab(props: {
   onNameLoadedRef.current = onNameLoaded
 
   const [sessionEquippedWeapons, setSessionEquippedWeapons] = useState<SessionEquippedWeaponRow[]>([])
+  const [sessionConsumables, setSessionConsumables] = useState<SessionConsumableRow[]>([])
   const [sessionEquippedOtherItems, setSessionEquippedOtherItems] = useState<SessionEquippedOtherRow[]>([])
   const [isWeaponItemDetailsOpen, setIsWeaponItemDetailsOpen] = useState(false)
   const [weaponItemDetailsLoading, setWeaponItemDetailsLoading] = useState(false)
   const [weaponItemDetails, setWeaponItemDetails] = useState<ItemDetail | null>(null)
+  const [sessionConsumableQtyDraft, setSessionConsumableQtyDraft] = useState<Record<number, string>>({})
+  const [savingConsumableQtyId, setSavingConsumableQtyId] = useState<number | null>(null)
+  const [fallbackSessionLiveAccordions, setFallbackSessionLiveAccordions] =
+    useState<SessionLiveAccordionState>(DEFAULT_SESSION_LIVE_ACCORDIONS)
+
+  const effectiveSessionLiveAccordions =
+    sessionLiveAccordions !== undefined ? sessionLiveAccordions : fallbackSessionLiveAccordions
+
+  const patchSessionLiveAccordions = useCallback(
+    (patch: Partial<SessionLiveAccordionState>) => {
+      if (onSessionLiveAccordionsChange) {
+        onSessionLiveAccordionsChange(patch)
+      } else {
+        setFallbackSessionLiveAccordions((prev) => ({ ...prev, ...patch }))
+      }
+    },
+    [onSessionLiveAccordionsChange],
+  )
+
+  useEffect(() => {
+    if (!sessionView) return
+    setSavingConsumableQtyId(null)
+  }, [characterId, sessionView])
+
+  useEffect(() => {
+    if (!sessionView) return
+    setSessionConsumableQtyDraft((prev) => {
+      const next: Record<number, string> = { ...prev }
+      for (const c of sessionConsumables) {
+        next[c.id] = prev[c.id] !== undefined ? prev[c.id] : String(c.quantity)
+      }
+      for (const k of Object.keys(next)) {
+        const id = Number(k)
+        if (!Number.isFinite(id) || !sessionConsumables.some((x) => x.id === id)) delete next[id]
+      }
+      return next
+    })
+  }, [sessionConsumables, sessionView])
 
   const persistCharacteristicsPayload = useCallback(
     async (f: CharacteristicsFormFields, sk: SkillsStateMap, sv: SavingThrowsStateMap) => {
@@ -468,6 +527,7 @@ export function CharacterCharacteristicsTab(props: {
       setLoading(true)
       if (!sessionView) {
         setSessionEquippedWeapons([])
+        setSessionConsumables([])
         setSessionEquippedOtherItems([])
       }
       try {
@@ -590,6 +650,19 @@ export function CharacterCharacteristicsTab(props: {
           )
           setSessionEquippedWeapons(rows)
 
+          const consumableLines = lines.filter(isConsumableRow).sort((a, b) =>
+            String(a.name || '').localeCompare(String(b.name || ''), 'fr', { sensitivity: 'base' }),
+          )
+          setSessionConsumables(
+            consumableLines.map((line) => ({
+              id: line.id,
+              item_id: line.item_id != null ? line.item_id : null,
+              name: line.name?.trim() ? line.name : '—',
+              quantity: typeof line.quantity === 'number' && line.quantity >= 0 ? line.quantity : 1,
+              categoryLabel: line.category?.trim() ? line.category : '—',
+            })),
+          )
+
           const otherLines = lines.filter(isEquippedNonWeaponRow).sort((a, b) =>
             String(a.name || '').localeCompare(String(b.name || ''), 'fr', { sensitivity: 'base' }),
           )
@@ -606,6 +679,7 @@ export function CharacterCharacteristicsTab(props: {
       } catch (err) {
         if (sessionView) {
           setSessionEquippedWeapons([])
+          setSessionConsumables([])
           setSessionEquippedOtherItems([])
         }
         showSnackbar({
@@ -751,31 +825,81 @@ export function CharacterCharacteristicsTab(props: {
     }
   }
 
-  const skillsSummaryUnderAbilities = (
+  async function handleSessionConsumableQuantityBlur(inventoryLineId: number) {
+    const raw = sessionConsumableQtyDraft[inventoryLineId] ?? ''
+    const parsed = Number.parseInt(String(raw).trim(), 10)
+    const row = sessionConsumables.find((x) => x.id === inventoryLineId)
+    if (!row) return
+
+    if (Number.isNaN(parsed) || parsed < 1) {
+      setSessionConsumableQtyDraft((d) => ({ ...d, [inventoryLineId]: String(row.quantity) }))
+      showSnackbar({
+        message: 'La quantité doit être un entier au moins égal à 1.',
+        severity: 'error',
+      })
+      return
+    }
+
+    if (parsed === row.quantity) {
+      setSessionConsumableQtyDraft((d) => ({ ...d, [inventoryLineId]: String(parsed) }))
+      return
+    }
+
+    setSavingConsumableQtyId(inventoryLineId)
+    try {
+      await apiPut(`/api/inventory/${characterId}/items/${inventoryLineId}`, { quantity: parsed }, token)
+      setSessionConsumables((prev) => prev.map((c) => (c.id === inventoryLineId ? { ...c, quantity: parsed } : c)))
+      setSessionConsumableQtyDraft((d) => ({ ...d, [inventoryLineId]: String(parsed) }))
+      showSnackbar({ message: 'Quantité mise à jour.', severity: 'success' })
+    } catch (err) {
+      setSessionConsumableQtyDraft((d) => ({ ...d, [inventoryLineId]: String(row.quantity) }))
+      showSnackbar({
+        message: err instanceof Error ? err.message : 'Erreur lors de la mise à jour de la quantité.',
+        severity: 'error',
+      })
+    } finally {
+      setSavingConsumableQtyId(null)
+    }
+  }
+
+  const skillsAccordionPanel = (
+    <div className="character-skills-accordion-panel">
+      {proficientSkillsSummary.length === 0 ? (
+        <p className="character-skills-summary-empty">Aucune compétence maîtrisée ou en expertise.</p>
+      ) : (
+        <ul className="character-skills-summary-list">
+          {proficientSkillsSummary.map((row) => (
+            <li key={row.key} className="character-skills-summary-row">
+              <div className="character-skills-summary-name-block">
+                <span className={`character-skills-summary-name ${row.abilityColorClass}`.trim()}>{row.label}</span>
+                <span className="character-skills-summary-ability-abbr">{row.abilityAbbr}</span>
+              </div>
+              <span
+                className={`character-skills-summary-badge ${row.kind === 'expertise' ? 'is-expertise' : 'is-proficient'}`}
+              >
+                {row.kind === 'expertise' ? 'Expertise' : 'Maîtrise'}
+              </span>
+              <span className="character-skills-summary-total">{formatModifier(row.total)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+
+  const skillsSummaryUnderAbilities = sessionView ? (
+    <details
+      className="character-skills-accordion"
+      open={effectiveSessionLiveAccordions.skills}
+      onToggle={(e) => patchSessionLiveAccordions({ skills: e.currentTarget.open })}
+    >
+      <summary className="character-skills-accordion-summary">Mes compétences</summary>
+      {skillsAccordionPanel}
+    </details>
+  ) : (
     <details className="character-skills-accordion">
       <summary className="character-skills-accordion-summary">Mes compétences</summary>
-      <div className="character-skills-accordion-panel">
-        {proficientSkillsSummary.length === 0 ? (
-          <p className="character-skills-summary-empty">Aucune compétence maîtrisée ou en expertise.</p>
-        ) : (
-          <ul className="character-skills-summary-list">
-            {proficientSkillsSummary.map((row) => (
-              <li key={row.key} className="character-skills-summary-row">
-                <div className="character-skills-summary-name-block">
-                  <span className={`character-skills-summary-name ${row.abilityColorClass}`.trim()}>{row.label}</span>
-                  <span className="character-skills-summary-ability-abbr">{row.abilityAbbr}</span>
-                </div>
-                <span
-                  className={`character-skills-summary-badge ${row.kind === 'expertise' ? 'is-expertise' : 'is-proficient'}`}
-                >
-                  {row.kind === 'expertise' ? 'Expertise' : 'Maîtrise'}
-                </span>
-                <span className="character-skills-summary-total">{formatModifier(row.total)}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      {skillsAccordionPanel}
     </details>
   )
 
@@ -924,72 +1048,150 @@ export function CharacterCharacteristicsTab(props: {
           </div>
           {skillsSummaryUnderAbilities}
 
-          <div className="session-weapons-section">
-            <h4 className="session-weapons-title">Armes</h4>
-            {sessionEquippedWeapons.length === 0 ? (
-              <p className="session-weapons-empty">Aucune arme équipée.</p>
-            ) : (
-              <div className="table-wrap">
-                <table className="table inventory-items-table session-weapons-table">
-                  <thead>
-                    <tr>
-                      <th>Nom</th>
-                      <th>Dégâts</th>
-                      <th>Propriétés</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sessionEquippedWeapons.map((w) => (
-                      <tr
-                        key={w.id}
-                        className={w.item_id != null ? 'clickable-row session-weapons-row' : 'session-weapons-row'}
-                        onClick={() => {
-                          if (w.item_id != null) void openSessionItemDetailsModal(w.item_id)
-                        }}
-                      >
-                        <td data-label="Nom">{w.name}</td>
-                        <td data-label="Dégâts">{w.damage}</td>
-                        <td data-label="Propriétés">{w.propertiesLabel}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+          <div className="session-live-inventory-accordions">
+            <details
+              className="character-skills-accordion session-weapons-section"
+              open={effectiveSessionLiveAccordions.weapons}
+              onToggle={(e) => patchSessionLiveAccordions({ weapons: e.currentTarget.open })}
+            >
+              <summary className="character-skills-accordion-summary session-weapons-title">Armes</summary>
+              <div className="character-skills-accordion-panel">
+                {sessionEquippedWeapons.length === 0 ? (
+                  <p className="session-weapons-empty">Aucune arme équipée.</p>
+                ) : (
+                  <div className="table-wrap">
+                    <table className="table inventory-items-table session-weapons-table">
+                      <thead>
+                        <tr>
+                          <th>Nom</th>
+                          <th>Dégâts</th>
+                          <th>Propriétés</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sessionEquippedWeapons.map((w) => (
+                          <tr
+                            key={w.id}
+                            className={
+                              w.item_id != null ? 'clickable-row session-weapons-row' : 'session-weapons-row'
+                            }
+                            onClick={() => {
+                              if (w.item_id != null) void openSessionItemDetailsModal(w.item_id)
+                            }}
+                          >
+                            <td data-label="Nom">{w.name}</td>
+                            <td data-label="Dégâts">{w.damage}</td>
+                            <td data-label="Propriétés">{w.propertiesLabel}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </details>
 
-          <div className="session-items-section">
-            <h4 className="session-items-title">Items</h4>
-            {sessionEquippedOtherItems.length === 0 ? (
-              <p className="session-items-empty">Aucun autre objet équipé.</p>
-            ) : (
-              <div className="table-wrap">
-                <table className="table inventory-items-table session-items-table">
-                  <thead>
-                    <tr>
-                      <th>Nom</th>
-                      <th>Type</th>
-                      <th>Catégorie</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sessionEquippedOtherItems.map((it) => (
-                      <tr
-                        key={it.id}
-                        className={it.item_id != null ? 'clickable-row session-items-row' : 'session-items-row'}
-                        onClick={() => {
-                          if (it.item_id != null) void openSessionItemDetailsModal(it.item_id)
-                        }}
-                      >
-                        <td data-label="Nom">{it.name}</td>
-                        <td data-label="Type">{it.typeLabel}</td>
-                        <td data-label="Catégorie">{it.categoryLabel}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            <details
+              className="character-skills-accordion session-consumables-section"
+              open={effectiveSessionLiveAccordions.consumables}
+              onToggle={(e) => patchSessionLiveAccordions({ consumables: e.currentTarget.open })}
+            >
+              <summary className="character-skills-accordion-summary session-consumables-title">Consommables</summary>
+              <div className="character-skills-accordion-panel">
+                {sessionConsumables.length === 0 ? (
+                  <p className="session-consumables-empty">Aucun consommable dans l&apos;inventaire.</p>
+                ) : (
+                  <div className="table-wrap">
+                    <table className="table inventory-items-table session-consumables-table">
+                      <thead>
+                        <tr>
+                          <th>Nom</th>
+                          <th>Qté</th>
+                          <th>Catégorie</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sessionConsumables.map((c) => (
+                          <tr
+                            key={c.id}
+                            className={
+                              c.item_id != null ? 'clickable-row session-consumables-row' : 'session-consumables-row'
+                            }
+                            onClick={() => {
+                              if (c.item_id != null) void openSessionItemDetailsModal(c.item_id)
+                            }}
+                          >
+                            <td data-label="Nom">{c.name}</td>
+                            <td data-label="Qté" onClick={(e) => e.stopPropagation()}>
+                              <input
+                                type="number"
+                                className="inventory-qty-input"
+                                min={1}
+                                disabled={savingConsumableQtyId === c.id}
+                                value={sessionConsumableQtyDraft[c.id] ?? String(c.quantity)}
+                                onChange={(e) =>
+                                  setSessionConsumableQtyDraft((d) => ({ ...d, [c.id]: e.target.value }))
+                                }
+                                onBlur={() => void handleSessionConsumableQuantityBlur(c.id)}
+                                onKeyDown={(e) => {
+                                  e.stopPropagation()
+                                  if (e.key === 'Enter') {
+                                    ;(e.target as HTMLInputElement).blur()
+                                  }
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                aria-label={`Quantité — ${c.name}`}
+                              />
+                            </td>
+                            <td data-label="Catégorie">{c.categoryLabel}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
-            )}
+            </details>
+
+            <details
+              className="character-skills-accordion session-items-section"
+              open={effectiveSessionLiveAccordions.items}
+              onToggle={(e) => patchSessionLiveAccordions({ items: e.currentTarget.open })}
+            >
+              <summary className="character-skills-accordion-summary session-items-title">Items</summary>
+              <div className="character-skills-accordion-panel">
+                {sessionEquippedOtherItems.length === 0 ? (
+                  <p className="session-items-empty">Aucun autre objet équipé.</p>
+                ) : (
+                  <div className="table-wrap">
+                    <table className="table inventory-items-table session-items-table">
+                      <thead>
+                        <tr>
+                          <th>Nom</th>
+                          <th>Type</th>
+                          <th>Catégorie</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sessionEquippedOtherItems.map((it) => (
+                          <tr
+                            key={it.id}
+                            className={it.item_id != null ? 'clickable-row session-items-row' : 'session-items-row'}
+                            onClick={() => {
+                              if (it.item_id != null) void openSessionItemDetailsModal(it.item_id)
+                            }}
+                          >
+                            <td data-label="Nom">{it.name}</td>
+                            <td data-label="Type">{it.typeLabel}</td>
+                            <td data-label="Catégorie">{it.categoryLabel}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </details>
           </div>
         </>
       ) : null}
@@ -1097,81 +1299,12 @@ export function CharacterCharacteristicsTab(props: {
         </>
       ) : null}
 
-      {isWeaponItemDetailsOpen ? (
-        <div
-          className="modal-backdrop"
-          onClick={() => {
-            if (!weaponItemDetailsLoading) setIsWeaponItemDetailsOpen(false)
-          }}
-        >
-          <div className="modal-card" onClick={(event) => event.stopPropagation()}>
-            <h3>Détails de l’objet</h3>
-            {weaponItemDetailsLoading ? <p>Chargement…</p> : null}
-            {!weaponItemDetailsLoading && weaponItemDetails ? (
-              <div className="item-details">
-                <p>
-                  <strong>Index</strong> {(weaponItemDetails.index as string) ?? '—'}
-                </p>
-                <p>
-                  <strong>Nom</strong> {weaponItemDetails.name}
-                </p>
-                <p>
-                  <strong>Type</strong> {(weaponItemDetails.type as string) ?? '—'}
-                </p>
-                <p>
-                  <strong>Catégorie</strong> {weaponItemDetails.category ?? '—'}
-                </p>
-                <p>
-                  <strong>Sous-catégorie</strong> {weaponItemDetails.subcategory ?? '—'}
-                </p>
-                <p>
-                  <strong>Coût</strong> {weaponItemDetails.cost ?? '—'}
-                </p>
-                <p>
-                  <strong>Poids</strong> {weaponItemDetails.weight ?? '—'}
-                </p>
-                <p>
-                  <strong>Description</strong>{' '}
-                  {weaponItemDetails.description?.trim() ? weaponItemDetails.description : '—'}
-                </p>
-                <p>
-                  <strong>Dégâts</strong> {weaponItemDetails.damage ?? '—'}{' '}
-                  {weaponItemDetails.damageType ? `(${weaponItemDetails.damageType})` : ''}
-                </p>
-                <p>
-                  <strong>Portée</strong> {weaponItemDetails.range ?? '—'}
-                </p>
-                <p>
-                  <strong>CA</strong> {weaponItemDetails.armorClass ?? '—'}
-                </p>
-                <p>
-                  <strong>Désavantage discrétion</strong>{' '}
-                  {weaponItemDetails.stealthDisadvantage == null
-                    ? '—'
-                    : weaponItemDetails.stealthDisadvantage
-                      ? 'Oui'
-                      : 'Non'}
-                </p>
-                <p>
-                  <strong>Propriétés</strong>{' '}
-                  {weaponItemDetails.properties == null ? '—' : JSON.stringify(weaponItemDetails.properties, null, 2)}
-                </p>
-              </div>
-            ) : null}
-
-            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
-              <button
-                className="btn btn-secondary"
-                type="button"
-                disabled={weaponItemDetailsLoading}
-                onClick={() => setIsWeaponItemDetailsOpen(false)}
-              >
-                Fermer
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <ItemDetailsModal
+        open={isWeaponItemDetailsOpen}
+        loading={weaponItemDetailsLoading}
+        itemDetails={weaponItemDetails}
+        onClose={() => setIsWeaponItemDetailsOpen(false)}
+      />
     </form>
   )
 }

@@ -2,6 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { apiDelete, apiGet, apiPost, apiPut } from '../../../shared/api/client'
 import { useAuth } from '../../../app/hooks/useAuth'
 import { useSnackbar } from '../../../app/hooks/useSnackbar'
+import { ItemDetailsModal, type ItemDetail } from '../../inventory/components/ItemDetailsModal'
+import {
+  ItemEditModal,
+  RemoveFromInventoryConfirmModal,
+  type EditItemFormState,
+} from '../../inventory/components/ItemEditModal'
 
 type CharacterPurse = {
   copper_pieces: number
@@ -21,28 +27,6 @@ type InventoryItem = {
   type?: string | null
   category?: string | null
   cost?: string | null
-}
-
-type ItemDetail = {
-  id: number
-  index?: string
-  name: string
-  type?: string
-  category?: string | null
-  subcategory?: string | null
-  cost?: string | null
-  weight?: number | null
-  description?: string | null
-  damage?: string | null
-  damageType?: string | null
-  range?: string | null
-  armorClass?: number | null
-  stealthDisadvantage?: boolean | null
-  properties?: unknown
-  raw?: unknown
-  isActive?: boolean
-  createdAt?: string | null
-  updatedAt?: string | null
 }
 
 type Dnd5eEquipmentListItem = {
@@ -240,7 +224,7 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
   const [editItemSaving, setEditItemSaving] = useState(false)
   const [editItemId, setEditItemId] = useState<number | null>(null)
   const [editInventoryLineId, setEditInventoryLineId] = useState<number | null>(null)
-  const [editItemForm, setEditItemForm] = useState({
+  const [editItemForm, setEditItemForm] = useState<EditItemFormState>({
     index: '',
     name: '',
     description: '',
@@ -1070,172 +1054,41 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
       )}
 
       {isItemDetailsModalOpen && (
-        <div className="modal-backdrop" onClick={() => !itemDetailsLoading && setIsItemDetailsModalOpen(false)}>
-          <div className="modal-card" onClick={(event) => event.stopPropagation()}>
-            <h3>Détails de l’objet</h3>
-            {itemDetailsLoading ? <p>Chargement…</p> : null}
-            {!itemDetailsLoading && itemDetails ? (
-              <div className="item-details">
-                <p>
-                  <strong>Index</strong> {(itemDetails.index as string) ?? '—'}
-                </p>
-                <p>
-                  <strong>Nom</strong> {itemDetails.name}
-                </p>
-                <p>
-                  <strong>Type</strong> {(itemDetails.type as string) ?? '—'}
-                </p>
-                <p>
-                  <strong>Catégorie</strong> {itemDetails.category ?? '—'}
-                </p>
-                <p>
-                  <strong>Sous-catégorie</strong> {itemDetails.subcategory ?? '—'}
-                </p>
-                <p>
-                  <strong>Coût</strong> {itemDetails.cost ?? '—'}
-                </p>
-                <p>
-                  <strong>Poids</strong> {itemDetails.weight ?? '—'}
-                </p>
-                <p>
-                  <strong>Description</strong> {itemDetails.description?.trim() ? itemDetails.description : '—'}
-                </p>
-                <p>
-                  <strong>Dégâts</strong> {itemDetails.damage ?? '—'} {itemDetails.damageType ? `(${itemDetails.damageType})` : ''}
-                </p>
-                <p>
-                  <strong>Portée</strong> {itemDetails.range ?? '—'}
-                </p>
-                <p>
-                  <strong>CA</strong> {itemDetails.armorClass ?? '—'}
-                </p>
-                <p>
-                  <strong>Désavantage discrétion</strong> {itemDetails.stealthDisadvantage == null ? '—' : itemDetails.stealthDisadvantage ? 'Oui' : 'Non'}
-                </p>
-                <p>
-                  <strong>Propriétés</strong> {itemDetails.properties == null ? '—' : JSON.stringify(itemDetails.properties, null, 2)}
-                </p>
-              </div>
-            ) : null}
-
-            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
-              <button className="btn btn-secondary" type="button" disabled={itemDetailsLoading} onClick={() => setIsItemDetailsModalOpen(false)}>
-                Fermer
-              </button>
-            </div>
-          </div>
-        </div>
+        <ItemDetailsModal
+          open={isItemDetailsModalOpen}
+          loading={itemDetailsLoading}
+          itemDetails={itemDetails}
+          onClose={() => setIsItemDetailsModalOpen(false)}
+        />
       )}
 
       {isEditItemModalOpen && (
-        <div
-          className="modal-backdrop"
-          onClick={() => {
+        <ItemEditModal
+          open={isEditItemModalOpen}
+          loading={editItemLoading}
+          saving={editItemSaving}
+          form={editItemForm}
+          setForm={setEditItemForm}
+          itemTypes={DND5E_ITEM_TYPES}
+          onSubmit={handleSaveEditedItem}
+          onClose={() => {
             if (!editItemSaving) {
               setIsEditItemModalOpen(false)
               setEditItemId(null)
             }
           }}
-        >
-          <div className="modal-card" onClick={(event) => event.stopPropagation()}>
-            <h3>Éditer l’objet</h3>
-            {editItemLoading ? <p>Chargement…</p> : null}
-
-            <form className="login-form" onSubmit={handleSaveEditedItem}>
-              <label htmlFor="edit-item-name">Nom</label>
-              <input id="edit-item-name" type="text" required disabled={editItemLoading || editItemSaving} value={editItemForm.name} onChange={(event) => setEditItemForm((p) => ({ ...p, name: event.target.value }))} />
-
-              <label htmlFor="edit-item-index">Index</label>
-              <input id="edit-item-index" type="text" disabled={editItemLoading || editItemSaving} value={editItemForm.index} onChange={(event) => setEditItemForm((p) => ({ ...p, index: event.target.value }))} />
-
-              <label htmlFor="edit-item-type">Type</label>
-              <select id="edit-item-type" disabled={editItemLoading || editItemSaving} value={editItemForm.type} onChange={(event) => setEditItemForm((p) => ({ ...p, type: event.target.value }))}>
-                {DND5E_ITEM_TYPES.map((t) => (
-                  <option key={t.value} value={t.value}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
-
-              <label htmlFor="edit-item-category">Catégorie</label>
-              <input id="edit-item-category" type="text" disabled={editItemLoading || editItemSaving} value={editItemForm.category} onChange={(event) => setEditItemForm((p) => ({ ...p, category: event.target.value }))} />
-
-              <label htmlFor="edit-item-subcategory">Sous-catégorie</label>
-              <input id="edit-item-subcategory" type="text" disabled={editItemLoading || editItemSaving} value={editItemForm.subcategory} onChange={(event) => setEditItemForm((p) => ({ ...p, subcategory: event.target.value }))} />
-
-              <label htmlFor="edit-item-cost">Coût</label>
-              <input id="edit-item-cost" type="text" disabled={editItemLoading || editItemSaving} value={editItemForm.cost} onChange={(event) => setEditItemForm((p) => ({ ...p, cost: event.target.value }))} />
-
-              <label htmlFor="edit-item-weight">Poids</label>
-              <input id="edit-item-weight" type="number" min={0} disabled={editItemLoading || editItemSaving} value={editItemForm.weight} onChange={(event) => setEditItemForm((p) => ({ ...p, weight: event.target.value }))} />
-
-              <label htmlFor="edit-item-description">Description</label>
-              <textarea id="edit-item-description" rows={3} disabled={editItemLoading || editItemSaving} value={editItemForm.description} onChange={(event) => setEditItemForm((p) => ({ ...p, description: event.target.value }))} />
-
-              <label htmlFor="edit-item-damage">Dégâts</label>
-              <input id="edit-item-damage" type="text" disabled={editItemLoading || editItemSaving} value={editItemForm.damage} onChange={(event) => setEditItemForm((p) => ({ ...p, damage: event.target.value }))} />
-
-              <label htmlFor="edit-item-damage-type">Type de dégâts</label>
-              <input id="edit-item-damage-type" type="text" disabled={editItemLoading || editItemSaving} value={editItemForm.damageType} onChange={(event) => setEditItemForm((p) => ({ ...p, damageType: event.target.value }))} />
-
-              <label htmlFor="edit-item-range">Portée</label>
-              <input id="edit-item-range" type="text" disabled={editItemLoading || editItemSaving} value={editItemForm.range} onChange={(event) => setEditItemForm((p) => ({ ...p, range: event.target.value }))} />
-
-              <label htmlFor="edit-item-ac">CA</label>
-              <input id="edit-item-ac" type="number" min={0} disabled={editItemLoading || editItemSaving} value={editItemForm.armorClass} onChange={(event) => setEditItemForm((p) => ({ ...p, armorClass: event.target.value }))} />
-
-              <label className="skill-check">
-                <input type="checkbox" disabled={editItemLoading || editItemSaving} checked={editItemForm.stealthDisadvantage} onChange={(event) => setEditItemForm((p) => ({ ...p, stealthDisadvantage: event.target.checked }))} />
-                Désavantage discrétion
-              </label>
-
-              <label htmlFor="edit-item-properties">Propriétés (JSON)</label>
-              <textarea id="edit-item-properties" rows={6} disabled={editItemLoading || editItemSaving} value={editItemForm.propertiesJson} onChange={(event) => setEditItemForm((p) => ({ ...p, propertiesJson: event.target.value }))} />
-
-              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
-                <button className="btn" type="submit" disabled={editItemLoading || editItemSaving}>
-                  {editItemSaving ? 'Enregistrement…' : 'Enregistrer'}
-                </button>
-                <button
-                  className="btn btn-secondary"
-                  type="button"
-                  disabled={editItemLoading || editItemSaving}
-                  onClick={() => {
-                    setRemoveFromInventoryConfirmOpen(true)
-                  }}
-                >
-                  Supprimer de l’inventaire
-                </button>
-                <button className="btn btn-secondary" type="button" disabled={editItemLoading || editItemSaving} onClick={() => setIsEditItemModalOpen(false)}>
-                  Annuler
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+          onOpenRemoveConfirm={() => setRemoveFromInventoryConfirmOpen(true)}
+        />
       )}
 
-      {removeFromInventoryConfirmOpen && (
-        <div
-          className="modal-backdrop"
-          onClick={() => {
-            if (!removingFromInventory) setRemoveFromInventoryConfirmOpen(false)
-          }}
-        >
-          <div className="modal-card" onClick={(event) => event.stopPropagation()}>
-            <h3>Supprimer de l’inventaire</h3>
-            <p>Confirmer la suppression de cet objet de l’inventaire ?</p>
-            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
-              <button className="btn" type="button" disabled={removingFromInventory} onClick={() => void handleRemoveFromInventory()}>
-                {removingFromInventory ? 'Suppression…' : 'Oui, supprimer'}
-              </button>
-              <button className="btn btn-secondary" type="button" disabled={removingFromInventory} onClick={() => setRemoveFromInventoryConfirmOpen(false)}>
-                Annuler
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <RemoveFromInventoryConfirmModal
+        open={removeFromInventoryConfirmOpen}
+        removing={removingFromInventory}
+        onClose={() => {
+          if (!removingFromInventory) setRemoveFromInventoryConfirmOpen(false)
+        }}
+        onConfirm={() => void handleRemoveFromInventory()}
+      />
 
       {isDndEquipmentModalOpen && canImportDndEquipment && (
         <>
@@ -1369,6 +1222,20 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
                     Suivant
                   </button>
                 </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.75rem' }}>
+                  <button
+                    className="btn btn-secondary"
+                    type="button"
+                    disabled={dndEquipmentLoading || dndEquipmentAddingId != null || dndCatalogDetailOpen}
+                    onClick={() => {
+                      closeDndCatalogDetail()
+                      setIsDndEquipmentModalOpen(false)
+                    }}
+                  >
+                    Retour
+                  </button>
+                </div>
               </>
             ) : (
               <>
@@ -1466,6 +1333,20 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
                     onClick={() => void loadDndMagicItems({ q: dndMagicQuery, page: dndMagicPage + 1 })}
                   >
                     Suivant
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.75rem' }}>
+                  <button
+                    className="btn btn-secondary"
+                    type="button"
+                    disabled={dndMagicLoading || dndMagicAddingId != null || dndCatalogDetailOpen}
+                    onClick={() => {
+                      closeDndCatalogDetail()
+                      setIsDndEquipmentModalOpen(false)
+                    }}
+                  >
+                    Retour
                   </button>
                 </div>
               </>

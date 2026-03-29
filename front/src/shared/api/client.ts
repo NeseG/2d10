@@ -61,6 +61,23 @@ export async function apiPost<T>(
   return body
 }
 
+export async function apiPostFormData<T>(path: string, formData: FormData, token: string): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: formData,
+  })
+
+  const body = await readApiJson<T>(response)
+  if (!response.ok) {
+    throw new Error(body.error ?? `Erreur API (${response.status})`)
+  }
+
+  return body
+}
+
 export async function apiPut<T>(
   path: string,
   payload: Record<string, unknown>,

@@ -1,8 +1,31 @@
+const path = require('path');
+const fs = require('fs/promises');
 const express = require('express');
 const prisma = require('../lib/prisma');
 const { authenticateToken, requireRole } = require('../middleware/auth');
+const { broadcastSessionChat } = require('../ws/session-chat');
+const { findSessionForChat, getChatDisplayName, displayNamesForUserIds } = require('../lib/session-chat-access');
+const { CHAT_UPLOAD_ROOT, chatImageUploadMiddleware } = require('../lib/session-chat-upload');
 
 const router = express.Router();
+
+function chatAttachmentPath(sessionId, filename) {
+  return `/api/sessions/${sessionId}/chat/attachments/${encodeURIComponent(filename)}`;
+}
+
+function formatChatMessage(row, sessionId, display_name) {
+  const o = {
+    id: row.id,
+    user_id: row.userId,
+    display_name,
+    body: row.body ?? '',
+    created_at: row.createdAt.toISOString(),
+  };
+  if (row.imageKey) {
+    o.image_url = chatAttachmentPath(sessionId, row.imageKey);
+  }
+  return o;
+}
 
 function formatSession(session, extras = {}) {
   return {
@@ -165,6 +188,174 @@ router.get('/campaign/:campaignId', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
+
+// ——— Chat session live (historique HTTP + push WebSocket) ———
+
+router.get('/:sessionId/chat/attachments/:filename', authenticateToken, async (req, res) => {
+  try {
+    const sessionId = parseInt(req.params.sessionId, 10);
+    if (Number.isNaN(sessionId)) return res.status(400).json({ error: 'ID de session invalide' });
+
+    const safeName = path.basename(req.params.filename || '');
+    if (!safeName || safeName !== req.params.filename) {
+      return res.status(400).json({ error: 'Nom de fichier invalide' });
+    }
+
+    const session = await findSessionForChat(sessionId, req.user);
+    if (!session) return res.status(404).json({ error: 'Session non trouvée' });
+
+    const dir = path.join(CHAT_UPLOAD_ROOT, String(sessionId));
+    const filePath = path.join(dir, safeName);
+    const resolvedFile = path.resolve(filePath);
+    const resolvedDir = path.resolve(dir);
+    if (!resolvedFile.startsWith(resolvedDir)) {
+      return res.status(400).json({ error: 'Chemin invalide' });
+    }
+
+    try {
+      await fs.access(resolvedFile);
+    } catch {
+      return res.status(404).json({ error: 'Fichier introuvable' });
+    }
+
+    const ext = path.extname(safeName).toLowerCase();
+    const ct =
+      ext === '.png' ? 'image/png' : ext === '.gif' ? 'image/gif' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
+    res.setHeader('Content-Type', ct);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.sendFile(resolvedFile);
+  } catch (error) {
+    console.error('Erreur chat attachment:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+router.get('/:sessionId/chat/messages', authenticateToken, async (req, res) => {
+  try {
+    const sessionId = parseInt(req.params.sessionId, 10);
+    if (Number.isNaN(sessionId)) return res.status(400).json({ error: 'ID de session invalide' });
+
+    const session = await findSessionForChat(sessionId, req.user);
+    if (!session) return res.status(404).json({ error: 'Session non trouvée' });
+
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const beforeId = req.query.before_id != null ? parseInt(req.query.before_id, 10) : null;
+
+    const where = { sessionId };
+    if (beforeId != null && !Number.isNaN(beforeId)) where.id = { lt: beforeId };
+
+    const rows = await prisma.sessionChatMessage.findMany({
+      where,
+      orderBy: { id: 'desc' },
+      take: limit,
+    });
+
+    const chronological = [...rows].reverse();
+    const displayByUser = await displayNamesForUserIds(
+      sessionId,
+      chronological.map((r) => r.userId),
+    );
+
+    const messages = chronological.map((row) =>
+      formatChatMessage(row, sessionId, displayByUser[row.userId] ?? 'Joueur'),
+    );
+
+    res.json({ success: true, messages });
+  } catch (error) {
+    console.error('Erreur chat GET messages:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+router.post('/:sessionId/chat/messages', authenticateToken, async (req, res) => {
+  try {
+    const sessionId = parseInt(req.params.sessionId, 10);
+    if (Number.isNaN(sessionId)) return res.status(400).json({ error: 'ID de session invalide' });
+
+    const raw = String(req.body?.body ?? '').trim();
+    if (!raw) return res.status(400).json({ error: 'Message vide' });
+    if (raw.length > 2000) return res.status(400).json({ error: 'Message trop long (2000 caractères max)' });
+
+    const session = await findSessionForChat(sessionId, req.user);
+    if (!session) return res.status(404).json({ error: 'Session non trouvée' });
+
+    const msg = await prisma.sessionChatMessage.create({
+      data: { sessionId, userId: req.user.id, body: raw, imageKey: null },
+    });
+
+    const display_name = await getChatDisplayName(sessionId, req.user.id);
+    const payload = formatChatMessage(msg, sessionId, display_name);
+
+    broadcastSessionChat(sessionId, { type: 'chat_message', message: payload });
+
+    res.status(201).json({ success: true, message: payload });
+  } catch (error) {
+    console.error('Erreur chat POST message:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+router.post(
+  '/:sessionId/chat/messages/upload',
+  authenticateToken,
+  chatImageUploadMiddleware,
+  async (req, res) => {
+    try {
+      const sessionId = parseInt(req.params.sessionId, 10);
+      if (Number.isNaN(sessionId)) return res.status(400).json({ error: 'ID de session invalide' });
+
+      if (!req.file?.filename) {
+        return res.status(400).json({ error: 'Fichier image requis' });
+      }
+
+      const caption = String(req.body?.body ?? '').trim();
+      if (caption.length > 2000) {
+        try {
+          await fs.unlink(req.file.path);
+        } catch {
+          /* ignore */
+        }
+        return res.status(400).json({ error: 'Légende trop longue (2000 caractères max)' });
+      }
+
+      const session = await findSessionForChat(sessionId, req.user);
+      if (!session) {
+        try {
+          await fs.unlink(req.file.path);
+        } catch {
+          /* ignore */
+        }
+        return res.status(404).json({ error: 'Session non trouvée' });
+      }
+
+      const msg = await prisma.sessionChatMessage.create({
+        data: {
+          sessionId,
+          userId: req.user.id,
+          body: caption,
+          imageKey: req.file.filename,
+        },
+      });
+
+      const display_name = await getChatDisplayName(sessionId, req.user.id);
+      const payload = formatChatMessage(msg, sessionId, display_name);
+
+      broadcastSessionChat(sessionId, { type: 'chat_message', message: payload });
+
+      res.status(201).json({ success: true, message: payload });
+    } catch (error) {
+      console.error('Erreur chat POST image:', error);
+      if (req.file?.path) {
+        try {
+          await fs.unlink(req.file.path);
+        } catch {
+          /* ignore */
+        }
+      }
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  },
+);
 
 // Obtenir une session par ID
 router.get('/:sessionId', authenticateToken, async (req, res) => {

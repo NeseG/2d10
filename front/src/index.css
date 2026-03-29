@@ -437,6 +437,49 @@ input[type='number'] {
   padding: 1rem;
 }
 
+.item-details-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.65rem;
+}
+
+.item-details-header-name {
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.item-details-header-submeta {
+  margin-top: 0.2rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.item-details-header {
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.item-details-header-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.15rem;
+  min-width: 0;
+  max-width: 55%;
+  text-align: right;
+}
+
+.item-details-header-type {
+  font-size: 0.85rem;
+  color: var(--muted);
+  line-height: 1.25;
+  word-break: break-word;
+}
+
 .tabs-row {
   display: flex;
   gap: 0.5rem;
@@ -534,6 +577,187 @@ input[type='number'] {
 .session-live-character-edit-link:hover {
   color: var(--text);
   border-color: var(--muted);
+}
+
+/* Chat session live */
+.session-live-chat-panel {
+  min-height: min(420px, 55vh);
+  display: flex;
+  flex-direction: column;
+}
+
+.session-live-chat {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 0.65rem;
+}
+
+.session-live-chat-messages {
+  flex: 1;
+  min-height: 200px;
+  max-height: min(420px, 50vh);
+  overflow-y: auto;
+  /* compact Discord-like: align content to left edge */
+  padding: 0.5rem 0.15rem;
+  border: 1px solid var(--border);
+  border-radius: 0.55rem;
+  background: rgba(17, 24, 39, 0.45);
+}
+
+.session-live-chat-placeholder {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.session-live-chat-line {
+  display: grid;
+  grid-template-columns: 3.1rem 1fr;
+  column-gap: 0.35rem;
+  align-items: start;
+  padding: 0.22rem 0.15rem;
+  border-radius: 0.35rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.session-live-chat-line:last-child {
+  border-bottom: none;
+}
+
+.session-live-chat-line--own {
+  background: rgba(30, 58, 95, 0.18);
+}
+
+.session-live-chat-line:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.session-live-chat-ts {
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-align: right;
+  padding-top: 0.12rem;
+  white-space: nowrap;
+}
+
+.session-live-chat-content {
+  min-width: 0;
+}
+
+.session-live-chat-content-line {
+  font-size: 0.9rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.session-live-chat-author {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.session-live-chat-image-wrap {
+  margin: 0.25rem 0 0;
+  max-width: 100%;
+}
+
+.session-live-chat-colon {
+  color: var(--muted);
+  margin: 0 0.35rem;
+}
+
+.session-live-chat-body {
+  color: var(--text);
+}
+
+.session-live-chat-image {
+  display: block;
+  max-width: min(100%, 320px);
+  max-height: 240px;
+  width: auto;
+  height: auto;
+  border-radius: 0.4rem;
+  border: 1px solid var(--border);
+  object-fit: contain;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.session-live-chat-image-click {
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: inline-block;
+}
+
+.session-live-chat-image-click:focus-visible {
+  outline: 2px solid rgba(59, 130, 246, 0.7);
+  outline-offset: 2px;
+  border-radius: 0.45rem;
+}
+
+.session-live-chat-lightbox {
+  width: min(980px, calc(100vw - 2rem));
+}
+
+.session-live-chat-lightbox-img {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100vh - 10rem);
+  height: auto;
+  width: auto;
+  margin: 0 auto;
+  border-radius: 0.55rem;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.25);
+  object-fit: contain;
+}
+
+.session-live-chat-image-loading,
+.session-live-chat-image-error {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.session-live-chat-preview {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.35rem;
+}
+
+.session-live-chat-preview-img {
+  max-height: 72px;
+  max-width: 120px;
+  border-radius: 0.35rem;
+  border: 1px solid var(--border);
+  object-fit: cover;
+}
+
+.session-live-chat-form {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.session-live-chat-input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.5rem 0.65rem;
+  border-radius: 0.45rem;
+  border: 1px solid var(--border);
+  background: rgba(17, 24, 39, 0.85);
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.session-live-chat-send {
+  flex-shrink: 0;
 }
 
 .session-live-character-panel-title {
@@ -1075,28 +1299,42 @@ input[type='number'] {
   margin-top: 0.35rem;
 }
 
-.session-weapons-section {
-  margin-top: 0.45rem;
+/* Même écart qu’entre « Mes compétences » et « Armes » : marge basse de l’accordéon compétences (0.75rem) + ce gap entre armes / consommables / items. */
+.session-live-inventory-accordions {
+  margin-top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
 }
 
-.session-weapons-title {
-  margin: 0.45rem 0 0.35rem !important;
+.session-live-page .session-live-inventory-accordions > .character-skills-accordion {
+  margin: 0;
+}
+
+.session-live-inventory-accordions .character-skills-accordion-summary.session-weapons-title,
+.session-live-inventory-accordions .character-skills-accordion-summary.session-consumables-title,
+.session-live-inventory-accordions .character-skills-accordion-summary.session-items-title {
+  margin: 0 !important;
 }
 
 /* Armes session : pas de cadre autour ; lignes uniquement entre les rangées (sous l’en-tête + entre armes) */
 .session-weapons-table th,
 .session-weapons-table td,
+.session-consumables-table th,
+.session-consumables-table td,
 .session-items-table th,
 .session-items-table td {
   border-bottom: none;
 }
 
 .session-weapons-table thead th,
+.session-consumables-table thead th,
 .session-items-table thead th {
   border-bottom: 1px solid rgba(148, 163, 184, 0.35);
 }
 
 .session-weapons-table tbody tr.session-weapons-row:not(:last-child) td,
+.session-consumables-table tbody tr.session-consumables-row:not(:last-child) td,
 .session-items-table tbody tr.session-items-row:not(:last-child) td {
   border-bottom: 1px solid rgba(148, 163, 184, 0.28);
 }
@@ -1107,12 +1345,10 @@ input[type='number'] {
   color: var(--muted);
 }
 
-.session-items-section {
-  margin-top: 0.55rem;
-}
-
-.session-items-title {
-  margin: 0.45rem 0 0.35rem !important;
+.session-consumables-empty {
+  margin: 0.15rem 0 0;
+  font-size: 0.9rem;
+  color: var(--muted);
 }
 
 .session-items-empty {
@@ -1493,11 +1729,11 @@ input[type='number'] {
 
   /* Traits: cards on mobile (no horizontal scroll) */
   .character-features-table-wrap {
-    display: none;
+    display: block;
   }
 
   .feature-cards {
-    display: block;
+    display: none;
   }
 }
 

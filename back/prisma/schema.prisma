@@ -81,6 +81,7 @@ model User {
   role         Role     @relation(fields: [roleId], references: [id])
   characters   Character[]
   campaigns    Campaign[]
+  sessionChatMessages SessionChatMessage[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -337,10 +338,26 @@ model GameSession {
   goldAwarded Float    @default(0)
   isActive    Boolean  @default(true)
   attendance  SessionAttendance[]
+  chatMessages SessionChatMessage[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   @@map("game_sessions")
+}
+
+// Messages du chat temps réel (session live)
+model SessionChatMessage {
+  id        Int         @id @default(autoincrement())
+  sessionId Int
+  session   GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  userId    Int
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  body      String      @default("") @db.Text
+  imageKey  String?     @map("image_key")
+  createdAt DateTime    @default(now())
+
+  @@index([sessionId, id])
+  @@map("session_chat_messages")
 }
 
 // Modèle CampaignCharacter

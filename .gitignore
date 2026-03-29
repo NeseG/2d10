@@ -102,6 +102,9 @@ Thumbs.db
 tmp/
 temp/
 
+# Fichiers uploadés (chat session live)
+back/uploads/
+
 # Build outputs
 dist/
 build/

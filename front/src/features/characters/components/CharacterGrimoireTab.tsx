@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useSnackbar } from '../../../app/hooks/useSnackbar'
 import { apiDelete, apiGet, apiPost, apiPut } from '../../../shared/api/client'
 import type { AuthUser } from '../../../shared/types'
+import { SpellDetailsModal, type SpellDetail } from '../../spells/components/SpellDetailsModal'
+import { RemoveFromGrimoireConfirmModal, SpellEditModal, type EditGrimoireFormState } from '../../spells/components/SpellEditModal'
 
 type CharacterSpellSlot = {
   level: number
@@ -32,23 +34,6 @@ type GrimoireEntry = {
   higher_level: string | null
   ritual: boolean | null
   concentration: boolean | null
-}
-
-type SpellDetail = {
-  id: number
-  index?: string
-  name: string
-  level?: number | null
-  school?: string | null
-  castingTime?: string | null
-  range?: string | null
-  components?: string | null
-  duration?: string | null
-  description?: string | null
-  higherLevel?: string | null
-  ritual?: boolean | null
-  concentration?: boolean | null
-  raw?: unknown
 }
 
 type Dnd5eSpellListItem = {
@@ -138,7 +123,7 @@ export function CharacterGrimoireTab(props: {
   const [editGrimoireSaving, setEditGrimoireSaving] = useState(false)
   const [editGrimoireEntryId, setEditGrimoireEntryId] = useState<number | null>(null)
   const [editGrimoireSpellId, setEditGrimoireSpellId] = useState<number | null>(null)
-  const [editGrimoireForm, setEditGrimoireForm] = useState({
+  const [editGrimoireForm, setEditGrimoireForm] = useState<EditGrimoireFormState>({
     is_known: true,
     is_prepared: false,
     notes: '',
@@ -789,167 +774,48 @@ export function CharacterGrimoireTab(props: {
                 Suivant
               </button>
             </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.75rem' }}>
+              <button
+                className="btn btn-secondary"
+                type="button"
+                disabled={dndSpellLoading || dndSpellAddingIndex != null}
+                onClick={() => setIsImportSpellModalOpen(false)}
+              >
+                Retour
+              </button>
+            </div>
           </div>
         </div>
       )}
 
       {!sessionView && isEditGrimoireModalOpen && (
-        <div className="modal-backdrop" onClick={() => (!editGrimoireSaving ? setIsEditGrimoireModalOpen(false) : null)}>
-          <div className="modal-card" onClick={(event) => event.stopPropagation()}>
-            <h3>Éditer le sort</h3>
-            <form className="login-form" onSubmit={handleSaveGrimoireEntry}>
-              <h4>Sort</h4>
-              <label htmlFor="edit-spell-name">Nom</label>
-              <input id="edit-spell-name" type="text" required value={editGrimoireForm.name} onChange={(event) => setEditGrimoireForm((p) => ({ ...p, name: event.target.value }))} />
-
-              <label htmlFor="edit-spell-level">Niveau</label>
-              <input id="edit-spell-level" type="number" min={0} max={9} value={editGrimoireForm.level} onChange={(event) => setEditGrimoireForm((p) => ({ ...p, level: event.target.value }))} />
-
-              <label htmlFor="edit-spell-school">École</label>
-              <input id="edit-spell-school" type="text" value={editGrimoireForm.school} onChange={(event) => setEditGrimoireForm((p) => ({ ...p, school: event.target.value }))} />
-
-              <label htmlFor="edit-spell-casting">Casting time</label>
-              <input id="edit-spell-casting" type="text" value={editGrimoireForm.castingTime} onChange={(event) => setEditGrimoireForm((p) => ({ ...p, castingTime: event.target.value }))} />
-
-              <label htmlFor="edit-spell-range">Range</label>
-              <input id="edit-spell-range" type="text" value={editGrimoireForm.range} onChange={(event) => setEditGrimoireForm((p) => ({ ...p, range: event.target.value }))} />
-
-              <label htmlFor="edit-spell-components">Components</label>
-              <input id="edit-spell-components" type="text" value={editGrimoireForm.components} onChange={(event) => setEditGrimoireForm((p) => ({ ...p, components: event.target.value }))} />
-
-              <label htmlFor="edit-spell-duration">Duration</label>
-              <input id="edit-spell-duration" type="text" value={editGrimoireForm.duration} onChange={(event) => setEditGrimoireForm((p) => ({ ...p, duration: event.target.value }))} />
-
-              <label htmlFor="edit-spell-desc">Description</label>
-              <textarea id="edit-spell-desc" rows={5} value={editGrimoireForm.description} onChange={(event) => setEditGrimoireForm((p) => ({ ...p, description: event.target.value }))} />
-
-              <label htmlFor="edit-spell-higher">Higher level</label>
-              <textarea id="edit-spell-higher" rows={3} value={editGrimoireForm.higherLevel} onChange={(event) => setEditGrimoireForm((p) => ({ ...p, higherLevel: event.target.value }))} />
-
-              <label className="skill-check">
-                <input type="checkbox" checked={editGrimoireForm.ritual} onChange={(event) => setEditGrimoireForm((p) => ({ ...p, ritual: event.target.checked }))} />
-                Rituel
-              </label>
-
-              <label className="skill-check">
-                <input type="checkbox" checked={editGrimoireForm.concentration} onChange={(event) => setEditGrimoireForm((p) => ({ ...p, concentration: event.target.checked }))} />
-                Concentration
-              </label>
-
-              <label htmlFor="edit-spell-raw">Raw (JSON)</label>
-              <textarea id="edit-spell-raw" rows={6} value={editGrimoireForm.rawJson} onChange={(event) => setEditGrimoireForm((p) => ({ ...p, rawJson: event.target.value }))} />
-
-              <h4>Grimoire</h4>
-              <label className="skill-check">
-                <input type="checkbox" checked={editGrimoireForm.is_known} onChange={(event) => setEditGrimoireForm((p) => ({ ...p, is_known: event.target.checked }))} />
-                Connu
-              </label>
-
-              <label className="skill-check">
-                <input type="checkbox" checked={editGrimoireForm.is_prepared} onChange={(event) => setEditGrimoireForm((p) => ({ ...p, is_prepared: event.target.checked }))} />
-                Préparé
-              </label>
-
-              <label htmlFor="grimoire-notes">Notes</label>
-              <textarea id="grimoire-notes" rows={4} value={editGrimoireForm.notes} onChange={(event) => setEditGrimoireForm((p) => ({ ...p, notes: event.target.value }))} />
-
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button className="btn" type="submit" disabled={editGrimoireSaving}>
-                  {editGrimoireSaving ? 'Enregistrement…' : 'Enregistrer'}
-                </button>
-                <button
-                  className="btn btn-secondary"
-                  type="button"
-                  disabled={editGrimoireSaving}
-                  onClick={() => setRemoveFromGrimoireConfirmOpen(true)}
-                >
-                  Supprimer du grimoire
-                </button>
-                <button className="btn btn-secondary" type="button" disabled={editGrimoireSaving} onClick={() => setIsEditGrimoireModalOpen(false)}>
-                  Annuler
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <SpellEditModal
+          open={isEditGrimoireModalOpen}
+          saving={editGrimoireSaving}
+          form={editGrimoireForm}
+          setForm={setEditGrimoireForm}
+          onSubmit={handleSaveGrimoireEntry}
+          onClose={() => (!editGrimoireSaving ? setIsEditGrimoireModalOpen(false) : null)}
+          onOpenRemoveConfirm={() => setRemoveFromGrimoireConfirmOpen(true)}
+        />
       )}
 
-      {!sessionView && removeFromGrimoireConfirmOpen && (
-        <div
-          className="modal-backdrop"
-          onClick={() => {
-            if (!removingFromGrimoire) setRemoveFromGrimoireConfirmOpen(false)
-          }}
-        >
-          <div className="modal-card" onClick={(event) => event.stopPropagation()}>
-            <h3>Supprimer du grimoire</h3>
-            <p>Confirmer la suppression de ce sort du grimoire ?</p>
-            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
-              <button className="btn" type="button" disabled={removingFromGrimoire} onClick={() => void handleRemoveFromGrimoire()}>
-                {removingFromGrimoire ? 'Suppression…' : 'Oui, supprimer'}
-              </button>
-              <button className="btn btn-secondary" type="button" disabled={removingFromGrimoire} onClick={() => setRemoveFromGrimoireConfirmOpen(false)}>
-                Annuler
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <RemoveFromGrimoireConfirmModal
+        open={!sessionView && removeFromGrimoireConfirmOpen}
+        removing={removingFromGrimoire}
+        onClose={() => {
+          if (!removingFromGrimoire) setRemoveFromGrimoireConfirmOpen(false)
+        }}
+        onConfirm={() => void handleRemoveFromGrimoire()}
+      />
 
-      {isSpellDetailsModalOpen && (
-        <div className="modal-backdrop" onClick={() => (!spellDetailsLoading ? setIsSpellDetailsModalOpen(false) : null)}>
-          <div className="modal-card" onClick={(event) => event.stopPropagation()}>
-            <h3>Détails du sort</h3>
-            {spellDetailsLoading ? <p>Chargement…</p> : null}
-            {!spellDetailsLoading && spellDetails ? (
-              <div className="item-details">
-                <p>
-                  <strong>Index</strong> {spellDetails.index ?? '—'}
-                </p>
-                <p>
-                  <strong>Nom</strong> {spellDetails.name}
-                </p>
-                <p>
-                  <strong>Niveau</strong> {spellDetails.level ?? '—'}
-                </p>
-                <p>
-                  <strong>École</strong> {spellDetails.school ?? '—'}
-                </p>
-                <p>
-                  <strong>Casting time</strong> {spellDetails.castingTime ?? '—'}
-                </p>
-                <p>
-                  <strong>Range</strong> {spellDetails.range ?? '—'}
-                </p>
-                <p>
-                  <strong>Components</strong> {spellDetails.components ?? '—'}
-                </p>
-                <p>
-                  <strong>Duration</strong> {spellDetails.duration ?? '—'}
-                </p>
-                <p>
-                  <strong>Description</strong> {spellDetails.description?.trim() ? spellDetails.description : '—'}
-                </p>
-                <p>
-                  <strong>Higher level</strong> {spellDetails.higherLevel?.trim() ? spellDetails.higherLevel : '—'}
-                </p>
-                <p>
-                  <strong>Rituel</strong> {spellDetails.ritual ? 'Oui' : 'Non'}
-                </p>
-                <p>
-                  <strong>Concentration</strong> {spellDetails.concentration ? 'Oui' : 'Non'}
-                </p>
-              </div>
-            ) : null}
-
-            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
-              <button className="btn btn-secondary" type="button" disabled={spellDetailsLoading} onClick={() => setIsSpellDetailsModalOpen(false)}>
-                Fermer
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <SpellDetailsModal
+        open={isSpellDetailsModalOpen}
+        loading={spellDetailsLoading}
+        spellDetails={spellDetails}
+        onClose={() => (!spellDetailsLoading ? setIsSpellDetailsModalOpen(false) : null)}
+      />
     </div>
   )
 }

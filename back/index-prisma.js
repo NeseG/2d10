@@ -1,7 +1,9 @@
+const http = require('http');
 const express = require('express');
 const cors = require('cors');
 const config = require('./config');
 const prisma = require('./lib/prisma');
+const { attachSessionChatWss } = require('./ws/session-chat');
 
 // Import des routes (nouvelles routes Prisma)
 const authRoutes = require('./routes/auth-prisma');
@@ -21,6 +23,7 @@ const dnd5eSpellsRoutes = require('./routes/dnd5e-spells-prisma');
 const spellRoutes = require('./routes/spells-prisma');
 
 const app = express();
+const server = http.createServer(app);
 const port = config.port;
 
 // Middleware
@@ -61,6 +64,8 @@ app.use('/api/dnd5e', dnd5eEquipmentRoutes);
 app.use('/api/dnd5e', dnd5eMagicItemsRoutes);
 app.use('/api/dnd5e', dnd5eSpellsRoutes);
 app.use('/api/spells', spellRoutes);
+
+attachSessionChatWss(server);
 
 // Route de test
 app.get('/', (req, res) => {
@@ -128,8 +133,8 @@ process.on('SIGTERM', async () => {
   process.exit(0);
 });
 
-// Démarrer le serveur
-app.listen(port, '0.0.0.0', async () => {
+// Démarrer le serveur (HTTP + WebSocket chat session live)
+server.listen(port, '0.0.0.0', async () => {
   console.log(`🚀 Serveur démarré sur le port ${port}`);
   console.log(`📊 Utilisation de Prisma comme ORM`);
   await initializeDatabase();

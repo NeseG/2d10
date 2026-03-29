@@ -1,13 +1,23 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Card } from '../../../shared/components/Card'
 import { useAuth } from '../../../app/hooks/useAuth'
 import { useSnackbar } from '../../../app/hooks/useSnackbar'
 import { apiGet } from '../../../shared/api/client'
-import { CharacterCharacteristicsTab } from '../../characters/components/CharacterCharacteristicsTab'
+import {
+  CharacterCharacteristicsTab,
+  DEFAULT_SESSION_LIVE_ACCORDIONS,
+  type SessionLiveAccordionState,
+} from '../../characters/components/CharacterCharacteristicsTab'
 import { CharacterInventoryTab } from '../../characters/components/CharacterInventoryTab'
 import { CharacterGrimoireTab } from '../../characters/components/CharacterGrimoireTab'
-import { CharacterFeaturesTab } from '../../characters/components/CharacterFeaturesTab'
+import {
+  CharacterFeaturesTab,
+  DEFAULT_SESSION_LIVE_TRAITS_ACCORDIONS,
+  type FeatureCategory,
+  type SessionLiveTraitsAccordionState,
+} from '../../characters/components/CharacterFeaturesTab'
+import { SessionLiveChat } from '../components/SessionLiveChat'
 import { useHeader } from '../../../app/hooks/useHeader'
 
 type JoinedSession = {
@@ -50,15 +60,31 @@ function SessionLiveCharacterHeading(props: { characterId: string; label: string
   )
 }
 
+function hasJoinedSessionInStorage(): boolean {
+  if (typeof window === 'undefined') return false
+  const raw = localStorage.getItem('joined_session')
+  if (!raw) return false
+  try {
+    const s = JSON.parse(raw) as { id?: unknown }
+    return typeof s?.id === 'number' && Number.isFinite(s.id)
+  } catch {
+    return false
+  }
+}
+
 export function LiveSessionPage() {
-  const { token, user } = useAuth()
+  const { token, user, isLoading: authLoading } = useAuth()
   const { setSessionInfo } = useHeader()
   const { showSnackbar } = useSnackbar()
-  const [loading, setLoading] = useState(false)
+  /** True dès qu’il y a session jointe + token : évite un écran vide avant `user` (profil auth) ou avant la fin du GET session. */
+  const [loading, setLoading] = useState(
+    () => Boolean(localStorage.getItem('auth_token') && hasJoinedSessionInStorage()),
+  )
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null)
+  const [sessionLoadFailed, setSessionLoadFailed] = useState(false)
   const [selectedCharacterId, setSelectedCharacterId] = useState<string>('')
   const [selectedCharacterName, setSelectedCharacterName] = useState<string>('')
-  const [mainTab, setMainTab] = useState<'character'>('character')
+  const [mainTab, setMainTab] = useState<'character' | 'chat'>('character')
   const [characterSubTab, setCharacterSubTab] = useState<'characteristic' | 'inventory' | 'grimoire' | 'traits'>(
     'characteristic',
   )
@@ -75,9 +101,22 @@ export function LiveSessionPage() {
 
   useEffect(() => {
     async function loadSessionDetail() {
-      if (!session || !token || !user) return
+      if (!session) {
+        setLoading(false)
+        setSessionLoadFailed(false)
+        return
+      }
+      if (!token) {
+        setLoading(false)
+        return
+      }
+      if (!user) {
+        if (!authLoading) setLoading(false)
+        return
+      }
       setLoading(true)
       try {
+        setSessionLoadFailed(false)
         const response = await apiGet<{ success: boolean; session: SessionDetail }>(`/api/sessions/${session.id}`, token)
         const detail = response.session
         setSessionDetail(detail)
@@ -98,6 +137,8 @@ export function LiveSessionPage() {
           setSelectedCharacterName('')
         }
       } catch (err) {
+        setSessionDetail(null)
+        setSessionLoadFailed(true)
         showSnackbar({
           message: err instanceof Error ? err.message : 'Erreur de chargement de la session',
           severity: 'error',
@@ -109,7 +150,7 @@ export function LiveSessionPage() {
 
     void loadSessionDetail()
     return () => setSessionInfo(null)
-  }, [session?.id, token, user?.id, user, setSessionInfo, showSnackbar])
+  }, [session?.id, token, user?.id, user, authLoading, setSessionInfo, showSnackbar])
 
   const isSessionOwner = useMemo(() => {
     if (!user) return false
@@ -131,6 +172,43 @@ export function LiveSessionPage() {
   }, [user, sessionDetail, accessibleCharacters.length])
 
   const [characterDisplayNames, setCharacterDisplayNames] = useState<Record<string, string>>({})
+  const [sessionAccordionByCharacterId, setSessionAccordionByCharacterId] = useState<
+    Record<string, SessionLiveAccordionState>
+  >({})
+  const [traitsAccordionByCharacterId, setTraitsAccordionByCharacterId] = useState<
+    Record<string, SessionLiveTraitsAccordionState>
+  >({})
+
+  const getSessionLiveAccordions = useCallback(
+    (characterId: string) => sessionAccordionByCharacterId[characterId] ?? DEFAULT_SESSION_LIVE_ACCORDIONS,
+    [sessionAccordionByCharacterId],
+  )
+
+  const patchSessionLiveAccordions = useCallback(
+    (characterId: string, patch: Partial<SessionLiveAccordionState>) => {
+      setSessionAccordionByCharacterId((prev) => ({
+        ...prev,
+        [characterId]: { ...DEFAULT_SESSION_LIVE_ACCORDIONS, ...prev[characterId], ...patch },
+      }))
+    },
+    [],
+  )
+
+  const getSessionLiveTraitsAccordions = useCallback(
+    (characterId: string) =>
+      traitsAccordionByCharacterId[characterId] ?? DEFAULT_SESSION_LIVE_TRAITS_ACCORDIONS,
+    [traitsAccordionByCharacterId],
+  )
+
+  const patchSessionLiveTraitsAccordions = useCallback(
+    (characterId: string, patch: Partial<Record<FeatureCategory, boolean>>) => {
+      setTraitsAccordionByCharacterId((prev) => ({
+        ...prev,
+        [characterId]: { ...DEFAULT_SESSION_LIVE_TRAITS_ACCORDIONS, ...prev[characterId], ...patch },
+      }))
+    },
+    [],
+  )
 
   useEffect(() => {
     setCharacterDisplayNames((prev) => {
@@ -150,24 +228,40 @@ export function LiveSessionPage() {
 
   /** Dock fixe en bas : marge scrollable pour ne pas masquer le contenu sous la barre d’onglets. */
   const showBottomCharacterDock =
-    Boolean(session) && !loading && accessibleCharacters.length > 0 && mainTab === 'character'
+    Boolean(session) &&
+    !loading &&
+    sessionDetail &&
+    accessibleCharacters.length > 0 &&
+    mainTab === 'character'
+
+  const showPageLoading = Boolean(
+    session && token && (authLoading || !user || loading),
+  )
+  const showSessionTabs = Boolean(
+    session && user && !authLoading && !loading && sessionDetail,
+  )
+  const showSessionLoadError = Boolean(
+    session && token && user && !authLoading && !loading && sessionLoadFailed,
+  )
 
   return (
     <div
-      className={`session-live-page${showBottomCharacterDock ? ' session-live-page--dock-offset' : ''}${useGmCharacterStrip ? ' session-live-page--gm-strip' : ''}`}
+      className={`session-live-page${showBottomCharacterDock ? ' session-live-page--dock-offset' : ''}${useGmCharacterStrip && mainTab === 'character' ? ' session-live-page--gm-strip' : ''}`}
     >
       <Card title="">
         {!session ? <p>Aucune session rejointe.</p> : null}
 
         {session ? (
           <>
-            {loading ? <p>Chargement…</p> : null}
+            {showPageLoading ? <p>Chargement…</p> : null}
 
-          {!loading && accessibleCharacters.length === 0 ? (
-            <p>Ton compte n&apos;a pas encore de personnage associé à cette session.</p>
-          ) : null}
+            {showSessionLoadError ? (
+              <p style={{ marginTop: '0.75rem' }}>
+                Impossible de charger cette session. Vérifie ta connexion ou réessaie depuis la liste des sessions.
+              </p>
+            ) : null}
 
-          {!loading && accessibleCharacters.length > 0 ? (
+          {showSessionTabs ? (
             <>
               <div className="tabs-row session-tabs-primary session-tabs-primary-sticky">
                 <button
@@ -177,8 +271,29 @@ export function LiveSessionPage() {
                 >
                   Character
                 </button>
+                <button
+                  className={`tab-btn ${mainTab === 'chat' ? 'active' : ''}`}
+                  type="button"
+                  onClick={() => setMainTab('chat')}
+                >
+                  Chat
+                </button>
               </div>
 
+              {mainTab === 'chat' && user ? (
+                <div className="session-live-content session-live-chat-panel" style={{ marginTop: '0.75rem' }}>
+                  <SessionLiveChat sessionId={session.id} token={token} currentUserId={user.id} />
+                </div>
+              ) : null}
+
+              {mainTab === 'character' && accessibleCharacters.length === 0 ? (
+                <p style={{ marginTop: '0.75rem' }}>
+                  Ton compte n&apos;a pas encore de personnage associé à cette session.
+                </p>
+              ) : null}
+
+              {mainTab === 'character' && accessibleCharacters.length > 0 ? (
+                <>
               {!useGmCharacterStrip && accessibleCharacters.length > 1 ? (
                 <div className="login-form" style={{ marginTop: '0.75rem' }}>
                   <label htmlFor="session-character-select">Personnage</label>
@@ -219,6 +334,8 @@ export function LiveSessionPage() {
                               token={token}
                               sessionView
                               sessionId={sessionDetail?.id != null ? String(sessionDetail.id) : undefined}
+                              sessionLiveAccordions={getSessionLiveAccordions(cid)}
+                              onSessionLiveAccordionsChange={(p) => patchSessionLiveAccordions(cid, p)}
                               onNameLoaded={(name) =>
                                 setCharacterDisplayNames((p) => ({ ...p, [cid]: name }))
                               }
@@ -238,7 +355,15 @@ export function LiveSessionPage() {
                               }
                             />
                           ) : null}
-                          {characterSubTab === 'traits' ? <CharacterFeaturesTab characterId={cid} token={token} /> : null}
+                          {characterSubTab === 'traits' ? (
+                            <CharacterFeaturesTab
+                              characterId={cid}
+                              token={token}
+                              sessionView
+                              sessionTraitsAccordions={getSessionLiveTraitsAccordions(cid)}
+                              onSessionTraitsAccordionsChange={(p) => patchSessionLiveTraitsAccordions(cid, p)}
+                            />
+                          ) : null}
                         </div>
                       </div>
                     )
@@ -256,6 +381,10 @@ export function LiveSessionPage() {
                       token={token}
                       sessionView
                       sessionId={sessionDetail?.id != null ? String(sessionDetail.id) : undefined}
+                      sessionLiveAccordions={getSessionLiveAccordions(selectedCharacterId)}
+                      onSessionLiveAccordionsChange={(p) =>
+                        patchSessionLiveAccordions(selectedCharacterId, p)
+                      }
                       onNameLoaded={(name) => setSelectedCharacterName(name)}
                     />
                   ) : null}
@@ -269,7 +398,15 @@ export function LiveSessionPage() {
                       sessionId={sessionDetail?.id != null ? String(sessionDetail.id) : session ? String(session.id) : undefined}
                     />
                   ) : null}
-                  {characterSubTab === 'traits' ? <CharacterFeaturesTab characterId={selectedCharacterId} token={token} /> : null}
+                  {characterSubTab === 'traits' ? (
+                    <CharacterFeaturesTab
+                      characterId={selectedCharacterId}
+                      token={token}
+                      sessionView
+                      sessionTraitsAccordions={getSessionLiveTraitsAccordions(selectedCharacterId)}
+                      onSessionTraitsAccordionsChange={(p) => patchSessionLiveTraitsAccordions(selectedCharacterId, p)}
+                    />
+                  ) : null}
                 </div>
               ) : null}
 
@@ -312,6 +449,8 @@ export function LiveSessionPage() {
                     Traits
                   </button>
                 </div>
+              ) : null}
+                </>
               ) : null}
             </>
           ) : null}
