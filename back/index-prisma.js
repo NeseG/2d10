@@ -10,12 +10,14 @@ const characterRoutes = require('./routes/characters-prisma');
 const inventoryRoutes = require('./routes/inventory-prisma');
 const itemRoutes = require('./routes/items-prisma');
 const equipmentRoutes = require('./routes/equipment-prisma');
-const dndRoutes = require('./routes/dnd-prisma');
 const dndLocalRoutes = require('./routes/dnd-local-prisma');
 const purseRoutes = require('./routes/purse-prisma');
 const campaignRoutes = require('./routes/campaigns-prisma');
 const grimoireRoutes = require('./routes/grimoire-prisma');
 const sessionRoutes = require('./routes/sessions-prisma');
+const dnd5eEquipmentRoutes = require('./routes/dnd5e-equipment-prisma');
+const dnd5eSpellsRoutes = require('./routes/dnd5e-spells-prisma');
+const spellRoutes = require('./routes/spells-prisma');
 
 const app = express();
 const port = config.port;
@@ -49,12 +51,14 @@ app.use('/api/characters', characterRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/items', itemRoutes);
 app.use('/api/equipment', equipmentRoutes);
-app.use('/api/dnd', dndRoutes);
 app.use('/api/dnd-local', dndLocalRoutes);
 app.use('/api/purse', purseRoutes);
 app.use('/api/campaigns', campaignRoutes);
 app.use('/api/grimoire', grimoireRoutes);
 app.use('/api/sessions', sessionRoutes);
+app.use('/api/dnd5e', dnd5eEquipmentRoutes);
+app.use('/api/dnd5e', dnd5eSpellsRoutes);
+app.use('/api/spells', spellRoutes);
 
 // Route de test
 app.get('/', (req, res) => {
@@ -69,8 +73,9 @@ app.get('/', (req, res) => {
       inventory: '/api/inventory',
       items: '/api/items',
       equipment: '/api/equipment',
-      dnd: '/api/dnd',
       dndLocal: '/api/dnd-local',
+      dnd5e: '/api/dnd5e',
+      spells: '/api/spells',
       purse: '/api/purse',
       campaigns: '/api/campaigns',
       grimoire: '/api/grimoire',

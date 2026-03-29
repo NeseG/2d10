@@ -1,4 +1,5 @@
 const express = require('express');
+const { Prisma } = require('@prisma/client');
 const prisma = require('../lib/prisma');
 const { authenticateToken } = require('../middleware/auth');
 
@@ -29,7 +30,7 @@ router.get('/spells', authenticateToken, async (req, res) => {
       ];
     }
 
-    const spells = await prisma.dndSpell.findMany({
+    const spells = await prisma.dnd5eSpellImport.findMany({
       where,
       orderBy: { name: 'asc' },
       take: limit,
@@ -49,11 +50,11 @@ router.get('/spells', authenticateToken, async (req, res) => {
   }
 });
 
-// Obtenir un sort local par slug
-router.get('/spells/:slug', authenticateToken, async (req, res) => {
+// Obtenir un sort local par index
+router.get('/spells/:index', authenticateToken, async (req, res) => {
   try {
-    const { slug } = req.params;
-    const spell = await prisma.dndSpell.findUnique({ where: { slug } });
+    const { index } = req.params;
+    const spell = await prisma.dnd5eSpellImport.findUnique({ where: { index } });
 
     if (!spell) {
       return res.status(404).json({ success: false, error: 'Sort non trouvé' });
@@ -254,7 +255,7 @@ router.get('/search', authenticateToken, async (req, res) => {
       try {
         switch (type) {
           case 'spells':
-            results[type] = await prisma.dndSpell.findMany({
+            results[type] = await prisma.dnd5eSpellImport.findMany({
               where: {
                 OR: [
                   { name: { contains: query, mode: 'insensitive' } },
@@ -298,10 +299,11 @@ router.get('/search', authenticateToken, async (req, res) => {
             });
             break;
           case 'items':
-            results[type] = await prisma.$queryRawUnsafe(
-              'SELECT * FROM dnd_items WHERE name ILIKE $1 OR description ILIKE $1 LIMIT 10',
-              `%${query}%`,
-            );
+            results[type] = await prisma.$queryRaw`
+              SELECT * FROM dnd_items
+              WHERE name ILIKE ${`%${query}%`} OR description ILIKE ${`%${query}%`}
+              LIMIT 10
+            `;
             break;
           default:
             break;
@@ -329,32 +331,28 @@ router.get('/items', authenticateToken, async (req, res) => {
     const { category, rarity, search } = req.query;
     const { limit, page, skip } = parsePagination(req.query);
 
-    const conditions = [];
-    const params = [];
+    const conditions = [Prisma.sql`1 = 1`];
 
     if (category) {
-      params.push(category);
-      conditions.push(`category = $${params.length}`);
+      conditions.push(Prisma.sql`category = ${category}`);
     }
 
     if (rarity) {
-      params.push(rarity);
-      conditions.push(`rarity = $${params.length}`);
+      conditions.push(Prisma.sql`rarity = ${rarity}`);
     }
 
     if (search) {
-      params.push(`%${search}%`);
-      conditions.push(`(name ILIKE $${params.length} OR description ILIKE $${params.length})`);
+      const searchTerm = `%${search}%`;
+      conditions.push(Prisma.sql`(name ILIKE ${searchTerm} OR description ILIKE ${searchTerm})`);
     }
 
-    params.push(limit);
-    params.push(skip);
-    const whereSql = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-
-    const items = await prisma.$queryRawUnsafe(
-      `SELECT * FROM dnd_items ${whereSql} ORDER BY name LIMIT $${params.length - 1} OFFSET $${params.length}`,
-      ...params,
-    );
+    const items = await prisma.$queryRaw`
+      SELECT * FROM dnd_items
+      WHERE ${Prisma.join(conditions, ' AND ')}
+      ORDER BY name
+      LIMIT ${limit}
+      OFFSET ${skip}
+    `;
 
     res.json({
       success: true,
@@ -373,7 +371,7 @@ router.get('/items', authenticateToken, async (req, res) => {
 router.get('/items/:slug', authenticateToken, async (req, res) => {
   try {
     const { slug } = req.params;
-    const result = await prisma.$queryRawUnsafe('SELECT * FROM dnd_items WHERE slug = $1', slug);
+    const result = await prisma.$queryRaw`SELECT * FROM dnd_items WHERE slug = ${slug}`;
 
     if (!result || result.length === 0) {
       return res.status(404).json({ success: false, error: 'Item non trouvé' });
@@ -392,18 +390,21 @@ router.get('/items/:slug', authenticateToken, async (req, res) => {
 // Statistiques des données locales
 router.get('/stats', authenticateToken, async (req, res) => {
   try {
-    const stats = {};
-    const tables = ['dnd_spells', 'dnd_monsters', 'dnd_weapons', 'dnd_armor', 'dnd_items'];
+    const [spells, monsters, weapons, armor, itemsRaw] = await Promise.all([
+      prisma.dnd5eSpellImport.count(),
+      prisma.dndMonster.count(),
+      prisma.dndWeapon.count(),
+      prisma.dndArmor.count(),
+      prisma.$queryRaw`SELECT COUNT(*) as count FROM dnd_items`,
+    ]);
 
-    for (const table of tables) {
-      try {
-        const result = await prisma.$queryRawUnsafe(`SELECT COUNT(*) as count FROM ${table}`);
-        const tableName = table.replace('dnd_', '');
-        stats[tableName] = Number.parseInt(result[0].count, 10);
-      } catch (error) {
-        stats[table.replace('dnd_', '')] = 0;
-      }
-    }
+    const stats = {
+      spells,
+      monsters,
+      weapons,
+      armor,
+      items: Number.parseInt(itemsRaw[0].count, 10),
+    };
 
     res.json({
       success: true,

@@ -89,6 +89,59 @@ async function checkSessionOwnership(req, res, next) {
   }
 }
 
+// Obtenir les sessions actives accessibles à l'utilisateur (admin/gm/user)
+router.get('/active', authenticateToken, async (req, res) => {
+  try {
+    const role = req.user.role_name;
+    const userId = req.user.id;
+
+    const where =
+      role === 'admin'
+        ? { isActive: true, campaign: { isActive: true } }
+        : role === 'gm'
+          ? { isActive: true, campaign: { isActive: true, gmId: userId } }
+          : {
+              isActive: true,
+              campaign: {
+                isActive: true,
+                characters: {
+                  some: {
+                    isActive: true,
+                    character: { userId, isActive: true },
+                  },
+                },
+              },
+            };
+
+    const sessions = await prisma.gameSession.findMany({
+      where,
+      include: {
+        campaign: {
+          select: { id: true, name: true, status: true, gmId: true },
+        },
+      },
+      orderBy: [{ sessionDate: 'desc' }, { sessionNumber: 'desc' }],
+    });
+
+    res.json({
+      success: true,
+      sessions: sessions.map((s) => ({
+        id: s.id,
+        campaign_id: s.campaignId,
+        campaign_name: s.campaign?.name ?? null,
+        campaign_status: s.campaign?.status ?? null,
+        session_number: s.sessionNumber,
+        title: s.title,
+        session_date: s.sessionDate,
+        is_active: s.isActive,
+      })),
+    });
+  } catch (error) {
+    console.error('Erreur lors de la récupération des sessions actives:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 // Obtenir toutes les sessions d'une campagne
 router.get('/campaign/:campaignId', authenticateToken, async (req, res) => {
   try {
@@ -119,17 +172,42 @@ router.get('/:sessionId', authenticateToken, async (req, res) => {
     const sessionId = parseInt(req.params.sessionId, 10);
     if (Number.isNaN(sessionId)) return res.status(400).json({ error: 'ID de session invalide' });
 
+    const role = req.user.role_name;
+    const userId = req.user.id;
+    const accessWhere =
+      role === 'admin'
+        ? {}
+        : role === 'gm'
+          ? { campaign: { gmId: userId } }
+          : { attendance: { some: { character: { userId, isActive: true } } } };
+
     const session = await prisma.gameSession.findFirst({
       where: {
         id: sessionId,
         isActive: true,
-        ...(req.user.role_name === 'admin' ? {} : { campaign: { gmId: req.user.id } }),
+        ...accessWhere,
       },
       include: {
         campaign: {
           select: {
+            id: true,
             name: true,
             gmId: true,
+            characters: {
+              where: { isActive: true, character: { isActive: true } },
+              include: {
+                character: {
+                  include: {
+                    user: {
+                      select: { username: true },
+                    },
+                  },
+                },
+              },
+              orderBy: {
+                character: { name: 'asc' },
+              },
+            },
           },
         },
         attendance: {
@@ -137,7 +215,7 @@ router.get('/:sessionId', authenticateToken, async (req, res) => {
             character: {
               include: {
                 user: {
-                  select: { username: true },
+                  select: { id: true, username: true },
                 },
               },
             },
@@ -162,17 +240,31 @@ router.get('/:sessionId', authenticateToken, async (req, res) => {
       character_name: a.character?.name,
       class: a.character?.class,
       level: a.character?.level,
+      character_user_id: a.character?.user?.id ?? null,
       player_username: a.character?.user?.username,
+    }));
+
+    const campaignCharacters = (session.campaign.characters || []).map((link) => ({
+      id: link.id,
+      campaign_id: link.campaignId,
+      character_id: link.characterId,
+      character_name: link.character?.name ?? null,
+      class: link.character?.class ?? null,
+      level: link.character?.level ?? null,
+      race: link.character?.race ?? null,
+      player_username: link.character?.user?.username ?? null,
     }));
 
     res.json({
       success: true,
       session: {
         ...formatSession(session, {
+          campaign_id: session.campaign.id,
           campaign_name: session.campaign.name,
           gm_id: session.campaign.gmId,
         }),
         attendance,
+        campaign_characters: campaignCharacters,
       },
     });
   } catch (error) {
@@ -249,6 +341,7 @@ router.put('/:sessionId', authenticateToken, checkSessionOwnership, async (req, 
       notes,
       xp_awarded,
       gold_awarded,
+      is_active,
     } = req.body;
 
     const updateData = {};
@@ -261,6 +354,7 @@ router.put('/:sessionId', authenticateToken, checkSessionOwnership, async (req, 
     if (notes !== undefined) updateData.notes = notes;
     if (xp_awarded !== undefined) updateData.xpAwarded = xp_awarded;
     if (gold_awarded !== undefined) updateData.goldAwarded = gold_awarded;
+    if (is_active !== undefined) updateData.isActive = Boolean(is_active);
 
     if (Object.keys(updateData).length === 0) {
       return res.status(400).json({ error: 'Aucune donnée à mettre à jour' });
@@ -350,6 +444,150 @@ router.post('/:sessionId/attendance', authenticateToken, checkSessionOwnership, 
     });
   } catch (error) {
     console.error('Erreur lors de la mise à jour de la présence:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// État de jeu d'un personnage dans UNE campagne/session (PDV restants, dés de vie restants)
+router.get('/:sessionId/characters/:characterId/state', authenticateToken, async (req, res) => {
+  try {
+    const sessionId = parseInt(req.params.sessionId, 10);
+    const characterId = parseInt(req.params.characterId, 10);
+    if (Number.isNaN(sessionId) || Number.isNaN(characterId)) {
+      return res.status(400).json({ error: 'ID invalide' });
+    }
+
+    const session = await prisma.gameSession.findFirst({
+      where: { id: sessionId, isActive: true },
+      include: { campaign: { select: { id: true, gmId: true, isActive: true } } },
+    });
+    if (!session || !session.campaign?.isActive) {
+      return res.status(404).json({ error: 'Session non trouvée' });
+    }
+
+    const campaignCharacter = await prisma.campaignCharacter.findFirst({
+      where: { campaignId: session.campaignId, characterId, isActive: true },
+      include: {
+        character: {
+          select: { id: true, userId: true, hitPoints: true, hitDice: true, currentHitPoints: true, hitDiceRemaining: true, isActive: true },
+        },
+      },
+    });
+    if (!campaignCharacter || !campaignCharacter.character?.isActive) {
+      return res.status(404).json({ error: 'Personnage non trouvé dans cette campagne' });
+    }
+
+    const user = req.user;
+    const isAdmin = user.role_name === 'admin';
+    const isOwnerGm = user.role_name === 'gm' && session.campaign.gmId === user.id;
+    const isCharacterOwner = campaignCharacter.character.userId === user.id;
+    if (!isAdmin && !isOwnerGm && !isCharacterOwner) {
+      return res.status(403).json({ error: 'Accès refusé' });
+    }
+
+    const hitDiceRaw = campaignCharacter.character.hitDice || null;
+    const hitDiceMaxMatch = typeof hitDiceRaw === 'string' ? hitDiceRaw.trim().match(/^(\d+)\s*d\s*\d+$/i) : null;
+    const hitDiceMax = hitDiceMaxMatch ? Number.parseInt(hitDiceMaxMatch[1], 10) : null;
+
+    res.json({
+      success: true,
+      state: {
+        session_id: sessionId,
+        campaign_id: session.campaignId,
+        character_id: characterId,
+        current_hit_points:
+          campaignCharacter.currentHitPoints ??
+          campaignCharacter.character.currentHitPoints ??
+          campaignCharacter.character.hitPoints ??
+          null,
+        max_hit_points: campaignCharacter.character.hitPoints ?? null,
+        hit_dice: hitDiceRaw,
+        hit_dice_remaining:
+          campaignCharacter.hitDiceRemaining ??
+          campaignCharacter.character.hitDiceRemaining ??
+          hitDiceMax,
+        hit_dice_max: hitDiceMax,
+      },
+    });
+  } catch (error) {
+    console.error("Erreur lors de la récupération de l'état de personnage en session:", error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+router.put('/:sessionId/characters/:characterId/state', authenticateToken, async (req, res) => {
+  try {
+    const sessionId = parseInt(req.params.sessionId, 10);
+    const characterId = parseInt(req.params.characterId, 10);
+    if (Number.isNaN(sessionId) || Number.isNaN(characterId)) {
+      return res.status(400).json({ error: 'ID invalide' });
+    }
+
+    const session = await prisma.gameSession.findFirst({
+      where: { id: sessionId, isActive: true },
+      include: { campaign: { select: { id: true, gmId: true, isActive: true } } },
+    });
+    if (!session || !session.campaign?.isActive) {
+      return res.status(404).json({ error: 'Session non trouvée' });
+    }
+
+    const campaignCharacter = await prisma.campaignCharacter.findFirst({
+      where: { campaignId: session.campaignId, characterId, isActive: true },
+      include: {
+        character: { select: { id: true, userId: true, hitDice: true, isActive: true } },
+      },
+    });
+    if (!campaignCharacter || !campaignCharacter.character?.isActive) {
+      return res.status(404).json({ error: 'Personnage non trouvé dans cette campagne' });
+    }
+
+    const user = req.user;
+    const isAdmin = user.role_name === 'admin';
+    const isOwnerGm = user.role_name === 'gm' && session.campaign.gmId === user.id;
+    const isCharacterOwner = campaignCharacter.character.userId === user.id;
+    if (!isAdmin && !isOwnerGm && !isCharacterOwner) {
+      return res.status(403).json({ error: 'Accès refusé' });
+    }
+
+    const { current_hit_points, currentHitPoints, hit_dice_remaining, hitDiceRemaining } = req.body;
+    const updateData = {};
+    if (current_hit_points !== undefined || currentHitPoints !== undefined) {
+      const parsed = Number.parseInt(String(current_hit_points ?? currentHitPoints), 10);
+      updateData.currentHitPoints = Number.isFinite(parsed) ? parsed : null;
+    }
+    if (hit_dice_remaining !== undefined || hitDiceRemaining !== undefined) {
+      const parsed = Number.parseInt(String(hit_dice_remaining ?? hitDiceRemaining), 10);
+      updateData.hitDiceRemaining = Number.isFinite(parsed) ? parsed : null;
+    }
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ error: 'Aucune donnée à mettre à jour' });
+    }
+
+    const updated = await prisma.campaignCharacter.update({
+      where: { campaignId_characterId: { campaignId: session.campaignId, characterId } },
+      data: updateData,
+      include: { character: { select: { hitPoints: true, hitDice: true } } },
+    });
+
+    const hitDiceRaw = updated.character.hitDice || null;
+    const hitDiceMaxMatch = typeof hitDiceRaw === 'string' ? hitDiceRaw.trim().match(/^(\d+)\s*d\s*\d+$/i) : null;
+    const hitDiceMax = hitDiceMaxMatch ? Number.parseInt(hitDiceMaxMatch[1], 10) : null;
+
+    res.json({
+      success: true,
+      state: {
+        session_id: sessionId,
+        campaign_id: session.campaignId,
+        character_id: characterId,
+        current_hit_points: updated.currentHitPoints,
+        max_hit_points: updated.character.hitPoints ?? null,
+        hit_dice: hitDiceRaw,
+        hit_dice_remaining: updated.hitDiceRemaining,
+        hit_dice_max: hitDiceMax,
+      },
+    });
+  } catch (error) {
+    console.error("Erreur lors de la mise à jour de l'état de personnage en session:", error);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });

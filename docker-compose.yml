@@ -44,7 +44,7 @@ services:
       dockerfile: Dockerfile
     container_name: 2d10_backend
     restart: always
-    command: sh -c "npm ci && npm run prisma:generate && npm run prisma:push && npx prisma db seed && npm start"
+    command: sh -c "npm ci && npm run prisma:generate && npm run prisma:push:docker && npx prisma db seed && npm start"
     ports:
       - "3000:3000"
     environment:

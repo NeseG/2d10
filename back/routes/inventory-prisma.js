@@ -4,6 +4,34 @@ const { authenticateToken } = require('../middleware/auth');
 
 const router = express.Router();
 
+function normalizeItemType(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase();
+}
+
+function canEquipItemType(value) {
+  const normalized = normalizeItemType(value);
+  return normalized === 'armor' || normalized === 'weapon' || normalized === 'gear';
+}
+
+/** Slot générique pour l’équipement depuis l’inventaire (plusieurs objets autorisés). Créé si absent. */
+async function ensureDefaultEquipmentSlotId() {
+  const existing = await prisma.equipmentSlot.findFirst({
+    where: { name: 'Autre' },
+    select: { id: true },
+  });
+  if (existing) return existing.id;
+  const created = await prisma.equipmentSlot.create({
+    data: {
+      name: 'Autre',
+      description: 'Équipement actif (armes, armures, équipement) — plusieurs objets possibles',
+    },
+    select: { id: true },
+  });
+  return created.id;
+}
+
 async function checkCharacterOwnership(req, res, next) {
   try {
     const characterId = parseInt(req.params.characterId, 10);
@@ -34,6 +62,7 @@ function mapInventoryRow(inv, eqByItem) {
   const eq = eqByItem.get(inv.itemId);
   return {
     id: inv.id,
+    item_id: inv.itemId,
     quantity: inv.quantity,
     is_equipped: Boolean(eq?.isEquipped),
     notes: inv.notes,
@@ -42,9 +71,9 @@ function mapInventoryRow(inv, eqByItem) {
     name: inv.item?.name,
     description: inv.item?.description,
     weight: inv.item?.weight,
-    value_gold: inv.item?.value,
-    rarity: inv.item?.rarity,
-    is_magical: inv.item?.rarity ? inv.item.rarity !== 'common' : false,
+    cost: inv.item?.cost,
+    category: inv.item?.category,
+    type: inv.item?.type,
     damage_dice: null,
     damage_type: null,
     weapon_range: null,
@@ -54,7 +83,7 @@ function mapInventoryRow(inv, eqByItem) {
     stealth_disadvantage: false,
     requires_attunement: false,
     properties: inv.item?.properties,
-    item_type: inv.item?.type?.name,
+    item_type: inv.item?.category,
     created_at: inv.createdAt,
   };
 }
@@ -66,7 +95,7 @@ router.get('/:characterId', authenticateToken, checkCharacterOwnership, async (r
     const [inventory, equipment] = await Promise.all([
       prisma.inventory.findMany({
         where: { characterId },
-        include: { item: { include: { type: true } } },
+        include: { item: true },
         orderBy: { item: { name: 'asc' } },
       }),
       prisma.equipment.findMany({
@@ -96,8 +125,15 @@ router.post('/:characterId/items', authenticateToken, checkCharacterOwnership, a
   try {
     const characterId = parseInt(req.params.characterId, 10);
     const itemId = parseInt(req.body.item_id, 10);
-    const quantity = req.body.quantity ?? 1;
+    const rawQuantity = req.body.quantity;
     const { notes } = req.body;
+
+    const quantitySource =
+      rawQuantity === undefined || rawQuantity === null || rawQuantity === '' ? 1 : rawQuantity;
+    const quantity = parseInt(quantitySource, 10);
+    if (Number.isNaN(quantity) || quantity < 1) {
+      return res.status(400).json({ error: 'Quantité invalide (minimum 1)' });
+    }
 
     if (Number.isNaN(itemId)) return res.status(400).json({ error: 'ID de l\'objet requis' });
 
@@ -135,6 +171,7 @@ router.put('/:characterId/items/:inventoryId', authenticateToken, checkCharacter
 
     const existing = await prisma.inventory.findFirst({
       where: { id: inventoryId, characterId },
+      include: { item: true },
     });
     if (!existing) return res.status(404).json({ error: 'Objet non trouvé dans l\'inventaire' });
 
@@ -148,13 +185,23 @@ router.put('/:characterId/items/:inventoryId', authenticateToken, checkCharacter
 
     if (is_equipped !== undefined) {
       if (is_equipped) {
-        const slotId = parseInt(equipment_slot_id, 10);
-        if (Number.isNaN(slotId)) {
-          return res.status(400).json({ error: 'equipment_slot_id requis pour équiper' });
+        if (!canEquipItemType(existing.item?.type)) {
+          return res.status(400).json({ error: 'Seuls les items de type armor, weapon ou gear peuvent être équipés.' });
         }
+
+        let slotId = parseInt(equipment_slot_id, 10);
+        if (Number.isNaN(slotId)) {
+          slotId = await ensureDefaultEquipmentSlotId();
+        } else {
+          const slot = await prisma.equipmentSlot.findUnique({ where: { id: slotId }, select: { id: true } });
+          if (!slot) {
+            return res.status(400).json({ error: 'Slot d\'équipement inconnu.' });
+          }
+        }
+
         await prisma.equipment.upsert({
-          where: { characterId_slotId: { characterId, slotId } },
-          update: { itemId: existing.itemId, isEquipped: true },
+          where: { characterId_itemId: { characterId, itemId: existing.itemId } },
+          update: { slotId, isEquipped: true },
           create: { characterId, itemId: existing.itemId, slotId, isEquipped: true },
         });
       } else {
@@ -200,12 +247,12 @@ router.delete('/:characterId/items/:inventoryId', authenticateToken, checkCharac
 
 router.get('/items/catalog', authenticateToken, async (req, res) => {
   try {
-    const { type, rarity, search } = req.query;
+    const { type, category, search } = req.query;
 
     const items = await prisma.item.findMany({
       where: {
-        ...(rarity ? { rarity } : {}),
-        ...(type ? { type: { name: { contains: type, mode: 'insensitive' } } } : {}),
+        ...(type ? { type: String(type) } : {}),
+        ...(category ? { category: String(category) } : {}),
         ...(search
           ? {
               OR: [
@@ -215,14 +262,13 @@ router.get('/items/catalog', authenticateToken, async (req, res) => {
             }
           : {}),
       },
-      include: { type: true },
       orderBy: { name: 'asc' },
     });
 
     res.json({
       items: items.map((i) => ({
         ...i,
-        item_type: i.type?.name,
+        item_type: i.category,
       })),
     });
   } catch (error) {

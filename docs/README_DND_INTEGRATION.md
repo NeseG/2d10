@@ -1,6 +1,8 @@
 # 🎲 Intégration D&D avec Open5e API
 
-Cette application intègre maintenant l'API [Open5e](https://api.open5e.com/) pour fournir un accès complet aux données officielles de D&D 5e.
+> **Obsolète (proxy `/api/dnd`)** : la route Express `dnd-prisma` et les scripts `sync-dnd-*` ont été retirés du dépôt. Utiliser les données importées (`/api/dnd5e`, `/api/dnd-local`) et les scripts `import-dnd5e-*` décrits dans le README principal.
+
+Cette page décrivait l’intégration historique avec l’API [Open5e](https://api.open5e.com/) pour un accès aux données D&D 5e.
 
 ## 🌟 Nouvelles Fonctionnalités
 
@@ -253,10 +255,10 @@ const dragons = await fetch('/api/dnd/monsters?search=dragon', {
 
 ## 🧪 Tests avec Postman
 
-Deux collections Postman sont disponibles :
+Collections Postman utiles (dans `back/postman/`) :
 
-1. **2d10_API_Collection.postman_collection.json** - API principale
-2. **DND_Postman_Collection.json** - Routes D&D spécifiques
+1. **2d10_Complete_API_Collection.postman_collection.json** — aperçu des routes courantes
+2. **2d10_API_Collection_v2.postman_collection.json** — générée par `generate-postman-collection.js` si vous la régénérez
 
 ### Configuration Postman
 1. Importer les collections
@@ -304,9 +306,9 @@ if (response.success) {
 npm update
 ```
 
-### Vérification de l'API Open5e
+### Vérification d’un endpoint D&D local (exemple)
 ```bash
-curl http://localhost:3000/api/dnd/info
+curl -H "Authorization: Bearer <token>" "http://localhost:3000/api/dnd-local/stats"
 ```
 
 ### Logs et Debug
@@ -336,7 +338,7 @@ Pour contribuer à l'amélioration de l'intégration D&D :
 ## 📞 Support
 
 - **Documentation API** : `DND_API_DOCUMENTATION.md`
-- **Collection Postman** : `DND_Postman_Collection.json`
+- **Collection Postman** : `back/postman/2d10_Complete_API_Collection.postman_collection.json`
 - **Logs** : Vérifier les logs de l'application
 - **API Open5e** : [Documentation officielle](https://open5e.com/api-docs)
 

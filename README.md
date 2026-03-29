@@ -211,58 +211,12 @@ docker-compose down --rmi all
 ```
 
 
-### Synchronisation des données D&D
-Une fois les services démarrés, synchronisez les données D&D officielles :
-
-```bash
-# Option 1 : Synchronisation simple (recommandée)
-docker-compose exec backend npm run sync-dnd
-
-# Option 2 : Synchronisation complète
-docker-compose exec backend npm run sync-dnd-full
-
-# Option 3 : Synchronisation avancée
-docker-compose exec backend npm run sync-dnd-advanced
-```
-
-#### 🔧 Types de synchronisation disponibles :
-
-- **🟢 Simple** (`sync-dnd`) : Synchronisation basique des sorts uniquement
-- **🟡 Complète** (`sync-dnd-full`) : Sorts + monstres + armes + armures + items
-- **🔴 Avancée** (`sync-dnd-advanced`) : Synchronisation complète avec options avancées
-
-#### ⚙️ Fonctionnalités de la synchronisation avancée :
-
-- **📊 Tables dédiées** : Crée des tables spécialisées (`dnd_spells`, `dnd_monsters`, etc.)
-- **🔄 Gestion des conflits** : Mise à jour intelligente des données existantes
-- **📈 Logs détaillés** : Suivi complet des synchronisations dans `sync_log`
-- **⚡ Options flexibles** :
-  - `--force` : Forcer la synchronisation même si des données existent
-  - `--clear` : Vider les tables avant synchronisation
-  - `--dry-run` : Mode simulation sans insertion
-  - `--limit N` : Limiter le nombre d'éléments
-  - `--spells`, `--monsters`, `--weapons`, `--armor`, `--items` : Synchroniser des types spécifiques
-
-#### 💡 Exemples d'utilisation avancée :
-```bash
-# Synchroniser seulement les sorts et armes
-docker-compose exec backend node scripts/sync-dnd-advanced.js --spells --weapons
-
-# Mode simulation pour voir ce qui serait synchronisé
-docker-compose exec backend node scripts/sync-dnd-advanced.js --dry-run
-
-# Forcer la synchronisation complète
-docker-compose exec backend node scripts/sync-dnd-advanced.js --all --force
-
-# Synchroniser seulement 100 items
-docker-compose exec backend node scripts/sync-dnd-advanced.js --items --limit 100
-```
-
-> **💡 Avantage** : Aucune installation manuelle requise, tout fonctionne en un seul commande !
+### Import D&D 5e (données locales)
+Les scripts `npm run import-dnd5e-equipment` et `npm run import-dnd5e-spells` (dans `back/`) alimentent les tables utilisées par `/api/dnd5e` et `/api/dnd-local`.
 
 ## 📡 API Endpoints
 
-L'API 2d10 propose **63 endpoints** organisés en 11 catégories principales :
+L'API 2d10 expose de nombreux endpoints, organisés en catégories principales :
 
 - 🔐 **Authentification** (3 endpoints)
 - 👑 **Administration** (2 endpoints)
@@ -272,7 +226,7 @@ L'API 2d10 propose **63 endpoints** organisés en 11 catégories principales :
 - 📖 **Grimoire des Sorts** (8 endpoints)
 - 🏰 **Campagnes** (8 endpoints)
 - 🎲 **Sessions de Jeu** (7 endpoints)
-- 🎲 **D&D** (13 endpoints)
+- 🎲 **D&D local + D&D 5e importé** (`/api/dnd-local`, `/api/dnd5e`, `/api/spells`)
 - 🔧 **Utilitaires** (2 endpoints)
 
 > **📖 Voir la [documentation complète des endpoints](back/README.md#-api-endpoints) pour tous les détails**
@@ -280,7 +234,7 @@ L'API 2d10 propose **63 endpoints** organisés en 11 catégories principales :
 ## 🧪 Tests
 
 ### 📋 Collections Postman
-- **[Collection Complète](back/postman/2d10_Complete_API_Collection.postman_collection.json)** - Tous les endpoints (63 routes)
+- **[Collection complète](back/postman/2d10_Complete_API_Collection.postman_collection.json)** — principaux endpoints
 - **Configuration** : `baseUrl: http://localhost:3000`
 - **Authentification** : Token JWT automatique
 
@@ -378,35 +332,15 @@ NODE_ENV=development
    npm start
    ```
 
-4. **Synchroniser les données D&D** (optionnel)
-   ```bash
-   # Synchronisation simple
-   npm run sync-dnd
-   
-   # Ou synchronisation complète
-   npm run sync-dnd-full
-   ```
-
-5. **Tester l'API**
+4. **Tester l'API**
    - Ouvrir Postman
    - Importer les collections
    - Tester les endpoints
 
 ## 🎯 Exemples d'Utilisation
 
-### Créer un Personnage avec Données D&D
+### Créer un personnage
 ```javascript
-// 1. Récupérer les races disponibles
-const races = await fetch('/api/dnd/races', {
-  headers: { 'Authorization': `Bearer ${token}` }
-});
-
-// 2. Récupérer les classes disponibles
-const classes = await fetch('/api/dnd/classes', {
-  headers: { 'Authorization': `Bearer ${token}` }
-});
-
-// 3. Créer le personnage
 const character = await fetch('/api/characters', {
   method: 'POST',
   headers: { 
@@ -422,15 +356,9 @@ const character = await fetch('/api/characters', {
 });
 ```
 
-### Rechercher des Sorts
+### Rechercher des sorts (base locale importée)
 ```javascript
-// Sorts de niveau 3
-const spells = await fetch('/api/dnd/spells?level=3', {
-  headers: { 'Authorization': `Bearer ${token}` }
-});
-
-// Rechercher des sorts de feu
-const fireSpells = await fetch('/api/dnd/spells?search=fire', {
+const spells = await fetch('/api/dnd-local/spells?search=fire&limit=20', {
   headers: { 'Authorization': `Bearer ${token}` }
 });
 ```

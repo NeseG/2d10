@@ -37,15 +37,16 @@ router.get('/:characterId', authenticateToken, checkCharacterAccess, async (req,
 
     const where = {
       characterId,
-      ...(level ? { spellLevel: parseInt(level, 10) } : {}),
-      ...(school ? { spellSchool: school } : {}),
+      ...(level ? { spell: { level: parseInt(level, 10) } } : {}),
+      ...(school ? { spell: { school: String(school) } } : {}),
       ...(prepared_only === 'true' ? { isPrepared: true } : {}),
       ...(known_only === 'true' ? { isKnown: true } : {}),
     };
 
     const grimoire = await prisma.grimoire.findMany({
       where,
-      orderBy: [{ spellLevel: 'asc' }, { spellName: 'asc' }],
+      include: { spell: true },
+      orderBy: [{ spell: { level: 'asc' } }, { spell: { name: 'asc' } }],
     });
 
     const stats = {
@@ -57,28 +58,22 @@ router.get('/:characterId', authenticateToken, checkCharacterAccess, async (req,
     };
 
     grimoire.forEach((spell) => {
-      stats.spells_by_level[spell.spellLevel] = (stats.spells_by_level[spell.spellLevel] || 0) + 1;
-      if (spell.spellSchool) {
-        stats.spells_by_school[spell.spellSchool] = (stats.spells_by_school[spell.spellSchool] || 0) + 1;
-      }
+      const lvl = spell.spell?.level ?? null;
+      const sch = spell.spell?.school ?? null;
+      if (lvl != null) stats.spells_by_level[lvl] = (stats.spells_by_level[lvl] || 0) + 1;
+      if (sch) stats.spells_by_school[sch] = (stats.spells_by_school[sch] || 0) + 1;
     });
-
-    const spellSlugs = [...new Set(grimoire.map((s) => s.spellSlug))];
-    const spellDetails = await prisma.dndSpell.findMany({
-      where: { slug: { in: spellSlugs } },
-    });
-    const detailsMap = new Map(spellDetails.map((d) => [d.slug, d]));
 
     const formatted = grimoire.map((s) => {
-      const d = detailsMap.get(s.spellSlug);
+      const d = s.spell;
       return {
         id: s.id,
         character_id: s.characterId,
         spell_id: s.spellId,
-        spell_slug: s.spellSlug,
-        spell_name: s.spellName,
-        spell_level: s.spellLevel,
-        spell_school: s.spellSchool,
+        spell_index: d?.index ?? null,
+        spell_name: d?.name ?? null,
+        spell_level: d?.level ?? null,
+        spell_school: d?.school ?? null,
         is_prepared: s.isPrepared,
         is_known: s.isKnown,
         times_prepared: s.timesPrepared,
@@ -87,14 +82,14 @@ router.get('/:characterId', authenticateToken, checkCharacterAccess, async (req,
         learned_at: s.learnedAt,
         created_at: s.createdAt,
         updated_at: s.updatedAt,
-        description: d?.description || null,
-        casting_time: d?.castingTime || null,
-        range: d?.range || null,
-        components: d?.components || null,
-        duration: d?.duration || null,
-        higher_level: d?.higherLevel || null,
-        ritual: d?.ritual || null,
-        concentration: d?.concentration || null,
+        description: d?.description ?? null,
+        casting_time: d?.castingTime ?? null,
+        range: d?.range ?? null,
+        components: d?.components ?? null,
+        duration: d?.duration ?? null,
+        higher_level: d?.higherLevel ?? null,
+        ritual: d?.ritual ?? null,
+        concentration: d?.concentration ?? null,
       };
     });
 
@@ -108,28 +103,18 @@ router.get('/:characterId', authenticateToken, checkCharacterAccess, async (req,
 router.post('/:characterId/spells', authenticateToken, checkCharacterAccess, async (req, res) => {
   try {
     const characterId = parseInt(req.params.characterId, 10);
-    const { spell_slug, spell_name, spell_level, spell_school, is_prepared = false, is_known = true, notes } = req.body;
+    const { spell_id, is_prepared = false, is_known = true, notes } = req.body;
 
-    if (!spell_slug || !spell_name || spell_level === undefined) {
-      return res.status(400).json({ error: 'spell_slug, spell_name et spell_level sont requis' });
-    }
+    const spellId = parseInt(spell_id, 10);
+    if (Number.isNaN(spellId)) return res.status(400).json({ error: 'spell_id requis' });
 
-    const existing = await prisma.grimoire.findFirst({
-      where: { characterId, spellSlug: spell_slug },
-      select: { id: true },
-    });
-    if (existing) return res.status(400).json({ error: 'Ce sort est déjà dans le grimoire' });
-
-    const spellDetails = await prisma.dndSpell.findUnique({ where: { slug: spell_slug } });
+    const spellDetails = await prisma.spell.findFirst({ where: { id: spellId, isActive: true } });
+    if (!spellDetails) return res.status(404).json({ error: 'Sort non trouvé' });
 
     const spell = await prisma.grimoire.create({
       data: {
         characterId,
-        spellId: spellDetails?.id || null,
-        spellSlug: spell_slug,
-        spellName: spell_name,
-        spellLevel: spell_level,
-        spellSchool: spell_school,
+        spellId: spellDetails.id,
         isPrepared: is_prepared,
         isKnown: is_known,
         notes,
@@ -239,8 +224,9 @@ router.get('/:characterId/search', authenticateToken, checkCharacterAccess, asyn
 
     if (!q) return res.status(400).json({ error: 'Paramètre de recherche "q" requis' });
 
-    const spells = await prisma.dndSpell.findMany({
+    const spells = await prisma.spell.findMany({
       where: {
+        isActive: true,
         OR: [
           { name: { contains: q, mode: 'insensitive' } },
           { description: { contains: q, mode: 'insensitive' } },
@@ -252,20 +238,7 @@ router.get('/:characterId/search', authenticateToken, checkCharacterAccess, asyn
       take: parseInt(limit, 10),
     });
 
-    const existing = await prisma.grimoire.findMany({
-      where: { characterId, spellSlug: { in: spells.map((s) => s.slug) } },
-      select: { spellSlug: true, isPrepared: true, isKnown: true },
-    });
-    const existingMap = new Map(existing.map((g) => [g.spellSlug, g]));
-
-    const result = spells.map((s) => ({
-      ...s,
-      in_grimoire: existingMap.has(s.slug),
-      is_prepared: existingMap.get(s.slug)?.isPrepared || false,
-      is_known: existingMap.get(s.slug)?.isKnown || false,
-    }));
-
-    res.json({ success: true, spells: result, count: result.length });
+    res.json({ success: true, spells, count: spells.length });
   } catch (error) {
     console.error('Erreur lors de la recherche de sorts:', error);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -278,38 +251,33 @@ router.get('/:characterId/stats', authenticateToken, checkCharacterAccess, async
 
     const [byLevel, bySchool] = await Promise.all([
       prisma.grimoire.groupBy({
-        by: ['spellLevel'],
+        by: ['spellId'],
         where: { characterId },
         _count: { _all: true },
         _sum: { timesCast: true },
         _avg: { timesCast: true },
-        orderBy: { spellLevel: 'asc' },
       }),
-      prisma.grimoire.groupBy({
-        by: ['spellSchool'],
-        where: { characterId, spellSchool: { not: null } },
-        _count: { _all: true },
-        orderBy: { _count: { spellSchool: 'desc' } },
-      }),
+      prisma.grimoire.findMany({ where: { characterId }, include: { spell: { select: { school: true, level: true } } } }),
     ]);
+
+    const schoolCounts = {};
+    const levelCounts = {};
+    for (const row of bySchool) {
+      const school = row.spell?.school;
+      const lvl = row.spell?.level;
+      if (school) schoolCounts[school] = (schoolCounts[school] || 0) + 1;
+      if (lvl != null) levelCounts[lvl] = (levelCounts[lvl] || 0) + 1;
+    }
 
     res.json({
       success: true,
       stats: {
-        by_level: byLevel.map((row) => ({
-          total_spells: row._count._all,
-          prepared_spells: null,
-          known_spells: null,
-          total_casts: row._sum.timesCast || 0,
-          avg_casts_per_spell: row._avg.timesCast || 0,
-          spell_level: row.spellLevel,
-          spells_at_level: row._count._all,
-        })),
-        by_school: bySchool.map((row) => ({
-          spell_school: row.spellSchool,
-          count: row._count._all,
-          prepared_count: null,
-        })),
+        by_level: Object.entries(levelCounts)
+          .sort((a, b) => Number(a[0]) - Number(b[0]))
+          .map(([spell_level, count]) => ({ spell_level: Number(spell_level), count })),
+        by_school: Object.entries(schoolCounts)
+          .sort((a, b) => Number(b[1]) - Number(a[1]))
+          .map(([spell_school, count]) => ({ spell_school, count })),
       },
     });
   } catch (error) {

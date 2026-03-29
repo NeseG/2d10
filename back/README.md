@@ -173,15 +173,11 @@ npm start
 - `POST /api/sessions/:id/attendance` - Marquer la présence
 - `PUT /api/sessions/:id/attendance/:charId` - Modifier la présence
 
-### 🎲 D&D (API Externe - Open5e)
-- `GET /api/dnd/spells` - Sorts (API externe)
-- `GET /api/dnd/monsters` - Monstres (API externe)
-- `GET /api/dnd/weapons` - Armes (API externe)
-- `GET /api/dnd/armor` - Armures (API externe)
-- `GET /api/dnd/races` - Races (API externe)
-- `GET /api/dnd/classes` - Classes (API externe)
+### 🎲 D&D (Base locale + import 5e)
+- `GET /api/dnd5e/equipment` — Équipement D&D 5e importé (pagination)
+- `GET /api/dnd5e/spells` — Sorts D&D 5e importés (pagination)
 
-### 🎲 D&D (Base Locale)
+### 🎲 D&D (Base locale — tables Prisma)
 - `GET /api/dnd-local/spells` - Sorts locaux
 - `GET /api/dnd-local/monsters` - Monstres locaux
 - `GET /api/dnd-local/weapons` - Armes locales
@@ -213,9 +209,9 @@ curl -X POST http://localhost:3000/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@2d10.com","password":"admin123"}'
 
-# Recherche de sorts
+# Recherche de sorts (local)
 curl -H "Authorization: Bearer <token>" \
-  "http://localhost:3000/api/dnd/spells?search=fire"
+  "http://localhost:3000/api/dnd-local/spells?search=fire&limit=10"
 ```
 
 ## 🔑 Utilisateur par défaut

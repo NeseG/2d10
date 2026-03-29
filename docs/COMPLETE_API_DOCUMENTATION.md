@@ -1,5 +1,7 @@
 # 📚 Documentation Complète API 2d10 - D&D Character Management System
 
+**Note :** le préfixe `/api/dnd` (route `dnd-prisma.js`) et les scripts `sync-dnd-*` ont été retirés du dépôt. À jour côté produit : `/api/dnd-local`, `/api/dnd5e`, `/api/spells`. Les sections ci-dessous qui décrivent encore `/api/dnd` sont obsolètes.
+
 ## 📋 Table des matières
 
 ### 🔐 Authentification

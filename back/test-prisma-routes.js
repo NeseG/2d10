@@ -8,7 +8,6 @@ const adminRoutes = require('./routes/admin-prisma');
 const authRoutes = require('./routes/auth-prisma');
 const characterRoutes = require('./routes/characters-prisma');
 const campaignRoutes = require('./routes/campaigns-prisma');
-const dndRoutes = require('./routes/dnd-prisma');
 const dndLocalRoutes = require('./routes/dnd-local-prisma');
 const itemRoutes = require('./routes/items-prisma');
 const purseRoutes = require('./routes/purse-prisma');
@@ -23,7 +22,6 @@ app.use('/admin', adminRoutes);
 app.use('/auth', authRoutes);
 app.use('/characters', characterRoutes);
 app.use('/campaigns', campaignRoutes);
-app.use('/dnd', dndRoutes);
 app.use('/dnd-local', dndLocalRoutes);
 app.use('/items', itemRoutes);
 app.use('/purse', purseRoutes);
@@ -304,11 +302,7 @@ async function testMigratedRoutes(userToken, adminToken) {
 
   const characterId = testCharacter.id;
 
-  // DND / DND local
-  assertNotServerError(
-    'GET /dnd/info',
-    await request(app).get('/dnd/info').set('Authorization', `Bearer ${userToken}`)
-  );
+  // DND local
   assertNotServerError(
     'GET /dnd-local/spells',
     await request(app).get('/dnd-local/spells').set('Authorization', `Bearer ${userToken}`)

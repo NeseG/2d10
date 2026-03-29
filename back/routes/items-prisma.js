@@ -4,14 +4,52 @@ const { authenticateToken, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
 
+function slugify(raw) {
+  return String(raw || 'item')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function makeUniqueIndexFromName(name) {
+  const base = slugify(name);
+  const suffix = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+  return `${base}__manual__${suffix}`;
+}
+
+function buildListWhere(query) {
+  const { type, category, search } = query;
+  const and = [];
+
+  if (search && String(search).trim()) {
+    const term = String(search).trim();
+    and.push({
+      OR: [
+        { name: { contains: term, mode: 'insensitive' } },
+        { index: { contains: term, mode: 'insensitive' } },
+        { description: { contains: term, mode: 'insensitive' } },
+      ],
+    });
+  }
+
+  if (type && String(type).trim()) {
+    and.push({ type: String(type).trim() });
+  }
+
+  if (category && String(category).trim()) {
+    and.push({ category: String(category).trim() });
+  }
+
+  return and.length ? { AND: and } : {};
+}
+
 // Obtenir tous les types d'objets
 router.get('/types', authenticateToken, async (req, res) => {
   try {
-    const itemTypes = await prisma.$queryRawUnsafe('SELECT * FROM item_types ORDER BY name');
-
-    res.json({
-      item_types: itemTypes,
-    });
+    // Legacy endpoint (front historique). Plus d'ItemType lié.
+    res.json({ item_types: [] });
   } catch (error) {
     console.error('Erreur lors de la récupération des types d\'objets:', error);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -21,42 +59,13 @@ router.get('/types', authenticateToken, async (req, res) => {
 // Obtenir tous les objets avec filtres
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    const { type, rarity, search, magical } = req.query;
-
-    let query = `
-      SELECT i.*, it.name as item_type
-      FROM items i
-      JOIN item_types it ON i.item_type_id = it.id
-      WHERE 1=1
-    `;
-    const values = [];
-
-    if (type) {
-      values.push(`%${type}%`);
-      query += ` AND it.name ILIKE $${values.length}`;
-    }
-
-    if (rarity) {
-      values.push(rarity);
-      query += ` AND i.rarity = $${values.length}`;
-    }
-
-    if (magical !== undefined) {
-      values.push(magical === 'true');
-      query += ` AND i.is_magical = $${values.length}`;
-    }
-
-    if (search) {
-      values.push(`%${search}%`);
-      query += ` AND (i.name ILIKE $${values.length} OR i.description ILIKE $${values.length})`;
-    }
-
-    query += ' ORDER BY i.name ASC';
-
-    const items = await prisma.$queryRawUnsafe(query, ...values);
+    const records = await prisma.item.findMany({
+      where: buildListWhere(req.query),
+      orderBy: [{ name: 'asc' }],
+    });
 
     res.json({
-      items,
+      items: records,
     });
   } catch (error) {
     console.error('Erreur lors de la récupération des objets:', error);
@@ -72,22 +81,14 @@ router.get('/:id', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'ID invalide' });
     }
 
-    const items = await prisma.$queryRawUnsafe(
-      `
-      SELECT i.*, it.name as item_type
-      FROM items i
-      JOIN item_types it ON i.item_type_id = it.id
-      WHERE i.id = $1
-      `,
-      id,
-    );
+    const record = await prisma.item.findUnique({ where: { id } });
 
-    if (items.length === 0) {
+    if (!record) {
       return res.status(404).json({ error: 'Objet non trouvé' });
     }
 
     res.json({
-      item: items[0],
+      item: record,
     });
   } catch (error) {
     console.error('Erreur lors de la récupération de l\'objet:', error);
@@ -99,44 +100,65 @@ router.get('/:id', authenticateToken, async (req, res) => {
 router.post('/', authenticateToken, requireRole(['admin', 'gm']), async (req, res) => {
   try {
     const {
+      index,
       name,
       description,
-      item_type_id,
-      weight = 0,
-      value_gold = 0,
-      rarity = 'common',
-      is_magical = false,
       properties,
+      type = 'other',
+      category,
+      subcategory,
+      cost,
+      weight,
+      damage,
+      damageType,
+      range,
+      armorClass,
+      stealthDisadvantage,
+      raw,
     } = req.body;
 
-    if (!name || !item_type_id) {
-      return res.status(400).json({ error: 'Nom et type d\'objet requis' });
+    if (!name) {
+      return res.status(400).json({ error: 'Nom requis' });
     }
 
-    const typeRows = await prisma.$queryRawUnsafe('SELECT id FROM item_types WHERE id = $1', item_type_id);
-    if (typeRows.length === 0) {
-      return res.status(400).json({ error: 'Type d\'objet invalide' });
-    }
+    // `index` est unique globalement. Si l'appelant ne le fournit pas,
+    // on génère un index unique pour permettre plusieurs items avec le même nom.
+    const indexSeed = index ? slugify(index) : makeUniqueIndexFromName(name);
 
-    const created = await prisma.$queryRawUnsafe(
-      `
-      INSERT INTO items (name, description, item_type_id, weight, value_gold, rarity, is_magical, properties)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      RETURNING *
-      `,
-      name,
-      description,
-      item_type_id,
-      weight,
-      value_gold,
-      rarity,
-      is_magical,
-      properties,
-    );
+    let created = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const nextIndex = attempt === 0 ? indexSeed : makeUniqueIndexFromName(name);
+      try {
+        created = await prisma.item.create({
+          data: {
+            index: nextIndex,
+            name,
+            description: description ?? null,
+            type,
+            category: category ?? null,
+            subcategory: subcategory ?? null,
+            cost: cost ?? null,
+            weight: weight != null ? Number.parseInt(String(weight), 10) : null,
+            damage: damage ?? null,
+            damageType: damageType ?? null,
+            range: range ?? null,
+            armorClass: armorClass != null ? Number.parseInt(String(armorClass), 10) : null,
+            stealthDisadvantage: stealthDisadvantage != null ? Boolean(stealthDisadvantage) : null,
+            properties: properties ?? null,
+            raw: raw ?? null,
+          },
+        });
+        break;
+      } catch (e) {
+        // Collision index (unique)
+        if (e?.code === 'P2002' && attempt < 2) continue;
+        throw e;
+      }
+    }
 
     res.status(201).json({
       message: 'Objet créé avec succès',
-      item: created[0],
+      item: created,
     });
   } catch (error) {
     console.error('Erreur lors de la création de l\'objet:', error);
@@ -153,78 +175,58 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'gm']), async (req, 
     }
 
     const {
+      index,
       name,
       description,
-      item_type_id,
       weight,
-      value_gold,
-      rarity,
-      is_magical,
       properties,
+      type,
+      category,
+      subcategory,
+      cost,
+      damage,
+      damageType,
+      range,
+      armorClass,
+      stealthDisadvantage,
+      raw,
     } = req.body;
 
-    const updates = [];
-    const values = [];
-
-    if (name !== undefined) {
-      values.push(name);
-      updates.push(`name = $${values.length}`);
-    }
-    if (description !== undefined) {
-      values.push(description);
-      updates.push(`description = $${values.length}`);
-    }
-    if (item_type_id !== undefined) {
-      const typeRows = await prisma.$queryRawUnsafe('SELECT id FROM item_types WHERE id = $1', item_type_id);
-      if (typeRows.length === 0) {
-        return res.status(400).json({ error: 'Type d\'objet invalide' });
-      }
-      values.push(item_type_id);
-      updates.push(`item_type_id = $${values.length}`);
-    }
-    if (weight !== undefined) {
-      values.push(weight);
-      updates.push(`weight = $${values.length}`);
-    }
-    if (value_gold !== undefined) {
-      values.push(value_gold);
-      updates.push(`value_gold = $${values.length}`);
-    }
-    if (rarity !== undefined) {
-      values.push(rarity);
-      updates.push(`rarity = $${values.length}`);
-    }
-    if (is_magical !== undefined) {
-      values.push(is_magical);
-      updates.push(`is_magical = $${values.length}`);
-    }
-    if (properties !== undefined) {
-      values.push(properties);
-      updates.push(`properties = $${values.length}`);
-    }
-
-    if (updates.length === 0) {
-      return res.status(400).json({ error: 'Aucune donnée à mettre à jour' });
-    }
-
-    values.push(id);
-    const updated = await prisma.$queryRawUnsafe(
-      `
-      UPDATE items
-      SET ${updates.join(', ')}
-      WHERE id = $${values.length}
-      RETURNING *
-      `,
-      ...values,
-    );
-
-    if (updated.length === 0) {
+    const existing = await prisma.item.findUnique({ where: { id } });
+    if (!existing) {
       return res.status(404).json({ error: 'Objet non trouvé' });
     }
 
+    const data = {};
+
+    if (index !== undefined) data.index = index;
+    if (name !== undefined) data.name = name;
+    if (description !== undefined) data.description = description;
+    if (type !== undefined) data.type = type;
+    if (category !== undefined) data.category = category;
+    if (subcategory !== undefined) data.subcategory = subcategory;
+    if (cost !== undefined) data.cost = cost;
+    if (weight !== undefined) data.weight = weight != null ? Number.parseInt(String(weight), 10) : null;
+    if (damage !== undefined) data.damage = damage;
+    if (damageType !== undefined) data.damageType = damageType;
+    if (range !== undefined) data.range = range;
+    if (armorClass !== undefined) data.armorClass = armorClass != null ? Number.parseInt(String(armorClass), 10) : null;
+    if (stealthDisadvantage !== undefined) data.stealthDisadvantage = stealthDisadvantage != null ? Boolean(stealthDisadvantage) : null;
+    if (properties !== undefined) data.properties = properties;
+    if (raw !== undefined) data.raw = raw;
+
+    if (Object.keys(data).length === 0) {
+      return res.status(400).json({ error: 'Aucune donnée à mettre à jour' });
+    }
+
+    const updated = await prisma.item.update({
+      where: { id },
+      data,
+    });
+
     res.json({
       message: 'Objet mis à jour avec succès',
-      item: updated[0],
+      item: updated,
     });
   } catch (error) {
     console.error('Erreur lors de la mise à jour de l\'objet:', error);
@@ -240,25 +242,31 @@ router.delete('/:id', authenticateToken, requireRole(['admin']), async (req, res
       return res.status(400).json({ error: 'ID invalide' });
     }
 
-    const usageRows = await prisma.$queryRawUnsafe(
-      'SELECT COUNT(*) as count FROM character_inventory WHERE item_id = $1',
-      id,
-    );
+    const usageCount = await prisma.inventory.count({
+      where: { itemId: id },
+    });
 
-    if (parseInt(usageRows[0].count, 10) > 0) {
+    if (usageCount > 0) {
       return res.status(400).json({
         error: 'Impossible de supprimer cet objet car il est utilisé dans des inventaires',
       });
     }
 
-    const deleted = await prisma.$queryRawUnsafe('DELETE FROM items WHERE id = $1 RETURNING name', id);
-    if (deleted.length === 0) {
-      return res.status(404).json({ error: 'Objet non trouvé' });
-    }
+    try {
+      const deleted = await prisma.item.delete({
+        where: { id },
+        select: { name: true },
+      });
 
-    res.json({
-      message: `Objet "${deleted[0].name}" supprimé avec succès`,
-    });
+      res.json({
+        message: `Objet "${deleted.name}" supprimé avec succès`,
+      });
+    } catch (e) {
+      if (e.code === 'P2025') {
+        return res.status(404).json({ error: 'Objet non trouvé' });
+      }
+      throw e;
+    }
   } catch (error) {
     console.error('Erreur lors de la suppression de l\'objet:', error);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -266,34 +274,10 @@ router.delete('/:id', authenticateToken, requireRole(['admin']), async (req, res
 });
 
 // Créer un nouveau type d'objet (Admin seulement)
-router.post('/types', authenticateToken, requireRole(['admin']), async (req, res) => {
-  try {
-    const { name, description } = req.body;
-    if (!name) {
-      return res.status(400).json({ error: 'Nom du type d\'objet requis' });
-    }
-
-    const created = await prisma.$queryRawUnsafe(
-      `
-      INSERT INTO item_types (name, description)
-      VALUES ($1, $2)
-      RETURNING *
-      `,
-      name,
-      description,
-    );
-
-    res.status(201).json({
-      message: 'Type d\'objet créé avec succès',
-      item_type: created[0],
-    });
-  } catch (error) {
-    if (error.code === '23505') {
-      return res.status(400).json({ error: 'Un type d\'objet avec ce nom existe déjà' });
-    }
-    console.error('Erreur lors de la création du type d\'objet:', error);
-    res.status(500).json({ error: 'Erreur serveur' });
-  }
+router.post('/types', authenticateToken, requireRole(['admin', 'gm']), async (req, res) => {
+  res.status(410).json({
+    error: 'Endpoint legacy. Les types ItemType ne sont plus utilisés après alignement Item<->Dnd5eEquipment.',
+  });
 });
 
 module.exports = router;

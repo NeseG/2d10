@@ -59,7 +59,7 @@ router.get('/:characterId', authenticateToken, checkCharacterOwnership, async (r
       where: { characterId, isEquipped: true },
       include: {
         slot: true,
-        item: { include: { type: true } },
+        item: true,
       },
       orderBy: [{ slotId: 'asc' }, { item: { name: 'asc' } }],
     });
@@ -122,7 +122,7 @@ router.post('/:characterId/equip', authenticateToken, checkCharacterOwnership, a
     const [inventoryItem, slot] = await Promise.all([
       prisma.inventory.findFirst({
         where: { id: inventoryId, characterId },
-        include: { item: { include: { type: true } } },
+        include: { item: true },
       }),
       prisma.equipmentSlot.findUnique({ where: { id: equipmentSlotId } }),
     ]);
@@ -130,31 +130,17 @@ router.post('/:characterId/equip', authenticateToken, checkCharacterOwnership, a
     if (!inventoryItem) return res.status(404).json({ error: 'Objet non trouvé dans l\'inventaire' });
     if (!slot) return res.status(404).json({ error: 'Slot d\'équipement non trouvé' });
 
-    const itemType = inventoryItem.item?.type?.name || 'Autre';
+    // Après alignement Item<->Dnd5eEquipment, on utilise category (fallback type)
+    const itemType = inventoryItem.item?.category || inventoryItem.item?.type || 'Autre';
     if (!checkSlotCompatibility(itemType, slot.name)) {
       return res.status(400).json({
         error: `Ce type d'objet (${itemType}) ne peut pas être équipé dans ce slot (${slot.name})`,
       });
     }
 
-    const occupied = await prisma.equipment.findFirst({
-      where: {
-        characterId,
-        slotId: equipmentSlotId,
-        isEquipped: true,
-      },
-      include: { item: true },
-    });
-
-    if (occupied && occupied.itemId !== inventoryItem.itemId) {
-      return res.status(400).json({
-        error: `Le slot ${slot.name} est déjà occupé par ${occupied.item?.name || 'un objet'}`,
-      });
-    }
-
     const equipment = await prisma.equipment.upsert({
-      where: { characterId_slotId: { characterId, slotId: equipmentSlotId } },
-      update: { itemId: inventoryItem.itemId, isEquipped: true },
+      where: { characterId_itemId: { characterId, itemId: inventoryItem.itemId } },
+      update: { slotId: equipmentSlotId, isEquipped: true },
       create: { characterId, itemId: inventoryItem.itemId, slotId: equipmentSlotId, isEquipped: true },
     });
 

@@ -44,26 +44,35 @@ const checkCharacterOwnership = async (req, res, next) => {
   }
 };
 
-async function getOrCreateLegacyPurse(characterId) {
-  const existing = await prisma.$queryRawUnsafe(
-    'SELECT * FROM character_purse WHERE character_id = $1',
-    characterId,
-  );
+/** Réponse JSON identique à l’ancien format SQL (snake_case). */
+function purseRowToApi(purse) {
+  return {
+    id: purse.id,
+    character_id: purse.characterId,
+    copper_pieces: purse.copperPieces,
+    silver_pieces: purse.silverPieces,
+    electrum_pieces: purse.electrumPieces,
+    gold_pieces: purse.goldPieces,
+    platinum_pieces: purse.platinumPieces,
+    updated_at: purse.updatedAt,
+  };
+}
 
-  if (existing.length > 0) {
-    return existing[0];
+async function getOrCreatePurse(characterId) {
+  let purse = await prisma.purse.findUnique({ where: { characterId } });
+  if (!purse) {
+    purse = await prisma.purse.create({
+      data: {
+        characterId,
+        copperPieces: 0,
+        silverPieces: 0,
+        electrumPieces: 0,
+        goldPieces: 0,
+        platinumPieces: 0,
+      },
+    });
   }
-
-  const created = await prisma.$queryRawUnsafe(
-    `
-    INSERT INTO character_purse (character_id, copper_pieces, silver_pieces, electrum_pieces, gold_pieces, platinum_pieces)
-    VALUES ($1, 0, 0, 0, 0, 0)
-    RETURNING *
-    `,
-    characterId,
-  );
-
-  return created[0];
+  return purse;
 }
 
 function computeTotalGoldValue(purse) {
@@ -76,53 +85,33 @@ function computeTotalGoldValue(purse) {
   );
 }
 
-// Obtenir la bourse d'un personnage
-router.get('/:characterId', authenticateToken, checkCharacterOwnership, async (req, res) => {
-  try {
-    const characterId = parseInt(req.params.characterId, 10);
-    const purse = await getOrCreateLegacyPurse(characterId);
+function parseNonNegativeInt(value, fallback = 0) {
+  const n = typeof value === 'number' ? value : parseInt(String(value ?? '').trim(), 10);
+  if (Number.isNaN(n) || n < 0) return fallback;
+  return n;
+}
 
-    res.json({
-      success: true,
-      purse,
-      total_gold_value: computeTotalGoldValue(purse),
-    });
-  } catch (error) {
-    console.error('Erreur lors de la récupération de la bourse:', error);
-    res.status(500).json({ error: 'Erreur serveur' });
-  }
-});
-
+// Routes les plus spécifiques en premier
 // Ajouter des pièces à la bourse
 router.post('/:characterId/add', authenticateToken, checkCharacterOwnership, async (req, res) => {
   try {
     const characterId = parseInt(req.params.characterId, 10);
     const { copper = 0, silver = 0, electrum = 0, gold = 0, platinum = 0, reason = 'Ajout manuel' } = req.body;
 
-    await getOrCreateLegacyPurse(characterId);
+    await getOrCreatePurse(characterId);
 
-    const updatedRows = await prisma.$queryRawUnsafe(
-      `
-      UPDATE character_purse
-      SET
-        copper_pieces = copper_pieces + $1,
-        silver_pieces = silver_pieces + $2,
-        electrum_pieces = electrum_pieces + $3,
-        gold_pieces = gold_pieces + $4,
-        platinum_pieces = platinum_pieces + $5,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE character_id = $6
-      RETURNING *
-      `,
-      copper,
-      silver,
-      electrum,
-      gold,
-      platinum,
-      characterId,
-    );
+    const row = await prisma.purse.update({
+      where: { characterId },
+      data: {
+        copperPieces: { increment: copper },
+        silverPieces: { increment: silver },
+        electrumPieces: { increment: electrum },
+        goldPieces: { increment: gold },
+        platinumPieces: { increment: platinum },
+      },
+    });
 
-    const purse = updatedRows[0];
+    const purse = purseRowToApi(row);
 
     res.json({
       success: true,
@@ -144,61 +133,107 @@ router.post('/:characterId/remove', authenticateToken, checkCharacterOwnership, 
     const characterId = parseInt(req.params.characterId, 10);
     const { copper = 0, silver = 0, electrum = 0, gold = 0, platinum = 0, reason = 'Retrait manuel' } = req.body;
 
-    const purse = await getOrCreateLegacyPurse(characterId);
+    const current = await getOrCreatePurse(characterId);
 
     if (
-      purse.copper_pieces < copper ||
-      purse.silver_pieces < silver ||
-      purse.electrum_pieces < electrum ||
-      purse.gold_pieces < gold ||
-      purse.platinum_pieces < platinum
+      current.copperPieces < copper ||
+      current.silverPieces < silver ||
+      current.electrumPieces < electrum ||
+      current.goldPieces < gold ||
+      current.platinumPieces < platinum
     ) {
       return res.status(400).json({
         error: 'Fonds insuffisants',
         available: {
-          copper: purse.copper_pieces,
-          silver: purse.silver_pieces,
-          electrum: purse.electrum_pieces,
-          gold: purse.gold_pieces,
-          platinum: purse.platinum_pieces,
+          copper: current.copperPieces,
+          silver: current.silverPieces,
+          electrum: current.electrumPieces,
+          gold: current.goldPieces,
+          platinum: current.platinumPieces,
         },
         requested: { copper, silver, electrum, gold, platinum },
       });
     }
 
-    const updatedRows = await prisma.$queryRawUnsafe(
-      `
-      UPDATE character_purse
-      SET
-        copper_pieces = copper_pieces - $1,
-        silver_pieces = silver_pieces - $2,
-        electrum_pieces = electrum_pieces - $3,
-        gold_pieces = gold_pieces - $4,
-        platinum_pieces = platinum_pieces - $5,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE character_id = $6
-      RETURNING *
-      `,
-      copper,
-      silver,
-      electrum,
-      gold,
-      platinum,
-      characterId,
-    );
+    const row = await prisma.purse.update({
+      where: { characterId },
+      data: {
+        copperPieces: { increment: -copper },
+        silverPieces: { increment: -silver },
+        electrumPieces: { increment: -electrum },
+        goldPieces: { increment: -gold },
+        platinumPieces: { increment: -platinum },
+      },
+    });
 
-    const updatedPurse = updatedRows[0];
+    const purse = purseRowToApi(row);
 
     res.json({
       success: true,
       message: 'Pièces retirées de la bourse',
-      purse: updatedPurse,
-      total_gold_value: computeTotalGoldValue(updatedPurse),
+      purse,
+      total_gold_value: computeTotalGoldValue(purse),
       removed: { copper, silver, electrum, gold, platinum },
       reason,
     });
   } catch (error) {
     console.error('Erreur lors du retrait de pièces:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Obtenir la bourse d'un personnage
+router.get('/:characterId', authenticateToken, checkCharacterOwnership, async (req, res) => {
+  try {
+    const characterId = parseInt(req.params.characterId, 10);
+    const row = await getOrCreatePurse(characterId);
+    const purse = purseRowToApi(row);
+
+    res.json({
+      success: true,
+      purse,
+      total_gold_value: computeTotalGoldValue(purse),
+    });
+  } catch (error) {
+    console.error('Erreur lors de la récupération de la bourse:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Remplacer les montants (saisie inventaire / bourse)
+router.put('/:characterId', authenticateToken, checkCharacterOwnership, async (req, res) => {
+  try {
+    const characterId = parseInt(req.params.characterId, 10);
+    const {
+      copper = 0,
+      silver = 0,
+      electrum = 0,
+      gold = 0,
+      platinum = 0,
+    } = req.body || {};
+
+    await getOrCreatePurse(characterId);
+
+    const row = await prisma.purse.update({
+      where: { characterId },
+      data: {
+        copperPieces: parseNonNegativeInt(copper),
+        silverPieces: parseNonNegativeInt(silver),
+        electrumPieces: parseNonNegativeInt(electrum),
+        goldPieces: parseNonNegativeInt(gold),
+        platinumPieces: parseNonNegativeInt(platinum),
+      },
+    });
+
+    const purse = purseRowToApi(row);
+
+    res.json({
+      success: true,
+      purse,
+      total_gold_value: computeTotalGoldValue(purse),
+    });
+  } catch (error) {
+    console.error('Erreur lors de la mise à jour de la bourse:', error);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });

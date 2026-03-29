@@ -415,52 +415,6 @@ const sessionsFolder = createFolder("Sessions", [
   )
 ]);
 
-// D&D API (Open5e)
-const dndFolder = createFolder("D&D API (Open5e)", [
-  createRequest("Get Spells", "GET", "/api/dnd/spells?level=3&school=evocation&search=fire&limit=10", 
-    [{ "key": "Authorization", "value": "Bearer {{authToken}}", "type": "text" }]
-  ),
-  createRequest("Get Spell by ID", "GET", "/api/dnd/spells/fireball", 
-    [{ "key": "Authorization", "value": "Bearer {{authToken}}", "type": "text" }]
-  ),
-  createRequest("Get Monsters", "GET", "/api/dnd/monsters?challenge_rating=5&type=dragon&search=red", 
-    [{ "key": "Authorization", "value": "Bearer {{authToken}}", "type": "text" }]
-  ),
-  createRequest("Get Monster by ID", "GET", "/api/dnd/monsters/ancient-red-dragon", 
-    [{ "key": "Authorization", "value": "Bearer {{authToken}}", "type": "text" }]
-  ),
-  createRequest("Get Weapons", "GET", "/api/dnd/weapons?category=melee&search=sword", 
-    [{ "key": "Authorization", "value": "Bearer {{authToken}}", "type": "text" }]
-  ),
-  createRequest("Get Weapon by ID", "GET", "/api/dnd/weapons/longsword", 
-    [{ "key": "Authorization", "value": "Bearer {{authToken}}", "type": "text" }]
-  ),
-  createRequest("Get Armor", "GET", "/api/dnd/armor?armor_category=heavy&search=plate", 
-    [{ "key": "Authorization", "value": "Bearer {{authToken}}", "type": "text" }]
-  ),
-  createRequest("Get Armor by ID", "GET", "/api/dnd/armor/plate-armor", 
-    [{ "key": "Authorization", "value": "Bearer {{authToken}}", "type": "text" }]
-  ),
-  createRequest("Get Races", "GET", "/api/dnd/races?search=elf", 
-    [{ "key": "Authorization", "value": "Bearer {{authToken}}", "type": "text" }]
-  ),
-  createRequest("Get Race by ID", "GET", "/api/dnd/races/high-elf", 
-    [{ "key": "Authorization", "value": "Bearer {{authToken}}", "type": "text" }]
-  ),
-  createRequest("Get Classes", "GET", "/api/dnd/classes?search=wizard", 
-    [{ "key": "Authorization", "value": "Bearer {{authToken}}", "type": "text" }]
-  ),
-  createRequest("Get Class by ID", "GET", "/api/dnd/classes/wizard", 
-    [{ "key": "Authorization", "value": "Bearer {{authToken}}", "type": "text" }]
-  ),
-  createRequest("Global Search", "GET", "/api/dnd/search?q=fire&types=spells,monsters,weapons", 
-    [{ "key": "Authorization", "value": "Bearer {{authToken}}", "type": "text" }]
-  ),
-  createRequest("API Info", "GET", "/api/dnd/info", 
-    [{ "key": "Authorization", "value": "Bearer {{authToken}}", "type": "text" }]
-  )
-]);
-
 // D&D Local
 const dndLocalFolder = createFolder("D&D Local", [
   createRequest("Get Local Spells", "GET", "/api/dnd-local/spells?level=3&school=evocation&search=fire&limit=10", 
@@ -513,7 +467,6 @@ collection.item = [
   equipmentFolder,
   campaignsFolder,
   sessionsFolder,
-  dndFolder,
   dndLocalFolder
 ];
 

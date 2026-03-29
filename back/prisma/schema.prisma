@@ -10,6 +10,66 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum SkillMastery {
+  NOT_PROFICIENT
+  PROFICIENT
+  EXPERTISE
+}
+
+enum DndSkillName {
+  ACROBATICS
+  ANIMAL_HANDLING
+  ARCANA
+  ATHLETICS
+  DECEPTION
+  HISTORY
+  INSIGHT
+  INTIMIDATION
+  INVESTIGATION
+  MEDICINE
+  NATURE
+  PERCEPTION
+  PERFORMANCE
+  PERSUASION
+  RELIGION
+  SLEIGHT_OF_HAND
+  STEALTH
+  SURVIVAL
+}
+
+// Types d'objets insérés dans init.sql (table item_types).
+// Le champ ItemType.name reste String pour permettre d'autres types (ex. via POST /api/items/types).
+enum ItemTypeName {
+  Arme
+  Armure
+  Bouclier
+  Objet_magique @map("Objet magique")
+  Potion
+  Parchemin
+  Gemme
+  Outils
+  Vetement @map("Vêtement")
+  Nourriture
+  Autre
+}
+
+enum AbilityName {
+  STRENGTH
+  DEXTERITY
+  CONSTITUTION
+  INTELLIGENCE
+  WISDOM
+  CHARISMA
+}
+
+enum CharacterFeatureCategory {
+  CLASS_FEATURE
+  RACIAL_TRAIT
+  FEAT
+  PERSONALITY_AND_BACKGROUND
+  OTHER_PROFICIENCIES_AND_LANGUAGES
+}
+
 // Modèle User
 model User {
   id           Int      @id @default(autoincrement())
@@ -42,28 +102,36 @@ model Character {
   userId          Int
   user            User     @relation(fields: [userId], references: [id])
   name            String
-  race            String
-  class           String
-  level           Int
+  race            String?
+  class           String?
+  level           Int?
   background      String?
   alignment       String?
   experiencePoints Int     @default(0)
-  hitPoints       Int
-  armorClass      Int
+  hitPoints       Int?
+  currentHitPoints Int?
+  hitDice         String?
+  hitDiceRemaining Int?
+  armorClass      Int?
   speed           Int?
-  strength        Int
-  dexterity       Int
-  constitution    Int
-  intelligence    Int
-  wisdom          Int
-  charisma        Int
+  strength        Int?
+  dexterity       Int?
+  constitution    Int?
+  intelligence    Int?
+  wisdom          Int?
+  charisma        Int?
   description     String?
   notes           String?
   isActive        Boolean  @default(true)
+  skills          CharacterSkill[]
+  savingThrows    CharacterSavingThrow[]
+  spellSlots      CharacterSpellSlot[]
   grimoire        Grimoire[]
   inventory       Inventory[]
   equipment       Equipment[]
+  dnd5eInventory  CharacterDnd5eInventory[]
   purse           Purse?
+  features        CharacterFeature[]
   campaignCharacters CampaignCharacter[]
   sessionAttendance SessionAttendance[]
   createdAt       DateTime @default(now())
@@ -72,12 +140,67 @@ model Character {
   @@map("characters")
 }
 
-// Modèle ItemType
+model CharacterFeature {
+  id          Int      @id @default(autoincrement())
+  characterId Int
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  category    CharacterFeatureCategory
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("character_features")
+}
+
+// Emplacements de sorts par niveau (0-9)
+model CharacterSpellSlot {
+  id          Int      @id @default(autoincrement())
+  characterId Int
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  level       Int
+  slotsMax    Int      @default(0)
+  slotsUsed   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([characterId, level])
+  @@map("character_spell_slots")
+}
+
+model CharacterSkill {
+  id          Int          @id @default(autoincrement())
+  characterId Int
+  character   Character    @relation(fields: [characterId], references: [id])
+  skill       DndSkillName
+  mastery     SkillMastery @default(NOT_PROFICIENT)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@unique([characterId, skill])
+  @@map("character_skills")
+}
+
+model CharacterSavingThrow {
+  id          Int        @id @default(autoincrement())
+  characterId Int
+  character   Character  @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  ability     AbilityName
+  proficient  Boolean    @default(false)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@unique([characterId, ability])
+  @@map("character_saving_throws")
+}
+
+// Types de base documentés par enum ItemTypeName (même jeu que init.sql).
 model ItemType {
   id          Int    @id @default(autoincrement())
   name        String @unique
   description String?
-  items       Item[]
+  // Legacy (plus utilisé après alignement Item<->Dnd5eEquipment)
+  // items       Item[]
 
   @@map("item_types")
 }
@@ -85,14 +208,27 @@ model ItemType {
 // Modèle Item
 model Item {
   id          Int      @id @default(autoincrement())
+  // Aligné sur Dnd5eEquipment (dnd5eapi.co)
+  index       String   @unique
   name        String
+  type        Dnd5eEquipmentType @default(other)
+  category    String?
+  subcategory String?
+
+  cost        String?
+  weight      Int?
   description String?
-  typeId      Int
-  type        ItemType @relation(fields: [typeId], references: [id])
-  weight      Float?
-  value       Float?
-  rarity      String?
-  properties  String?  // JSON string for additional properties
+
+  damage      String?
+  damageType  String?
+  range       String?
+
+  armorClass          Int?
+  stealthDisadvantage Boolean?
+
+  properties Json?
+  raw        Json?
+
   isActive    Boolean  @default(true)
   inventory   Inventory[]
   equipment   Equipment[]
@@ -141,21 +277,22 @@ model Equipment {
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
-  @@unique([characterId, slotId])
+  // Un enregistrement par objet (item) équipé : plusieurs armes / armures / gear possibles (slot souvent « Autre »).
+  @@unique([characterId, itemId])
   @@map("character_equipment")
 }
 
-// Modèle Purse
+// Modèle Purse (colonnes alignées sur init.sql / character_purse)
 model Purse {
-  id          Int      @id @default(autoincrement())
-  characterId Int      @unique
-  character   Character @relation(fields: [characterId], references: [id])
-  gold        Int      @default(0)
-  silver      Int      @default(0)
-  copper      Int      @default(0)
-  platinum    Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id               Int      @id @default(autoincrement())
+  characterId      Int      @unique @map("character_id")
+  character        Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  copperPieces     Int      @default(0) @map("copper_pieces")
+  silverPieces     Int      @default(0) @map("silver_pieces")
+  electrumPieces   Int      @default(0) @map("electrum_pieces")
+  goldPieces       Int      @default(0) @map("gold_pieces")
+  platinumPieces   Int      @default(0) @map("platinum_pieces")
+  updatedAt        DateTime @updatedAt @map("updated_at")
 
   @@map("character_purse")
 }
@@ -213,6 +350,8 @@ model CampaignCharacter {
   campaign    Campaign @relation(fields: [campaignId], references: [id])
   characterId Int
   character   Character @relation(fields: [characterId], references: [id])
+  currentHitPoints Int?
+  hitDiceRemaining Int?
   joinedAt    DateTime @default(now())
   leftAt      DateTime?
   status      String   @default("active")
@@ -248,11 +387,9 @@ model Grimoire {
   id          Int      @id @default(autoincrement())
   characterId Int
   character   Character @relation(fields: [characterId], references: [id])
-  spellId     Int?
-  spellSlug   String
-  spellName   String
-  spellLevel  Int
-  spellSchool String?
+  // Copie locale d'un sort (permet doublons de noms / index)
+  spellId     Int
+  spell       Spell    @relation(fields: [spellId], references: [id], onDelete: Cascade)
   isPrepared  Boolean  @default(false)
   isKnown     Boolean  @default(true)
   timesPrepared Int    @default(0)
@@ -262,28 +399,54 @@ model Grimoire {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  @@unique([characterId, spellSlug])
   @@map("character_grimoire")
 }
 
-// Modèles D&D (pour les données synchronisées)
-model DndSpell {
-  id          Int      @id @default(autoincrement())
-  slug        String   @unique
-  name        String
-  level       Int
-  school      String
-  castingTime String?
-  range       String?
-  components  String?
-  duration    String?
-  description String?
-  higherLevel String?
-  ritual      Boolean  @default(false)
-  concentration Boolean @default(false)
-  createdAt   DateTime @default(now())
+// === D&D 5e Spells (dnd5eapi.co) ===
+model Dnd5eSpellImport {
+  id            Int      @id @default(autoincrement())
+  index         String   @unique
+  name          String
+  level         Int?
+  school        String?
+  castingTime   String?
+  range         String?
+  components    String?
+  duration      String?
+  description   String?
+  higherLevel   String?
+  ritual        Boolean?
+  concentration Boolean?
+  raw           Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  @@map("dnd_spells")
+  @@map("dnd5e_spells_import")
+}
+
+model Spell {
+  id            Int      @id @default(autoincrement())
+  index         String   @unique
+  name          String
+  level         Int?
+  school        String?
+  castingTime   String?
+  range         String?
+  components    String?
+  duration      String?
+  description   String?
+  higherLevel   String?
+  ritual        Boolean?
+  concentration Boolean?
+  source        String? // 'dnd5e' | 'custom'
+  raw           Json?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  grimoireEntries Grimoire[]
+
+  @@map("spells")
 }
 
 model DndMonster {
@@ -344,4 +507,62 @@ model DndArmor {
   createdAt   DateTime @default(now())
 
   @@map("dnd_armor")
+}
+
+// === D&D 5e Equipment (dnd5eapi.co) ===
+enum Dnd5eEquipmentType {
+  weapon
+  armor
+  gear
+  tool
+  mount
+  vehicle
+  ammunition
+  consumable
+  other
+}
+
+model Dnd5eEquipment {
+  id          Int      @id @default(autoincrement())
+  index       String   @unique
+  name        String
+  type        Dnd5eEquipmentType @default(other)
+  category    String?
+  subcategory String?
+
+  cost        String?
+  weight      Int?
+  description String?
+
+  // Champs spécifiques (nullable)
+  damage      String?
+  damageType  String?
+  range       String?
+
+  armorClass          Int?
+  stealthDisadvantage Boolean?
+
+  properties Json?
+  raw        Json?
+
+  inventories CharacterDnd5eInventory[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("dnd5e_equipment")
+}
+
+model CharacterDnd5eInventory {
+  id          Int      @id @default(autoincrement())
+  characterId Int
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  equipmentId Int
+  equipment   Dnd5eEquipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+  quantity    Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([characterId, equipmentId])
+  @@map("character_dnd5e_inventory")
 }
