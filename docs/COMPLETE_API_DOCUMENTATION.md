@@ -1,6 +1,6 @@
 # 📚 Documentation Complète API 2d10 - D&D Character Management System
 
-**Note :** le préfixe `/api/dnd` (route `dnd-prisma.js`) et les scripts `sync-dnd-*` ont été retirés du dépôt. À jour côté produit : `/api/dnd-local`, `/api/dnd5e`, `/api/spells`. Les sections ci-dessous qui décrivent encore `/api/dnd` sont obsolètes.
+**Note :** le préfixe `/api/dnd` (proxy Open5e) n’existe plus. Référence à jour : **`/api/dnd-local`**, **`/api/dnd5e`**, **`/api/spells`**. Les données SRD importées sont chargées via les scripts `import-dnd5e-*` (voir [`README_DND_INTEGRATION.md`](./README_DND_INTEGRATION.md)).
 
 ## 📋 Table des matières
 
@@ -17,6 +17,7 @@
 ### 🧙‍♂️ Gestion des Personnages
 - [CRUD Personnages](#gestion-des-personnages)
 - [Statistiques des personnages](#statistiques-des-personnages)
+- [Traits et capacités](#traits-et-capacités)
 
 ### 🎒 Gestion de l'Inventaire et de la Bourse
 - [Inventaire des personnages](#gestion-de-linventaire-et-de-la-bourse)
@@ -43,14 +44,15 @@
 - [Sessions de jeu](#sessions-de-jeu)
 - [Statistiques des campagnes](#statistiques-des-campagnes)
 
-### 🎲 Intégration D&D - API Open5e
-- [Sorts](#sorts)
-- [Monstres](#monstres)
-- [Armes](#armes)
-- [Armures](#armures)
-- [Races](#races)
-- [Classes](#classes)
-- [Recherche globale](#recherche-globale)
+### 🎲 Données D&D 5e importées (`/api/dnd5e`)
+- [Équipement importé](#équipement-importé-dnd5e)
+- [Objets magiques importés](#objets-magiques-importés-dnd5e)
+- [Sorts importés (catalogue)](#sorts-importés-catalogue-dnd5e)
+- [Copie vers personnage (admin/gm)](#copie-vers-personnage-admingm)
+
+### ✨ Sorts applicatifs (`/api/spells`)
+- [Liste et détail](#sorts-applicatifs-api-spells)
+- [Création / mise à jour](#création-et-mise-à-jour-de-sort)
 
 ### 🏠 Données D&D Locales
 - [Sorts locaux](#sorts-locaux)
@@ -229,6 +231,47 @@ GET /api/characters/stats/overview
 Authorization: Bearer <admin_or_gm_token>
 ```
 
+### Traits et capacités
+
+Routes sous `/api/characters/:id/features` — traits affichés sur la fiche (onglet « Traits »).
+
+`category` (obligatoire à la création) doit être l’une des valeurs :  
+`CLASS_FEATURE`, `RACIAL_TRAIT`, `FEAT`, `PERSONALITY_AND_BACKGROUND`, `OTHER_PROFICIENCIES_AND_LANGUAGES`.
+
+```
+GET /api/characters/:id/features
+Authorization: Bearer <token>
+```
+
+```
+POST /api/characters/:id/features
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "category": "CLASS_FEATURE",
+  "name": "Action supplémentaire",
+  "description": "Une fois par combat, tu peux…"
+}
+```
+
+```
+PUT /api/characters/:id/features/:featureId
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "category": "CLASS_FEATURE",
+  "name": "Action supplémentaire (mise à jour)",
+  "description": "…"
+}
+```
+
+```
+DELETE /api/characters/:id/features/:featureId
+Authorization: Bearer <token>
+```
+
 ## 🎒 Gestion de l'Inventaire et de la Bourse
 
 ### Obtenir l'inventaire d'un personnage
@@ -271,21 +314,41 @@ Authorization: Bearer <token>
 
 ### Obtenir la bourse d'un personnage
 ```
-GET /api/inventory/:characterId/purse
+GET /api/purse/:characterId
 Authorization: Bearer <token>
 ```
 
-### Modifier la bourse d'un personnage
+Réponse typique : `success`, `purse` (pièces en snake_case), `total_gold_value`.
+
+### Remplacer les montants de la bourse
 ```
-PUT /api/inventory/:characterId/purse
+PUT /api/purse/:characterId
 Authorization: Bearer <token>
 Content-Type: application/json
 
 {
-  "copper_pieces": 50,
-  "silver_pieces": 20,
-  "gold_pieces": 100,
-  "platinum_pieces": 5
+  "copper": 50,
+  "silver": 20,
+  "electrum": 0,
+  "gold": 100,
+  "platinum": 5
+}
+```
+
+### Ajouter ou retirer des pièces
+```
+POST /api/purse/:characterId/add
+POST /api/purse/:characterId/remove
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "copper": 10,
+  "silver": 0,
+  "electrum": 0,
+  "gold": 0,
+  "platinum": 0,
+  "reason": "Butin de session"
 }
 ```
 
@@ -426,19 +489,18 @@ Authorization: Bearer <token>
 Content-Type: application/json
 
 {
-  "spell_slug": "fireball",
-  "spell_name": "Fireball",
-  "spell_level": 3,
-  "spell_school": "evocation",
+  "spell_id": 42,
   "is_prepared": false,
   "is_known": true,
-  "notes": "Sort appris au niveau 5"
+  "notes": "Référence un sort de la table applicative (GET /api/spells)"
 }
 ```
 
-### Modifier un sort dans le grimoire
+`spell_id` est l’**identifiant numérique** d’une ligne `Spell` (`/api/spells`), pas l’`index` SRD.
+
+### Modifier une entrée de grimoire
 ```
-PUT /api/grimoire/:characterId/spells/:spellId
+PUT /api/grimoire/:characterId/spells/:grimoireEntryId
 Authorization: Bearer <token>
 Content-Type: application/json
 
@@ -451,9 +513,11 @@ Content-Type: application/json
 }
 ```
 
-### Supprimer un sort du grimoire
+`:grimoireEntryId` est l’**id de la ligne** dans la table grimoire (clé primaire), pas l’id du sort.
+
+### Supprimer une entrée du grimoire
 ```
-DELETE /api/grimoire/:characterId/spells/:spellId
+DELETE /api/grimoire/:characterId/spells/:grimoireEntryId
 Authorization: Bearer <token>
 ```
 
@@ -464,15 +528,19 @@ Authorization: Bearer <token>
 Content-Type: application/json
 
 {
-  "spell_ids": [1, 3, 5, 7]
+  "spell_ids": [101, 103, 105]
 }
 ```
 
+`spell_ids` : identifiants des **lignes grimoire** (`id` des entrées), pas les `spell_id` de la table `Spell`. Les entrées listées sont marquées préparées ; les autres du personnage le sont retirées.
+
 ### Lancer un sort (incrémenter le compteur)
 ```
-POST /api/grimoire/:characterId/cast/:spellId
+POST /api/grimoire/:characterId/cast/:grimoireEntryId
 Authorization: Bearer <token>
 ```
+
+`:grimoireEntryId` : id de la **ligne grimoire** (identique au segment utilisé pour `PUT` / `DELETE` sur une entrée).
 
 ### Rechercher des sorts à ajouter
 ```
@@ -512,7 +580,7 @@ Authorization: Bearer <token>
 
 ### Obtenir une campagne par ID
 ```
-GET /api/campaigns/:id
+GET /api/campaigns/:campaignId
 Authorization: Bearer <token>
 ```
 
@@ -539,7 +607,7 @@ Content-Type: application/json
 
 ### Modifier une campagne (GM/Admin)
 ```
-PUT /api/campaigns/:id
+PUT /api/campaigns/:campaignId
 Authorization: Bearer <gm_or_admin_token>
 Content-Type: application/json
 
@@ -553,7 +621,7 @@ Content-Type: application/json
 
 ### Supprimer une campagne (GM/Admin)
 ```
-DELETE /api/campaigns/:id
+DELETE /api/campaigns/:campaignId
 Authorization: Bearer <gm_or_admin_token>
 ```
 
@@ -579,6 +647,12 @@ Authorization: Bearer <gm_or_admin_token>
 
 ## Sessions de jeu
 
+### Sessions actives (liste pour l’utilisateur connecté)
+```
+GET /api/sessions/active
+Authorization: Bearer <token>
+```
+
 ### Obtenir toutes les sessions d'une campagne
 ```
 GET /api/sessions/campaign/:campaignId
@@ -586,19 +660,22 @@ Authorization: Bearer <token>
 ```
 
 ### Obtenir une session par ID
+Réponse enrichie : détails session, **`attendance`** (personnages inscrits / présence), **`campaign_characters`**, métadonnées campagne (`gm_id`, etc.).
+
 ```
-GET /api/sessions/:id
+GET /api/sessions/:sessionId
 Authorization: Bearer <token>
 ```
 
-### Créer une session (GM/Admin)
+### Créer une session (MJ de la campagne ou admin)
+La campagne est dans l’URL ; `session_number` et `session_date` sont **requis**.
+
 ```
-POST /api/sessions
+POST /api/sessions/campaign/:campaignId
 Authorization: Bearer <gm_or_admin_token>
 Content-Type: application/json
 
 {
-  "campaign_id": 1,
   "session_number": 1,
   "title": "Le Commencement de l'Aventure",
   "description": "Première session où les héros se rencontrent",
@@ -612,31 +689,31 @@ Content-Type: application/json
 }
 ```
 
-### Modifier une session (GM/Admin)
+### Modifier une session (MJ de la campagne ou admin)
 ```
-PUT /api/sessions/:id
+PUT /api/sessions/:sessionId
 Authorization: Bearer <gm_or_admin_token>
 Content-Type: application/json
 
 {
   "title": "Le Commencement de l'Aventure - Session Étendue",
-  "description": "Première session où les héros se rencontrent et découvrent leur destin",
+  "session_date": "2025-01-20",
   "xp_awarded": 150,
   "gold_awarded": 75.0,
-  "notes": "Session d'introduction avec combat d'initiation"
+  "is_active": true
 }
 ```
 
-### Supprimer une session (GM/Admin)
+### Supprimer une session (soft delete)
 ```
-DELETE /api/sessions/:id
+DELETE /api/sessions/:sessionId
 Authorization: Bearer <gm_or_admin_token>
 ```
 
-### Marquer la présence à une session
+### Présence (upsert) — MJ / admin
 ```
-POST /api/sessions/:id/attendance
-Authorization: Bearer <token>
+POST /api/sessions/:sessionId/attendance
+Authorization: Bearer <gm_or_admin_token>
 Content-Type: application/json
 
 {
@@ -648,18 +725,30 @@ Content-Type: application/json
 }
 ```
 
-### Modifier la présence à une session
+Le personnage doit déjà être rattaché à la campagne de la session.
+
+### État de jeu en session (PV, dés de vie) — joueur, MJ de la campagne ou admin
+
+Données stockées sur la **liaison campagne–personnage** (`CampaignCharacter`) pour la durée de la campagne ; utilisées notamment par la **session live**.
+
 ```
-PUT /api/sessions/:id/attendance/:characterId
-Authorization: Bearer <gm_or_admin_token>
+GET /api/sessions/:sessionId/characters/:characterId/state
+PUT /api/sessions/:sessionId/characters/:characterId/state
+Authorization: Bearer <token>
 Content-Type: application/json
 
 {
-  "attended": true,
-  "xp_earned": 120,
-  "gold_earned": 60.0,
-  "notes": "Présent avec bonus de participation"
+  "current_hit_points": 12,
+  "hit_dice_remaining": 2
 }
+```
+
+Variantes acceptées : `currentHitPoints`, `hitDiceRemaining`.
+
+### Statistiques agrégées des sessions (GM / admin)
+```
+GET /api/sessions/stats/overview
+Authorization: Bearer <gm_or_admin_token>
 ```
 
 ## Statistiques des campagnes
@@ -676,308 +765,116 @@ Authorization: Bearer <gm_or_admin_token>
 - Nombre moyen de joueurs par campagne
 - Statistiques des sessions
 
-## 🎲 Intégration D&D - API Open5e
+## 🎲 Données D&D 5e importées (`/api/dnd5e`)
 
-> **Note :** Toutes les routes D&D nécessitent une authentification via token JWT :
-> ```
-> Authorization: Bearer <token>
-> ```
+Ces routes lisent les tables remplies par les scripts `npm run import-dnd5e-*` (source [D&D 5e API](https://www.dnd5eapi.co/), règles 2014). Authentification JWT obligatoire.
 
-### Base URL
+### Équipement importé (D&D 5e)
+
 ```
-/api/dnd
-```
-
-## Sorts
-
-### Obtenir tous les sorts
-```
-GET /api/dnd/spells
+GET /api/dnd5e/equipment?limit=20&page=1&type=weapon&category=&q=&sortBy=name&sortDir=asc
+GET /api/dnd5e/equipment/:index
+GET /api/dnd5e/equipment/search?q=épée
 ```
 
-**Paramètres de requête :**
-- `level` (optionnel) : Niveau du sort (1-9)
-- `school` (optionnel) : École de magie
-- `search` (optionnel) : Recherche par nom
-- `limit` (optionnel) : Nombre de résultats (défaut: 20)
-- `page` (optionnel) : Page (défaut: 1)
+Réponses liste : `items`, `pagination` (`page`, `limit`, `total`, `totalPages`).
 
-**Exemple :**
-```bash
-GET /api/dnd/spells?level=3&school=evocation&search=fire&limit=10
+### Objets magiques importés (D&D 5e)
+
+```
+GET /api/dnd5e/magic-items?limit=20&page=1&q=&rarity=&category=&sortBy=name&sortDir=asc
+GET /api/dnd5e/magic-items/:index
 ```
 
-### Obtenir un sort par ID
-```
-GET /api/dnd/spells/:id
-```
+### Sorts importés (catalogue D&D 5e)
 
-**Exemple :**
-```bash
-GET /api/dnd/spells/fireball
+```
+GET /api/dnd5e/spells?limit=20&page=1&q=&level=&school=
+GET /api/dnd5e/spells/:index
 ```
 
-## Monstres
+### Copie vers personnage (admin / gm)
 
-### Obtenir tous les monstres
+Duplique une entrée importée vers les tables applicatives (`Item` / `Spell`) et inventaire ou grimoire.
+
 ```
-GET /api/dnd/monsters
-```
-
-**Paramètres de requête :**
-- `challenge_rating` (optionnel) : Indice de dangerosité
-- `type` (optionnel) : Type de créature
-- `search` (optionnel) : Recherche par nom
-- `limit` (optionnel) : Nombre de résultats (défaut: 20)
-- `page` (optionnel) : Page (défaut: 1)
-
-**Exemple :**
-```bash
-GET /api/dnd/monsters?challenge_rating=5&type=dragon&search=red
+POST /api/dnd5e/characters/:characterId/inventory
+Content-Type: application/json
+{ "equipment_id": 123, "quantity": 1 }
 ```
 
-### Obtenir un monstre par ID
 ```
-GET /api/dnd/monsters/:id
-```
-
-**Exemple :**
-```bash
-GET /api/dnd/monsters/ancient-red-dragon
+POST /api/dnd5e/characters/:characterId/inventory/magic-item
+Content-Type: application/json
+{ "magic_item_id": 45, "quantity": 1 }
 ```
 
-## Armes
-
-### Obtenir toutes les armes
 ```
-GET /api/dnd/weapons
-```
-
-**Paramètres de requête :**
-- `category` (optionnel) : Catégorie d'arme
-- `search` (optionnel) : Recherche par nom
-- `limit` (optionnel) : Nombre de résultats (défaut: 20)
-- `page` (optionnel) : Page (défaut: 1)
-
-**Exemple :**
-```bash
-GET /api/dnd/weapons?category=melee&search=sword
+POST /api/dnd5e/characters/:characterId/grimoire
+Content-Type: application/json
+{ "spell_index": "fireball", "is_known": true, "is_prepared": false, "notes": null }
 ```
 
-### Obtenir une arme par ID
 ```
-GET /api/dnd/weapons/:id
-```
-
-**Exemple :**
-```bash
-GET /api/dnd/weapons/longsword
+GET /api/dnd5e/characters/:characterId/inventory
 ```
 
-## Armures
+---
 
-### Obtenir toutes les armures
+## ✨ Sorts applicatifs (`/api/spells`)
+
+Sorts utilisés par le grimoire en jeu : copies issues des imports (`source: dnd5e`), sorts **custom** (`source: custom`), etc.
+
+### Liste et détail
+
 ```
-GET /api/dnd/armor
-```
-
-**Paramètres de requête :**
-- `armor_category` (optionnel) : Catégorie d'armure
-- `search` (optionnel) : Recherche par nom
-- `limit` (optionnel) : Nombre de résultats (défaut: 20)
-- `page` (optionnel) : Page (défaut: 1)
-
-**Exemple :**
-```bash
-GET /api/dnd/armor?armor_category=heavy&search=plate
+GET /api/spells?q=&level=&school=&limit=&page=
+GET /api/spells/:id
 ```
 
-### Obtenir une armure par ID
-```
-GET /api/dnd/armor/:id
-```
+### Création et mise à jour de sort
 
-**Exemple :**
-```bash
-GET /api/dnd/armor/plate-armor
+```
+POST /api/spells
+Authorization: Bearer <admin_or_gm_token>
 ```
 
-## Races
+Corps minimal : `name` (obligatoire). Champs optionnels : `index`, `level`, `school`, `castingTime`, `range`, `components`, `duration`, `description`, `higherLevel`, `ritual`, `concentration`, `raw`.
 
-### Obtenir toutes les races
 ```
-GET /api/dnd/races
-```
-
-**Paramètres de requête :**
-- `search` (optionnel) : Recherche par nom
-- `limit` (optionnel) : Nombre de résultats (défaut: 20)
-- `page` (optionnel) : Page (défaut: 1)
-
-**Exemple :**
-```bash
-GET /api/dnd/races?search=elf
+PUT /api/spells/:id
+Authorization: Bearer <token>
 ```
 
-### Obtenir une race par ID
-```
-GET /api/dnd/races/:id
-```
+- **admin** / **gm** : tout sort.
+- **user** : uniquement un sort lié au grimoire d’un de ses personnages.
 
-**Exemple :**
-```bash
-GET /api/dnd/races/high-elf
+---
+
+## 🏠 Données D&D Locales (`/api/dnd-local`)
+
+Données complémentaires en base (monstres, armes, armures, vue `dnd_items`, etc.). Les réponses listes utilisent souvent `success`, `data`, `count`, `page`, `limit`.
+
+### Sorts (jeu importé — même famille que le catalogue)
+
 ```
-
-## Classes
-
-### Obtenir toutes les classes
-```
-GET /api/dnd/classes
-```
-
-**Paramètres de requête :**
-- `search` (optionnel) : Recherche par nom
-- `limit` (optionnel) : Nombre de résultats (défaut: 20)
-- `page` (optionnel) : Page (défaut: 1)
-
-**Exemple :**
-```bash
-GET /api/dnd/classes?search=wizard
+GET /api/dnd-local/spells?level=&school=&search=&limit=&page=
+GET /api/dnd-local/spells/:index
 ```
 
-### Obtenir une classe par ID
+### Monstres, armes, armures, items
+
 ```
-GET /api/dnd/classes/:id
-```
-
-**Exemple :**
-```bash
-GET /api/dnd/classes/wizard
-```
-
-## Recherche globale
-
-### Rechercher dans toutes les catégories
-```
-GET /api/dnd/search
-```
-
-**Paramètres de requête :**
-- `q` (requis) : Terme de recherche
-- `types` (optionnel) : Types à rechercher (séparés par des virgules)
-
-**Exemple :**
-```bash
-GET /api/dnd/search?q=fire&types=spells,monsters,weapons
-```
-
-## Informations API
-
-### Obtenir les informations sur l'API Open5e
-```
-GET /api/dnd/info
-```
-
-## 🏠 Données D&D Locales
-
-> **Note :** Ces routes accèdent aux données D&D synchronisées localement pour des performances optimales.
-
-### Base URL
-```
-/api/dnd-local
-```
-
-## Sorts locaux
-
-### Obtenir tous les sorts locaux
-```
-GET /api/dnd-local/spells
-```
-
-**Paramètres de requête :**
-- `level` (optionnel) : Niveau du sort (1-9)
-- `school` (optionnel) : École de magie
-- `search` (optionnel) : Recherche par nom
-- `limit` (optionnel) : Nombre de résultats (défaut: 20)
-- `page` (optionnel) : Page (défaut: 1)
-
-### Obtenir un sort local par slug
-```
-GET /api/dnd-local/spells/:slug
-```
-
-## Monstres locaux
-
-### Obtenir tous les monstres locaux
-```
-GET /api/dnd-local/monsters
-```
-
-**Paramètres de requête :**
-- `challenge_rating` (optionnel) : Indice de dangerosité
-- `type` (optionnel) : Type de créature
-- `search` (optionnel) : Recherche par nom
-- `limit` (optionnel) : Nombre de résultats (défaut: 20)
-- `page` (optionnel) : Page (défaut: 1)
-
-### Obtenir un monstre local par slug
-```
+GET /api/dnd-local/monsters?challenge_rating=&type=&search=&limit=&page=
 GET /api/dnd-local/monsters/:slug
-```
 
-## Armes locales
-
-### Obtenir toutes les armes locales
-```
-GET /api/dnd-local/weapons
-```
-
-**Paramètres de requête :**
-- `category` (optionnel) : Catégorie d'arme
-- `search` (optionnel) : Recherche par nom
-- `limit` (optionnel) : Nombre de résultats (défaut: 20)
-- `page` (optionnel) : Page (défaut: 1)
-
-### Obtenir une arme locale par slug
-```
+GET /api/dnd-local/weapons?category=&search=&limit=&page=
 GET /api/dnd-local/weapons/:slug
-```
 
-## Armures locales
-
-### Obtenir toutes les armures locales
-```
-GET /api/dnd-local/armor
-```
-
-**Paramètres de requête :**
-- `armor_category` (optionnel) : Catégorie d'armure
-- `search` (optionnel) : Recherche par nom
-- `limit` (optionnel) : Nombre de résultats (défaut: 20)
-- `page` (optionnel) : Page (défaut: 1)
-
-### Obtenir une armure locale par slug
-```
+GET /api/dnd-local/armor?armor_category=&search=&limit=&page=
 GET /api/dnd-local/armor/:slug
-```
 
-## Items locaux
-
-### Obtenir tous les items locaux
-```
-GET /api/dnd-local/items
-```
-
-**Paramètres de requête :**
-- `category` (optionnel) : Catégorie d'item
-- `rarity` (optionnel) : Rareté de l'item
-- `search` (optionnel) : Recherche par nom
-- `limit` (optionnel) : Nombre de résultats (défaut: 20)
-- `page` (optionnel) : Page (défaut: 1)
-
-### Obtenir un item local par slug
-```
+GET /api/dnd-local/items?category=&rarity=&search=&limit=&page=
 GET /api/dnd-local/items/:slug
 ```
 
@@ -1004,37 +901,12 @@ GET /api/dnd-local/stats
 
 ## 📊 Format des données
 
-### Format de réponse standard
-```json
-{
-  "success": true,
-  "data": [...],
-  "count": 25,
-  "next": "https://api.open5e.com/v2/spells/?page=2",
-  "previous": null
-}
-```
+### Formats de réponse courants
 
-### Format de réponse pour un élément unique
-```json
-{
-  "success": true,
-  "data": {
-    "id": "fireball",
-    "name": "Fireball",
-    "level": 3,
-    "school": "evocation",
-    "casting_time": "1 action",
-    "range": "150 feet",
-    "components": "V, S, M",
-    "duration": "Instantaneous",
-    "description": "A bright streak flashes from your pointing finger...",
-    "higher_level": "When you cast this spell using a spell slot...",
-    "ritual": false,
-    "concentration": false
-  }
-}
-```
+- **`/api/dnd-local/*`** (listes) : `success`, `data`, `count`, `page`, `limit`.
+- **`/api/dnd5e/*`** (listes paginées) : `items`, `pagination` avec `total`, `totalPages`.
+- **`/api/spells`** : `items`, `pagination` ou `item` selon la route.
+- Les champs métier sont en **camelCase** côté Prisma (ex. `castingTime`, `higherLevel`) dans les JSON renvoyés par l’API applicative.
 
 ### Format de réponse d'erreur
 ```json
@@ -1266,22 +1138,27 @@ Un utilisateur admin est créé automatiquement :
 
 ## 🚀 Exemples d'utilisation
 
-### Rechercher des sorts de niveau 3
+### Santé de l’API
 ```bash
-curl -H "Authorization: Bearer <token>" \
-  "http://localhost:3000/api/dnd/spells?level=3"
+curl -s "http://localhost:3000/health"
 ```
 
-### Rechercher des dragons
+### Sorts importés D&D 5e (catalogue)
 ```bash
 curl -H "Authorization: Bearer <token>" \
-  "http://localhost:3000/api/dnd/monsters?search=dragon"
+  "http://localhost:3000/api/dnd5e/spells?level=3&limit=10&page=1"
 ```
 
-### Recherche globale
+### Sorts applicatifs (table `Spell`)
 ```bash
 curl -H "Authorization: Bearer <token>" \
-  "http://localhost:3000/api/dnd/search?q=magic&types=spells,items"
+  "http://localhost:3000/api/spells?q=fire&limit=10&page=1"
+```
+
+### Statistiques des données locales
+```bash
+curl -H "Authorization: Bearer <token>" \
+  "http://localhost:3000/api/dnd-local/stats"
 ```
 
 ### Recherche dans les données locales
@@ -1316,11 +1193,10 @@ curl -X POST http://localhost:3000/api/campaigns/1/characters \
 
 ### Créer une session de jeu
 ```bash
-curl -X POST http://localhost:3000/api/sessions \
+curl -X POST http://localhost:3000/api/sessions/campaign/1 \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
-    "campaign_id": 1,
     "session_number": 1,
     "title": "Le Commencement de l'\''Aventure",
     "session_date": "2025-01-15",
@@ -1334,12 +1210,10 @@ curl -X POST http://localhost:3000/api/grimoire/1/spells \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
-    "spell_slug": "fireball",
-    "spell_name": "Fireball",
-    "spell_level": 3,
-    "spell_school": "evocation",
+    "spell_id": 42,
     "is_prepared": true,
-    "notes": "Sort appris au niveau 5"
+    "is_known": true,
+    "notes": "Référence l’id d’un sort (GET /api/spells)"
   }'
 ```
 

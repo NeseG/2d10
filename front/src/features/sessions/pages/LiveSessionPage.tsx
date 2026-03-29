@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { Card } from '../../../shared/components/Card'
 import { useAuth } from '../../../app/hooks/useAuth'
 import { useSnackbar } from '../../../app/hooks/useSnackbar'
@@ -33,8 +33,24 @@ type SessionDetail = {
   attendance?: SessionAttendance[]
 }
 
+function SessionLiveCharacterHeading(props: { characterId: string; label: string }) {
+  const { characterId, label } = props
+  return (
+    <div className="session-live-character-title-row">
+      <h4 className="session-live-character-panel-title">{label}</h4>
+      <Link
+        to={`/characters/${characterId}/edit`}
+        className="session-live-character-edit-link"
+        title="Éditer le personnage"
+        aria-label="Éditer le personnage"
+      >
+        Éditer
+      </Link>
+    </div>
+  )
+}
+
 export function LiveSessionPage() {
-  const navigate = useNavigate()
   const { token, user } = useAuth()
   const { setSessionInfo } = useHeader()
   const { showSnackbar } = useSnackbar()
@@ -108,8 +124,38 @@ export function LiveSessionPage() {
       : sessionDetail.attendance.filter((entry) => entry.character_user_id === user.id)
   }, [isSessionOwner, sessionDetail?.attendance, user?.id])
 
+  /** Admin ou MJ assigné à cette session : bandeau horizontal de fiches (plusieurs « colonnes » mobile). */
+  const useGmCharacterStrip = useMemo(() => {
+    if (!user || !sessionDetail || accessibleCharacters.length < 2) return false
+    return user.role === 'admin' || sessionDetail.gm_id === user.id
+  }, [user, sessionDetail, accessibleCharacters.length])
+
+  const [characterDisplayNames, setCharacterDisplayNames] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    setCharacterDisplayNames((prev) => {
+      const next: Record<string, string> = { ...prev }
+      const allowed = new Set<string>()
+      for (const e of accessibleCharacters) {
+        const id = String(e.character_id)
+        allowed.add(id)
+        if (next[id] === undefined) next[id] = e.character_name ?? ''
+      }
+      for (const k of Object.keys(next)) {
+        if (!allowed.has(k)) delete next[k]
+      }
+      return next
+    })
+  }, [accessibleCharacters])
+
+  /** Dock fixe en bas : marge scrollable pour ne pas masquer le contenu sous la barre d’onglets. */
+  const showBottomCharacterDock =
+    Boolean(session) && !loading && accessibleCharacters.length > 0 && mainTab === 'character'
+
   return (
-    <div className="session-live-page">
+    <div
+      className={`session-live-page${showBottomCharacterDock ? ' session-live-page--dock-offset' : ''}${useGmCharacterStrip ? ' session-live-page--gm-strip' : ''}`}
+    >
       <Card title="">
         {!session ? <p>Aucune session rejointe.</p> : null}
 
@@ -133,7 +179,7 @@ export function LiveSessionPage() {
                 </button>
               </div>
 
-              {accessibleCharacters.length > 1 ? (
+              {!useGmCharacterStrip && accessibleCharacters.length > 1 ? (
                 <div className="login-form" style={{ marginTop: '0.75rem' }}>
                   <label htmlFor="session-character-select">Personnage</label>
                   <select
@@ -155,9 +201,55 @@ export function LiveSessionPage() {
                 </div>
               ) : null}
 
-              {selectedCharacterId ? (
+              {useGmCharacterStrip ? (
+                <div className="session-live-characters-strip">
+                  {accessibleCharacters.map((entry) => {
+                    const cid = String(entry.character_id)
+                    const title =
+                      characterDisplayNames[cid]?.trim() ||
+                      entry.character_name?.trim() ||
+                      `Personnage #${entry.character_id}`
+                    return (
+                      <div key={entry.id} className="session-live-character-panel">
+                        <div className="session-live-content session-live-character-panel-inner">
+                          <SessionLiveCharacterHeading characterId={cid} label={title} />
+                          {characterSubTab === 'characteristic' ? (
+                            <CharacterCharacteristicsTab
+                              characterId={cid}
+                              token={token}
+                              sessionView
+                              sessionId={sessionDetail?.id != null ? String(sessionDetail.id) : undefined}
+                              onNameLoaded={(name) =>
+                                setCharacterDisplayNames((p) => ({ ...p, [cid]: name }))
+                              }
+                            />
+                          ) : null}
+                          {characterSubTab === 'inventory' ? (
+                            <CharacterInventoryTab characterId={cid} token={token} />
+                          ) : null}
+                          {characterSubTab === 'grimoire' ? (
+                            <CharacterGrimoireTab
+                              characterId={cid}
+                              token={token}
+                              user={user}
+                              sessionView
+                              sessionId={
+                                sessionDetail?.id != null ? String(sessionDetail.id) : session ? String(session.id) : undefined
+                              }
+                            />
+                          ) : null}
+                          {characterSubTab === 'traits' ? <CharacterFeaturesTab characterId={cid} token={token} /> : null}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : selectedCharacterId ? (
                 <div className="session-live-content" style={{ marginTop: '0.75rem' }}>
-                  <h4 style={{ marginBottom: '0.5rem' }}>{selectedCharacterName || 'Mon personnage'}</h4>
+                  <SessionLiveCharacterHeading
+                    characterId={selectedCharacterId}
+                    label={selectedCharacterName || 'Mon personnage'}
+                  />
                   {characterSubTab === 'characteristic' ? (
                     <CharacterCharacteristicsTab
                       characterId={selectedCharacterId}
@@ -168,7 +260,15 @@ export function LiveSessionPage() {
                     />
                   ) : null}
                   {characterSubTab === 'inventory' ? <CharacterInventoryTab characterId={selectedCharacterId} token={token} /> : null}
-                  {characterSubTab === 'grimoire' ? <CharacterGrimoireTab characterId={selectedCharacterId} token={token} user={user} /> : null}
+                  {characterSubTab === 'grimoire' ? (
+                    <CharacterGrimoireTab
+                      characterId={selectedCharacterId}
+                      token={token}
+                      user={user}
+                      sessionView
+                      sessionId={sessionDetail?.id != null ? String(sessionDetail.id) : session ? String(session.id) : undefined}
+                    />
+                  ) : null}
                   {characterSubTab === 'traits' ? <CharacterFeaturesTab characterId={selectedCharacterId} token={token} /> : null}
                 </div>
               ) : null}
@@ -215,12 +315,6 @@ export function LiveSessionPage() {
               ) : null}
             </>
           ) : null}
-
-            <div style={{ marginTop: '0.75rem' }}>
-              <button className="btn btn-secondary" type="button" onClick={() => navigate('/sessions')}>
-                Retour aux sessions
-              </button>
-            </div>
           </>
         ) : null}
       </Card>

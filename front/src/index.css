@@ -1,3 +1,8 @@
+/* Évite un léger décalage horizontal quand la barre de défilement verticale apparaît / disparaît */
+html {
+  scrollbar-gutter: stable;
+}
+
 :root {
   --bg: #0b1220;
   --panel: #111827;
@@ -25,16 +30,28 @@ body {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 250px 1fr;
+  grid-template-columns: 250px minmax(0, 1fr);
   min-height: 100vh;
+}
+
+@media (min-width: 901px) {
+  .sidebar {
+    position: sticky;
+    top: 0;
+    align-self: start;
+    max-height: 100vh;
+    max-height: 100dvh;
+  }
 }
 
 .sidebar {
   background: var(--sidebar);
   color: #fff;
   padding: 1.25rem;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  align-content: stretch;
+  min-height: 0;
 }
 
 .sidebar-title {
@@ -44,12 +61,17 @@ body {
 .sidebar-nav {
   display: grid;
   gap: 0.5rem;
-  flex: 1 1 auto;
   align-content: start;
+  align-self: stretch;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .sidebar-footer {
-  margin-top: 1rem;
+  margin-top: 0;
+  padding-top: 0.85rem;
+  border-top: 1px solid rgba(55, 65, 81, 0.65);
 }
 
 .sidebar-logout {
@@ -72,6 +94,7 @@ body {
 .app-content {
   display: grid;
   grid-template-rows: auto 1fr;
+  min-width: 0;
 }
 
 .topbar {
@@ -139,6 +162,7 @@ body {
 
 .page-content {
   padding: 1.25rem;
+  min-width: 0;
 }
 
 .grid {
@@ -179,11 +203,13 @@ body {
 
 .table-wrap {
   overflow-x: auto;
+  max-width: 100%;
 }
 
 /* Inventaire perso : reste un vrai tableau sur mobile (scroll horizontal) */
 .inventory-table-wrap {
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
 }
 
 .inventory-items-table {
@@ -307,6 +333,15 @@ body {
   margin-top: 1rem;
 }
 
+.login-form .create-item-kind-label {
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.login-form .create-item-kind-tabs {
+  margin-bottom: 0.15rem;
+}
+
 .login-form input {
   width: 100%;
   padding: 0.6rem 0.7rem;
@@ -359,6 +394,7 @@ input[type='number'] {
   margin-bottom: 0.8rem;
 }
 
+/* Au-dessus de .session-subtabs-dock (45) pour que les modales restent cliquables en session live */
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -366,7 +402,29 @@ input[type='number'] {
   display: grid;
   place-items: center;
   padding: 1rem;
-  z-index: 30;
+  z-index: 50;
+}
+
+.modal-backdrop.modal-backdrop-stacked {
+  z-index: 60;
+}
+
+.modal-card.modal-card-srd-detail {
+  width: min(640px, 100%);
+}
+
+.srd-raw-json {
+  margin: 0.25rem 0 0.5rem;
+  padding: 0.5rem 0.55rem;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow: auto;
+  border-radius: 0.35rem;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--border);
 }
 
 .modal-card {
@@ -404,7 +462,82 @@ input[type='number'] {
 }
 
 .session-live-content {
+  min-width: 0;
   padding-bottom: 5.25rem;
+}
+
+/* Espace scrollable sous le contenu quand le dock Character / Inventory / … est fixe en bas */
+.session-live-page--dock-offset {
+  padding-bottom: calc(5.75rem + env(safe-area-inset-bottom, 0px));
+}
+
+/* MJ / admin : plusieurs fiches côte à côte (style « mobile »), défilement horizontal */
+.session-live-characters-strip {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 0.75rem;
+  overflow-x: auto;
+  overflow-y: visible;
+  margin-top: 0.75rem;
+  padding: 0.15rem 0 0.35rem;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;
+  overscroll-behavior-x: contain;
+}
+
+.session-live-character-panel {
+  flex: 0 0 min(360px, calc(100vw - 2.5rem));
+  min-width: 272px;
+  max-width: 400px;
+  scroll-snap-align: start;
+}
+
+.session-live-character-panel-inner {
+  min-width: 0;
+  margin-top: 0;
+  padding: 0.65rem 0.7rem 5.25rem;
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  background: rgba(17, 24, 39, 0.72);
+}
+
+.session-live-character-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 0 0.5rem;
+  min-width: 0;
+}
+
+.session-live-character-title-row .session-live-character-panel-title {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.session-live-character-edit-link {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  color: var(--muted);
+  text-decoration: none;
+  line-height: 1.2;
+}
+
+.session-live-character-edit-link:hover {
+  color: var(--text);
+  border-color: var(--muted);
+}
+
+.session-live-character-panel-title {
+  font-size: 1.02rem;
 }
 
 .session-subtabs-dock {
@@ -423,6 +556,7 @@ input[type='number'] {
   transform: translateY(0);
   justify-content: center;
   flex-wrap: wrap;
+  overscroll-behavior-x: contain;
 }
 
 @media (min-width: 901px) {
@@ -464,8 +598,8 @@ input[type='number'] {
 }
 
 .tab-panel {
+  min-width: 0;
   min-height: 240px;
-  border: 1px dashed var(--border);
   border-radius: 0.6rem;
   padding: 0.8rem;
   touch-action: pan-y;
@@ -543,10 +677,169 @@ input[type='number'] {
   color: var(--muted);
 }
 
-.inventory-purse-hint {
+/* Grimoire — session live : niveaux repliables + cases d’emplacements */
+.grimoire-session-live {
+  min-width: 0;
+}
+
+.grimoire-session-levels {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-top: 0.35rem;
+}
+
+.grimoire-session-level {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
+
+.grimoire-session-level:not(:last-child) {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.4rem;
+  margin-bottom: 0.25rem;
+}
+
+.grimoire-session-level-summary {
+  display: grid;
+  grid-template-columns: 0.75rem minmax(10.75rem, 13rem) 1fr;
+  align-items: center;
+  column-gap: 0.45rem;
+  padding: 0.35rem 0;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.grimoire-session-level-summary::-webkit-details-marker {
+  display: none;
+}
+
+.grimoire-session-level-summary::before {
+  content: '';
+  grid-column: 1;
+  justify-self: start;
+  align-self: center;
+  display: inline-block;
+  width: 0.4rem;
+  height: 0.4rem;
+  margin-top: -0.05rem;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+}
+
+.grimoire-session-level[open] > .grimoire-session-level-summary::before {
+  transform: rotate(45deg);
+  margin-top: 0.08rem;
+}
+
+.grimoire-session-level-title {
+  grid-column: 2;
+  font-weight: 600;
+  min-width: 0;
+}
+
+.grimoire-session-slot-boxes {
+  grid-column: 3;
+  justify-self: start;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.22rem;
+  margin: 0;
+}
+
+.grimoire-session-slot-boxes input[type='checkbox'] {
+  width: 1.15rem;
+  height: 1.15rem;
+  cursor: pointer;
+  accent-color: var(--primary);
+}
+
+.grimoire-session-level-body {
+  padding: 0.2rem 0 0.45rem 1.05rem;
+  border: none;
+}
+
+.grimoire-session-empty {
   margin: 0.5rem 0 0;
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   color: var(--muted);
+}
+
+.grimoire-session-spell-list {
+  list-style: none;
+  margin: 0.45rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.grimoire-session-spell-list > li:not(:last-child) {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.4rem;
+  margin-bottom: 0.3rem;
+}
+
+.grimoire-session-spell-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  width: 100%;
+  margin: 0;
+  padding: 0.25rem 0;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.grimoire-session-spell-row:hover .grimoire-session-spell-name {
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
+}
+
+.grimoire-session-spell-title {
+  display: block;
+  line-height: 1.35;
+}
+
+.grimoire-session-spell-name {
+  font-weight: 600;
+}
+
+.grimoire-session-spell-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.85rem;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.grimoire-session-spell-meta-item {
+  display: inline;
+}
+
+.grimoire-session-spell-meta-label {
+  margin-right: 0.28rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.grimoire-session-prepared {
+  color: var(--muted);
+  font-weight: 400;
 }
 
 .character-skills-summary-empty {
@@ -782,6 +1075,52 @@ input[type='number'] {
   margin-top: 0.35rem;
 }
 
+.session-weapons-section {
+  margin-top: 0.45rem;
+}
+
+.session-weapons-title {
+  margin: 0.45rem 0 0.35rem !important;
+}
+
+/* Armes session : pas de cadre autour ; lignes uniquement entre les rangées (sous l’en-tête + entre armes) */
+.session-weapons-table th,
+.session-weapons-table td,
+.session-items-table th,
+.session-items-table td {
+  border-bottom: none;
+}
+
+.session-weapons-table thead th,
+.session-items-table thead th {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.35);
+}
+
+.session-weapons-table tbody tr.session-weapons-row:not(:last-child) td,
+.session-items-table tbody tr.session-items-row:not(:last-child) td {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.28);
+}
+
+.session-weapons-empty {
+  margin: 0.15rem 0 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.session-items-section {
+  margin-top: 0.55rem;
+}
+
+.session-items-title {
+  margin: 0.45rem 0 0.35rem !important;
+}
+
+.session-items-empty {
+  margin: 0.15rem 0 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
 .session-ability-item {
   display: grid;
   grid-template-columns: 0.9fr 1fr 0.7fr;
@@ -938,7 +1277,7 @@ input[type='number'] {
 
 @media (max-width: 900px) {
   .app-shell {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     position: relative;
   }
 
@@ -948,14 +1287,17 @@ input[type='number'] {
     left: 0;
     width: min(300px, 80vw);
     height: 100vh;
+    height: 100dvh;
     z-index: 40;
     transform: translateX(-100%);
     transition: transform 0.2s ease;
-    padding-bottom: 0.75rem;
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
   }
 
+  /* Au-dessus du dock session (45) pour que Déconnexion reste cliquable en bas du tiroir */
   .sidebar.open {
     transform: translateX(0);
+    z-index: 48;
   }
 
   .sidebar-nav {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useSnackbar } from '../../../app/hooks/useSnackbar'
 import { apiDelete, apiGet, apiPost, apiPut } from '../../../shared/api/client'
 import type { AuthUser } from '../../../shared/types'
@@ -59,8 +59,55 @@ type Dnd5eSpellListItem = {
   school: string | null
 }
 
-export function CharacterGrimoireTab(props: { characterId: string; token: string; user: AuthUser | null }) {
-  const { characterId, token, user } = props
+function parseStoredLiveSlots(raw: string | null): Record<number, boolean[]> {
+  if (!raw) return {}
+  try {
+    const o = JSON.parse(raw) as Record<string, unknown>
+    const out: Record<number, boolean[]> = {}
+    for (const [k, v] of Object.entries(o)) {
+      const lvl = Number.parseInt(k, 10)
+      if (Number.isNaN(lvl) || lvl < 1 || lvl > 9) continue
+      if (!Array.isArray(v)) continue
+      const booleans = v.filter((x) => typeof x === 'boolean') as boolean[]
+      if (booleans.length === v.length) out[lvl] = booleans
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+function normalizeLiveSlotState(
+  prev: Record<number, boolean[]>,
+  maxByLevel: Record<number, number>,
+): Record<number, boolean[]> {
+  const next: Record<number, boolean[]> = {}
+  for (let lvl = 1; lvl <= 9; lvl += 1) {
+    const max = maxByLevel[lvl] ?? 0
+    if (max <= 0) continue
+    const cur = prev[lvl] ?? []
+    const arr: boolean[] = []
+    for (let i = 0; i < max; i += 1) {
+      arr.push(i < cur.length ? Boolean(cur[i]) : false)
+    }
+    next[lvl] = arr
+  }
+  return next
+}
+
+function grimoireLevelTitle(level: number): string {
+  if (level === 0) return 'Tour de magie'
+  return `Niveau ${level}`
+}
+
+export function CharacterGrimoireTab(props: {
+  characterId: string
+  token: string
+  user: AuthUser | null
+  sessionView?: boolean
+  sessionId?: string
+}) {
+  const { characterId, token, user, sessionView = false, sessionId } = props
   const { showSnackbar } = useSnackbar()
 
   const [spellSlotsDraft, setSpellSlotsDraft] = useState<Record<number, { slotsMax: string }>>(() =>
@@ -161,6 +208,61 @@ export function CharacterGrimoireTab(props: { characterId: string; token: string
     }
     void loadSlots()
   }, [characterId, token])
+
+  /** v2 : non coché par défaut ; coché = emplacement dépensé (clé nouvelle pour ne pas mélanger l’ancien sens). */
+  const liveSlotsStorageKey =
+    sessionView && characterId ? `grimoire-live-slots-v2:${sessionId ?? 'no-session'}:${characterId}` : null
+
+  const slotsMaxByLevel = useMemo(() => {
+    const m: Record<number, number> = {}
+    for (let l = 0; l <= 9; l += 1) {
+      const v = Number.parseInt(String(spellSlotsDraft[l]?.slotsMax ?? '0').trim(), 10)
+      m[l] = Number.isNaN(v) ? 0 : Math.max(0, Math.min(99, v))
+    }
+    return m
+  }, [spellSlotsDraft])
+
+  const spellsGroupedByLevel = useMemo(() => {
+    const map = new Map<number, GrimoireEntry[]>()
+    for (let i = 0; i <= 9; i += 1) map.set(i, [])
+    for (const e of grimoireItems) {
+      const raw = e.spell_level
+      const L = raw != null ? Math.min(9, Math.max(0, raw)) : 0
+      map.get(L)!.push(e)
+    }
+    for (let i = 0; i <= 9; i += 1) {
+      map.get(i)!.sort((a, b) =>
+        (a.spell_name ?? '').localeCompare(b.spell_name ?? '', 'fr', { sensitivity: 'base' }),
+      )
+    }
+    return map
+  }, [grimoireItems])
+
+  const [liveSlotSpend, setLiveSlotSpend] = useState<Record<number, boolean[]>>({})
+
+  useEffect(() => {
+    if (!sessionView || !liveSlotsStorageKey) return
+    const stored = parseStoredLiveSlots(localStorage.getItem(liveSlotsStorageKey))
+    setLiveSlotSpend(normalizeLiveSlotState(stored, slotsMaxByLevel))
+  }, [sessionView, liveSlotsStorageKey, characterId, slotsMaxByLevel])
+
+  function toggleLiveSlot(level: number, index: number) {
+    if (!liveSlotsStorageKey || level < 1 || level > 9) return
+    setLiveSlotSpend((prev) => {
+      const max = slotsMaxByLevel[level] ?? 0
+      const base = prev[level] ?? Array.from({ length: max }, () => false)
+      const arr = [...base]
+      if (index < 0 || index >= arr.length) return prev
+      arr[index] = !arr[index]
+      const next = { ...prev, [level]: arr }
+      try {
+        localStorage.setItem(liveSlotsStorageKey, JSON.stringify(next))
+      } catch {
+        /* ignore */
+      }
+      return next
+    })
+  }
 
   async function handleSaveSpellSlots(event: React.FormEvent) {
     event.preventDefault()
@@ -420,6 +522,94 @@ export function CharacterGrimoireTab(props: { characterId: string; token: string
 
   return (
     <div>
+      {sessionView ? (
+        <div className="grimoire-session-live">
+          {grimoireLoading ? <p>Chargement…</p> : null}
+          {!grimoireLoading ? (
+            <div className="grimoire-session-levels">
+              {Array.from({ length: 10 }, (_, level) => {
+                const spellsAtLevel = spellsGroupedByLevel.get(level) ?? []
+                const maxSlots = slotsMaxByLevel[level] ?? 0
+                const show = level === 0 ? true : spellsAtLevel.length > 0 || maxSlots > 0
+                if (!show) return null
+                return (
+                  <details key={level} className="grimoire-session-level">
+                    <summary className="grimoire-session-level-summary">
+                      <span className="grimoire-session-level-title">{grimoireLevelTitle(level)}</span>
+                      {level > 0 && maxSlots > 0 ? (
+                        <span
+                          className="grimoire-session-slot-boxes"
+                          title="Cochez une case lorsque vous dépensez un emplacement de ce niveau."
+                          onClick={(event) => event.preventDefault()}
+                          role="group"
+                          aria-label={`Emplacements de sort niveau ${level}`}
+                        >
+                          {Array.from({ length: maxSlots }, (_, i) => (
+                            <input
+                              key={i}
+                              type="checkbox"
+                              checked={liveSlotSpend[level]?.[i] ?? false}
+                              onChange={() => toggleLiveSlot(level, i)}
+                              onClick={(event) => event.stopPropagation()}
+                              aria-label={`Niveau ${level}, emplacement ${i + 1} sur ${maxSlots}`}
+                            />
+                          ))}
+                        </span>
+                      ) : null}
+                    </summary>
+                    <div className="grimoire-session-level-body">
+                      {spellsAtLevel.length === 0 ? (
+                        <p className="grimoire-session-empty">Aucun sort à ce niveau.</p>
+                      ) : (
+                        <ul className="grimoire-session-spell-list">
+                          {spellsAtLevel.map((entry) => {
+                            const casting = entry.casting_time?.trim()
+                            const dur = entry.duration?.trim()
+                            const hasMeta = Boolean(casting || dur)
+                            return (
+                              <li key={entry.id}>
+                                <button
+                                  type="button"
+                                  className="grimoire-session-spell-row"
+                                  onClick={() => void openSpellDetailsModal(entry.spell_id)}
+                                >
+                                  <span className="grimoire-session-spell-title">
+                                    <span className="grimoire-session-spell-name">{entry.spell_name ?? '—'}</span>
+                                    {entry.is_prepared ? (
+                                      <span className="grimoire-session-prepared"> · préparé</span>
+                                    ) : null}
+                                  </span>
+                                  {hasMeta ? (
+                                    <span className="grimoire-session-spell-meta">
+                                      {casting ? (
+                                        <span className="grimoire-session-spell-meta-item">
+                                          <span className="grimoire-session-spell-meta-label">Incantation</span>{' '}
+                                          {casting}
+                                        </span>
+                                      ) : null}
+                                      {dur ? (
+                                        <span className="grimoire-session-spell-meta-item">
+                                          <span className="grimoire-session-spell-meta-label">Durée</span>{' '}
+                                          {dur}
+                                        </span>
+                                      ) : null}
+                                    </span>
+                                  ) : null}
+                                </button>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      )}
+                    </div>
+                  </details>
+                )
+              })}
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <>
       <h4>Emplacements de sorts</h4>
       <form className="login-form" onSubmit={handleSaveSpellSlots}>
         <div className="responsive-table">
@@ -503,8 +693,10 @@ export function CharacterGrimoireTab(props: { characterId: string; token: string
           </table>
         </div>
       ) : null}
+        </>
+      )}
 
-      {isCreateSpellModalOpen && (
+      {!sessionView && isCreateSpellModalOpen && (
         <div className="modal-backdrop" onClick={() => (!createSpellSaving ? setIsCreateSpellModalOpen(false) : null)}>
           <div className="modal-card" onClick={(event) => event.stopPropagation()}>
             <h3>Créer un sort</h3>
@@ -531,7 +723,7 @@ export function CharacterGrimoireTab(props: { characterId: string; token: string
         </div>
       )}
 
-      {isImportSpellModalOpen && (
+      {!sessionView && isImportSpellModalOpen && (
         <div className="modal-backdrop" onClick={() => (!dndSpellLoading && dndSpellAddingIndex == null ? setIsImportSpellModalOpen(false) : null)}>
           <div className="modal-card" onClick={(event) => event.stopPropagation()}>
             <h3>Importer un sort (D&D)</h3>
@@ -601,7 +793,7 @@ export function CharacterGrimoireTab(props: { characterId: string; token: string
         </div>
       )}
 
-      {isEditGrimoireModalOpen && (
+      {!sessionView && isEditGrimoireModalOpen && (
         <div className="modal-backdrop" onClick={() => (!editGrimoireSaving ? setIsEditGrimoireModalOpen(false) : null)}>
           <div className="modal-card" onClick={(event) => event.stopPropagation()}>
             <h3>Éditer le sort</h3>
@@ -682,7 +874,7 @@ export function CharacterGrimoireTab(props: { characterId: string; token: string
         </div>
       )}
 
-      {removeFromGrimoireConfirmOpen && (
+      {!sessionView && removeFromGrimoireConfirmOpen && (
         <div
           className="modal-backdrop"
           onClick={() => {

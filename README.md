@@ -1,6 +1,6 @@
 # 🎲 2d10 - D&D Character Management System
 
-Une application complète de gestion de personnages D&D 5e avec intégration de l'API Open5e pour accéder aux données officielles du jeu.
+Application de gestion de personnages D&D 5e : backend **Express + Prisma**, frontend **React (Vite)**, données de référence importées depuis l’API publique [D&D 5e API](https://www.dnd5eapi.co/) (scripts `import-dnd5e-*` dans `back/`).
 
 ## 📋 Sommaire
 
@@ -44,120 +44,90 @@ Une application complète de gestion de personnages D&D 5e avec intégration de 
 - Panel d'administration complet
 - Statistiques globales
 
-### 🌟 Intégration D&D 5e
-- **Sorts** : Accès à tous les sorts avec descriptions complètes
-- **Monstres** : Base de données complète des créatures
-- **Armes & Armures** : Catalogue officiel avec propriétés
-- **Races & Classes** : Toutes les options de personnalisation
-- **Recherche globale** : Recherche dans toutes les données D&D
-- **API Open5e** : Intégration avec la base de données officielle
+### 🌟 Données D&D 5e
+- **Imports** : sorts, équipement et objets magiques SRD via `npm run import-dnd5e-*`
+- **API** : `/api/dnd5e` (catalogue importé), `/api/dnd-local` (données en base), `/api/spells` (sorts de jeu)
+- **Recherche** : recherche globale sur les jeux de données locaux (`/api/dnd-local/search`)
 
 ## 🚀 Installation Rapide
 
-### Option 1 : Docker (Recommandé)
+### Option 1 : Docker
 ```bash
-# Backend uniquement
-docker-compose --profile back up -d
+# Base + pgAdmin + backend
+docker compose --profile back up -d
 
-# Application complète (à venir)
-docker-compose --profile full up -d
+# Backend + frontend Vite (ports 3000 et 5173)
+docker compose --profile full up -d
 ```
 
-### Option 2 : Installation Automatique
+### Option 2 : Backend et front en local
 ```bash
-cd back/
-chmod +x install.sh
-./install.sh
-```
-
-### Option 3 : Installation Manuelle
-```bash
-# Backend
-cd back/
-npm install
-createdb 2d10_db
-cp .env.example .env
-# Éditer .env avec vos paramètres
+cd back && npm install
+# Créer `.env` (DATABASE_URL, JWT_SECRET), puis :
+npm run prisma:generate && npm run prisma:push && npm run prisma:seed
 npm start
 
-# Frontend (à venir)
-cd ../front/
-# Installation frontend
+cd ../front && npm install && npm run dev
+```
+
+### Option 3 : `install.sh` (si présent)
+```bash
+cd back && chmod +x install.sh && ./install.sh
 ```
 
 ## 🐳 Docker
 
 ### 📋 Profils Disponibles
 
-#### 🔧 Backend uniquement
-```bash
-docker-compose --profile back up -d
-```
-- Base de données PostgreSQL
-- Interface pgAdmin
-- Backend Node.js/Express
+#### Backend (+ db + pgAdmin)
+`docker compose --profile back up -d`
 
-#### 🎨 Frontend uniquement (à venir)
-```bash
-docker-compose --profile front up -d
-```
-- Frontend React/Vue/Angular
-- Dépend du backend
+#### Backend + frontend (dev Vite)
+`docker compose --profile full up -d` — frontend sur **http://localhost:5173**, API sur **http://localhost:3000**.
 
-#### 🚀 Application complète (à venir)
-```bash
-docker-compose --profile full up -d
-```
-- Backend + Frontend + Base de données
-- Configuration de développement
-
-#### 🏭 Production (à venir)
-```bash
-docker-compose --profile production up -d
-```
-- Backend + Frontend + Nginx
-- Configuration de production
+#### Production (Nginx)
+`docker compose --profile production up -d`
 
 ### 🚀 Commandes Utiles
 
 #### Démarrer les services
 ```bash
 # Backend uniquement
-docker-compose --profile back up -d
+docker compose --profile back up -d
 
 # Application complète (à venir)
-docker-compose --profile full up -d
+docker compose --profile full up -d
 
 # Production (à venir)
-docker-compose --profile production up -d
+docker compose --profile production up -d
 ```
 
 #### Gestion des services
 ```bash
 # Arrêter les services
-docker-compose down
+docker compose down
 
 # Voir les logs
-docker-compose logs
+docker compose logs
 
 # Service spécifique
-docker-compose logs back
-docker-compose logs db
+docker compose logs back
+docker compose logs db
 
 # Reconstruire les images
-docker-compose build --no-cache
+docker compose build --no-cache
 ```
 
 #### Accès aux services
 - **Backend API** : http://localhost:3000
 - **pgAdmin** : http://localhost:5050
-- **Frontend** : http://localhost:3001 (à venir)
-- **Nginx** : http://localhost:80 (production)
+- **Frontend (profil full)** : http://localhost:5173
+- **Nginx** : http://localhost:80 (profil production)
 
 ### 🔧 Configuration
 
 #### Variables d'environnement
-Les variables sont définies dans le docker-compose.yml :
+Les variables sont définies dans le fichier `docker-compose.yml` :
 - `DATABASE_URL` : URL de connexion PostgreSQL
 - `JWT_SECRET` : Clé secrète JWT
 - `NODE_ENV` : Environnement (development/production)
@@ -171,7 +141,7 @@ Les variables sont définies dans le docker-compose.yml :
 #### Mode développement
 ```bash
 # Démarrer seulement la base de données
-docker-compose up db pgadmin -d
+docker compose up db pgadmin -d
 
 # Lancer le backend en local
 cd back/
@@ -182,37 +152,37 @@ npm run dev
 #### Mode production
 ```bash
 # Construire et démarrer en production
-docker-compose --profile production up --build -d
+docker compose --profile production up --build -d
 ```
 
 ### 🔍 Dépannage
 
 #### Vérifier l'état des conteneurs
 ```bash
-docker-compose ps
+docker compose ps
 ```
 
 #### Accéder aux conteneurs
 ```bash
 # Backend
-docker-compose exec back sh
+docker compose exec back sh
 
 # Base de données
-docker-compose exec db psql -U 2d10 -d 2d10
+docker compose exec db psql -U 2d10 -d 2d10
 ```
 
 #### Nettoyer
 ```bash
 # Supprimer les conteneurs et volumes
-docker-compose down -v
+docker compose down -v
 
 # Supprimer les images
-docker-compose down --rmi all
+docker compose down --rmi all
 ```
 
 
 ### Import D&D 5e (données locales)
-Les scripts `npm run import-dnd5e-equipment` et `npm run import-dnd5e-spells` (dans `back/`) alimentent les tables utilisées par `/api/dnd5e` et `/api/dnd-local`.
+Dans `back/` : `npm run import-dnd5e-spells`, `import-dnd5e-equipment`, `import-dnd5e-magic-items` alimentent les tables consommées par `/api/dnd5e` et en partie `/api/dnd-local`. Détail : [docs/README_DND_INTEGRATION.md](docs/README_DND_INTEGRATION.md).
 
 ## 📡 API Endpoints
 
@@ -229,12 +199,12 @@ L'API 2d10 expose de nombreux endpoints, organisés en catégories principales :
 - 🎲 **D&D local + D&D 5e importé** (`/api/dnd-local`, `/api/dnd5e`, `/api/spells`)
 - 🔧 **Utilitaires** (2 endpoints)
 
-> **📖 Voir la [documentation complète des endpoints](back/README.md#-api-endpoints) pour tous les détails**
+> **📖 Voir [back/README.md](back/README.md) et [docs/COMPLETE_API_DOCUMENTATION.md](docs/COMPLETE_API_DOCUMENTATION.md).**
 
 ## 🧪 Tests
 
 ### 📋 Collections Postman
-- **[Collection complète](back/postman/2d10_Complete_API_Collection.postman_collection.json)** — principaux endpoints
+- **[Collection](back/postman/2d10_Complete_API_Collection.postman_collection.json)** — principaux endpoints
 - **Configuration** : `baseUrl: http://localhost:3000`
 - **Authentification** : Token JWT automatique
 
@@ -248,17 +218,11 @@ L'API 2d10 expose de nombreux endpoints, organisés en catégories principales :
 
 ```
 2d10/
-├── back/                    # Backend Node.js/Express
-│   ├── routes/             # Routes API
-│   ├── middleware/         # Middleware d'authentification
-│   ├── services/           # Services (D&D API)
-│   ├── postman/            # Collections et guides Postman
-│   │   ├── *.postman_*.json # Collections Postman
-│   │   ├── POSTMAN_GUIDE.md # Guide d'utilisation
-│   │   └── generate-*.js    # Scripts de génération
-│   └── *.md               # Documentation
-├── front/                  # Frontend (à venir)
-└── README.md              # Ce fichier
+├── back/           # API Express, Prisma, scripts import D&D 5e
+├── front/          # SPA React + TypeScript (Vite)
+├── docs/           # Documentation API et guides
+├── nginx/          # Config reverse proxy (profil production)
+└── README.md
 ```
 
 ## 🛠️ Technologies
@@ -270,21 +234,20 @@ L'API 2d10 expose de nombreux endpoints, organisés en catégories principales :
 - **Axios** - Client HTTP pour Open5e
 - **bcryptjs** - Hachage des mots de passe
 
-### Intégration D&D
-- **Open5e API** - Données officielles D&D 5e
-- **REST API** - Interface standardisée
-- **Recherche avancée** - Filtres et pagination
+### Données D&D
+- **D&D 5e API** (import batch) + tables Prisma
+- **REST** sous `/api/dnd5e`, `/api/dnd-local`, `/api/spells`
 
 ## 📚 Documentation
 
 ### 📖 Documentation Générale
 - **[Documentation Complète](docs/README.md)** - Index de toute la documentation
 - **[Backend Documentation](back/README.md)** - Documentation complète du backend
-- **[Frontend Documentation](front/README.md)** - Documentation du frontend (à venir)
+- **[Frontend](front/README.md)** — gabarit Vite + scripts npm
 
 ### 🔧 Documentation Technique
 - **[API Documentation Complète](docs/COMPLETE_API_DOCUMENTATION.md)** - Référence complète de l'API
-- **[Collection Postman](back/2d10_Complete_API_Collection.postman_collection.json)** - Collection de test complète
+- **[Collection Postman](back/postman/2d10_Complete_API_Collection.postman_collection.json)**
 
 ### 🎲 Guides Spécialisés
 - **[Guide d'intégration D&D](docs/README_DND_INTEGRATION.md)** - Guide d'utilisation des fonctionnalités D&D
@@ -356,10 +319,13 @@ const character = await fetch('/api/characters', {
 });
 ```
 
-### Rechercher des sorts (base locale importée)
+### Rechercher des sorts (catalogue importé ou local)
 ```javascript
-const spells = await fetch('/api/dnd-local/spells?search=fire&limit=20', {
-  headers: { 'Authorization': `Bearer ${token}` }
+const imported = await fetch('/api/dnd5e/spells?q=fire&limit=20&page=1', {
+  headers: { Authorization: `Bearer ${token}` },
+});
+const local = await fetch('/api/dnd-local/spells?search=fire&limit=20', {
+  headers: { Authorization: `Bearer ${token}` },
 });
 ```
 
@@ -394,7 +360,7 @@ Ce projet est sous licence MIT. Voir le fichier `LICENSE` pour plus de détails.
 
 ## 🙏 Remerciements
 
-- **Open5e** - API officielle D&D 5e
+- **D&D 5e API** - Données SRD utilisées pour les imports
 - **Wizards of the Coast** - D&D 5e
 - **Communauté D&D** - Inspiration et feedback
 

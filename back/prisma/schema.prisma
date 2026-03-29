@@ -566,3 +566,25 @@ model CharacterDnd5eInventory {
   @@unique([characterId, equipmentId])
   @@map("character_dnd5e_inventory")
 }
+
+// === D&D 5e Magic Items (dnd5eapi.co /api/2014/magic-items) ===
+// Catalogue SRD : les instances joueur restent sur Item + Inventory (voir docs projet).
+model Dnd5eMagicItem {
+  id            Int     @id @default(autoincrement())
+  index         String  @unique
+  name          String
+  categoryIndex String? @map("category_index")
+  categoryName  String? @map("category_name")
+  rarity        String?
+  description   String? @db.Text
+  variant       Boolean @default(false)
+  variants      Json?
+  image         String?
+  apiUpdatedAt  String? @map("api_updated_at")
+  raw           Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("dnd5e_magic_items")
+}

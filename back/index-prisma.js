@@ -16,6 +16,7 @@ const campaignRoutes = require('./routes/campaigns-prisma');
 const grimoireRoutes = require('./routes/grimoire-prisma');
 const sessionRoutes = require('./routes/sessions-prisma');
 const dnd5eEquipmentRoutes = require('./routes/dnd5e-equipment-prisma');
+const dnd5eMagicItemsRoutes = require('./routes/dnd5e-magic-items-prisma');
 const dnd5eSpellsRoutes = require('./routes/dnd5e-spells-prisma');
 const spellRoutes = require('./routes/spells-prisma');
 
@@ -57,6 +58,7 @@ app.use('/api/campaigns', campaignRoutes);
 app.use('/api/grimoire', grimoireRoutes);
 app.use('/api/sessions', sessionRoutes);
 app.use('/api/dnd5e', dnd5eEquipmentRoutes);
+app.use('/api/dnd5e', dnd5eMagicItemsRoutes);
 app.use('/api/dnd5e', dnd5eSpellsRoutes);
 app.use('/api/spells', spellRoutes);
 

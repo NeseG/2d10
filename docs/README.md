@@ -10,7 +10,7 @@ Bienvenue dans la documentation complète du système 2d10 - D&D Character Manag
 ## 🔧 Documentation Technique
 
 - **[API Documentation Complète](./COMPLETE_API_DOCUMENTATION.md)** - Référence complète de l'API
-- **[Collection Postman](../back/2d10_Complete_API_Collection.postman_collection.json)** - Collection de test complète
+- **[Collection Postman](../back/postman/2d10_Complete_API_Collection.postman_collection.json)**
 
 ## 🎲 Guides Spécialisés
 

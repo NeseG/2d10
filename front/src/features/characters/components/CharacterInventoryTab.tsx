@@ -56,6 +56,65 @@ type Dnd5eEquipmentListItem = {
   cost?: string | null
 }
 
+type Dnd5eMagicItemListItem = {
+  id: number
+  index: string
+  name: string
+  categoryIndex?: string | null
+  categoryName?: string | null
+  rarity?: string | null
+}
+
+/** Réponse détail GET /api/dnd5e/equipment/:index (champs Prisma / JSON). */
+type Dnd5eEquipmentApiDetail = {
+  id: number
+  index: string
+  name: string
+  type: string
+  category?: string | null
+  subcategory?: string | null
+  cost?: string | null
+  weight?: number | null
+  description?: string | null
+  damage?: string | null
+  damageType?: string | null
+  range?: string | null
+  armorClass?: number | null
+  stealthDisadvantage?: boolean | null
+  properties?: unknown
+  raw?: unknown
+}
+
+/** Réponse détail GET /api/dnd5e/magic-items/:index */
+type Dnd5eMagicItemApiDetail = {
+  id: number
+  index: string
+  name: string
+  categoryIndex?: string | null
+  categoryName?: string | null
+  rarity?: string | null
+  description?: string | null
+  variant?: boolean
+  variants?: unknown
+  image?: string | null
+  apiUpdatedAt?: string | null
+  raw?: unknown
+}
+
+type DndCatalogDetailState =
+  | { kind: 'equipment'; data: Dnd5eEquipmentApiDetail }
+  | { kind: 'magic'; data: Dnd5eMagicItemApiDetail }
+
+function formatJsonOrDash(value: unknown): string {
+  if (value == null) return '—'
+  if (typeof value === 'string') return value.trim() || '—'
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
 function isEquipableItemType(typeValue?: string | null): boolean {
   const normalized = String(typeValue || '')
     .trim()
@@ -160,12 +219,14 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
 
   const [isCreateItemModalOpen, setIsCreateItemModalOpen] = useState(false)
   const [createItemSaving, setCreateItemSaving] = useState(false)
+  const [createItemKind, setCreateItemKind] = useState<'normal' | 'magic'>('normal')
   const [newItemForm, setNewItemForm] = useState({
     name: '',
     description: '',
     quantity: '1',
     type: 'other',
     category: '',
+    rarity: '',
     cost: '',
     weight: '',
   })
@@ -199,13 +260,67 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
   const [removingFromInventory, setRemovingFromInventory] = useState(false)
 
   const [isDndEquipmentModalOpen, setIsDndEquipmentModalOpen] = useState(false)
+  const [dndImportTab, setDndImportTab] = useState<'equipment' | 'magic'>('equipment')
   const [dndEquipmentQuery, setDndEquipmentQuery] = useState('')
   const [dndEquipmentLoading, setDndEquipmentLoading] = useState(false)
   const [dndEquipmentItems, setDndEquipmentItems] = useState<Dnd5eEquipmentListItem[]>([])
   const [dndEquipmentPage, setDndEquipmentPage] = useState(1)
   const [dndEquipmentTotalPages, setDndEquipmentTotalPages] = useState(1)
   const [dndEquipmentAddingId, setDndEquipmentAddingId] = useState<number | null>(null)
+  const [dndMagicQuery, setDndMagicQuery] = useState('')
+  const [dndMagicLoading, setDndMagicLoading] = useState(false)
+  const [dndMagicItems, setDndMagicItems] = useState<Dnd5eMagicItemListItem[]>([])
+  const [dndMagicPage, setDndMagicPage] = useState(1)
+  const [dndMagicTotalPages, setDndMagicTotalPages] = useState(1)
+  const [dndMagicAddingId, setDndMagicAddingId] = useState<number | null>(null)
+  const [dndCatalogDetailLoading, setDndCatalogDetailLoading] = useState(false)
+  const [dndCatalogDetail, setDndCatalogDetail] = useState<DndCatalogDetailState | null>(null)
   const canImportDndEquipment = user?.role === 'admin' || user?.role === 'gm'
+
+  const dndCatalogDetailOpen = dndCatalogDetailLoading || dndCatalogDetail != null
+
+  function closeDndCatalogDetail() {
+    setDndCatalogDetail(null)
+    setDndCatalogDetailLoading(false)
+  }
+
+  async function openDndCatalogEquipmentDetail(apiIndex: string) {
+    setDndCatalogDetail(null)
+    setDndCatalogDetailLoading(true)
+    try {
+      const res = await apiGet<{ item: Dnd5eEquipmentApiDetail }>(
+        `/api/dnd5e/equipment/${encodeURIComponent(apiIndex)}`,
+        token,
+      )
+      setDndCatalogDetail({ kind: 'equipment', data: res.item })
+    } catch (err) {
+      showSnackbar({
+        message: err instanceof Error ? err.message : 'Erreur chargement fiche équipement',
+        severity: 'error',
+      })
+    } finally {
+      setDndCatalogDetailLoading(false)
+    }
+  }
+
+  async function openDndCatalogMagicDetail(apiIndex: string) {
+    setDndCatalogDetail(null)
+    setDndCatalogDetailLoading(true)
+    try {
+      const res = await apiGet<{ magic_item: Dnd5eMagicItemApiDetail }>(
+        `/api/dnd5e/magic-items/${encodeURIComponent(apiIndex)}`,
+        token,
+      )
+      if (res.magic_item) setDndCatalogDetail({ kind: 'magic', data: res.magic_item })
+    } catch (err) {
+      showSnackbar({
+        message: err instanceof Error ? err.message : 'Erreur chargement fiche objet magique',
+        severity: 'error',
+      })
+    } finally {
+      setDndCatalogDetailLoading(false)
+    }
+  }
 
   useEffect(() => {
     setInventoryLoaded(false)
@@ -387,7 +502,17 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
   }
 
   function resetNewItemForm() {
-    setNewItemForm({ name: '', description: '', quantity: '1', type: 'other', category: '', cost: '', weight: '' })
+    setCreateItemKind('normal')
+    setNewItemForm({
+      name: '',
+      description: '',
+      quantity: '1',
+      type: 'other',
+      category: '',
+      rarity: '',
+      cost: '',
+      weight: '',
+    })
   }
 
   async function openCreateItemModal() {
@@ -399,19 +524,22 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
     event.preventDefault()
     if (!characterId) return
     setCreateItemSaving(true)
+    const createdAsMagic = createItemKind === 'magic'
     try {
-      const created = await apiPost<{ item: { id: number } }>(
-        `/api/items`,
-        {
-          name: newItemForm.name.trim(),
-          description: newItemForm.description.trim() || null,
-          type: newItemForm.type,
-          category: newItemForm.category.trim() || null,
-          cost: newItemForm.cost.trim() || null,
-          weight: newItemForm.weight.trim() === '' ? null : Number.parseInt(newItemForm.weight, 10),
-        },
-        token,
-      )
+      const payload: Record<string, unknown> = {
+        name: newItemForm.name.trim(),
+        description: newItemForm.description.trim() || null,
+        type: newItemForm.type,
+        category: newItemForm.category.trim() || null,
+        cost: newItemForm.cost.trim() || null,
+        weight: newItemForm.weight.trim() === '' ? null : Number.parseInt(newItemForm.weight, 10),
+      }
+      if (createdAsMagic) {
+        payload.subcategory = newItemForm.rarity.trim() || null
+        payload.properties = { dnd5e_magic_item: true, custom: true }
+      }
+
+      const created = await apiPost<{ item: { id: number } }>(`/api/items`, payload, token)
 
       const qty = Number.parseInt(newItemForm.quantity, 10)
       await apiPost(`/api/inventory/${characterId}/items`, { item_id: created.item.id, quantity: Number.isNaN(qty) ? 1 : qty }, token)
@@ -419,7 +547,10 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
       setIsCreateItemModalOpen(false)
       resetNewItemForm()
       setInventoryLoaded(false)
-      showSnackbar({ message: 'Objet créé et ajouté.', severity: 'success' })
+      showSnackbar({
+        message: createdAsMagic ? 'Objet magique créé et ajouté.' : 'Objet créé et ajouté.',
+        severity: 'success',
+      })
     } catch (err) {
       showSnackbar({
         message: err instanceof Error ? err.message : 'Erreur création item',
@@ -566,12 +697,51 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
 
   async function openDndEquipmentModal() {
     if (!canImportDndEquipment) return
+    closeDndCatalogDetail()
     setIsDndEquipmentModalOpen(true)
+    setDndImportTab('equipment')
     setDndEquipmentQuery('')
     setDndEquipmentItems([])
     setDndEquipmentPage(1)
     setDndEquipmentTotalPages(1)
+    setDndMagicQuery('')
+    setDndMagicItems([])
+    setDndMagicPage(1)
+    setDndMagicTotalPages(1)
     await loadDndEquipment({ q: '', page: 1 })
+  }
+
+  async function loadDndMagicItems(params: { q: string; page: number }) {
+    setDndMagicLoading(true)
+    try {
+      const res = await apiGet<{
+        items: Dnd5eMagicItemListItem[]
+        pagination: { page: number; totalPages: number }
+      }>(`/api/dnd5e/magic-items?q=${encodeURIComponent(params.q)}&page=${params.page}&limit=20`, token)
+      setDndMagicItems(res.items ?? [])
+      setDndMagicPage(res.pagination?.page ?? params.page)
+      setDndMagicTotalPages(res.pagination?.totalPages ?? 1)
+    } catch (err) {
+      showSnackbar({
+        message: err instanceof Error ? err.message : 'Erreur chargement objets magiques',
+        severity: 'error',
+      })
+    } finally {
+      setDndMagicLoading(false)
+    }
+  }
+
+  async function handleDndImportTabChange(tab: 'equipment' | 'magic') {
+    setDndImportTab(tab)
+    if (tab === 'magic') {
+      setDndMagicItems([])
+      setDndMagicPage(1)
+      await loadDndMagicItems({ q: dndMagicQuery, page: 1 })
+    } else {
+      setDndEquipmentItems([])
+      setDndEquipmentPage(1)
+      await loadDndEquipment({ q: dndEquipmentQuery, page: 1 })
+    }
   }
 
   async function handleAddDndEquipment(equipmentId: number) {
@@ -579,6 +749,7 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
     try {
       await apiPost(`/api/dnd5e/characters/${characterId}/inventory`, { equipment_id: equipmentId }, token)
       setInventoryLoaded(false)
+      showSnackbar({ message: 'Équipement ajouté à l’inventaire.', severity: 'success' })
     } catch (err) {
       showSnackbar({
         message: err instanceof Error ? err.message : 'Erreur ajout équipement',
@@ -586,6 +757,22 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
       })
     } finally {
       setDndEquipmentAddingId(null)
+    }
+  }
+
+  async function handleAddDndMagicItem(magicItemId: number) {
+    setDndMagicAddingId(magicItemId)
+    try {
+      await apiPost(`/api/dnd5e/characters/${characterId}/inventory/magic-item`, { magic_item_id: magicItemId }, token)
+      setInventoryLoaded(false)
+      showSnackbar({ message: 'Objet magique ajouté à l’inventaire.', severity: 'success' })
+    } catch (err) {
+      showSnackbar({
+        message: err instanceof Error ? err.message : 'Erreur ajout objet magique',
+        severity: 'error',
+      })
+    } finally {
+      setDndMagicAddingId(null)
     }
   }
 
@@ -696,7 +883,6 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
                   onBlur={flushPursePersist}
                 />
               </div>
-              <p className="inventory-purse-hint">Les montants sont enregistrés automatiquement.</p>
             </div>
           </details>
 
@@ -707,7 +893,7 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
             </button>
             {canImportDndEquipment ? (
               <button className="btn btn-secondary" type="button" onClick={() => void openDndEquipmentModal()}>
-                Importer un item
+                Importer (SRD D&D)
               </button>
             ) : null}
           </div>
@@ -795,6 +981,27 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
           <div className="modal-card" onClick={(event) => event.stopPropagation()}>
             <h3>Créer un item</h3>
             <form className="login-form" onSubmit={handleCreateAndLinkItem}>
+              <span className="create-item-kind-label">Type d&apos;objet</span>
+              <div className="tabs-row create-item-kind-tabs" role="group" aria-label="Type d'objet">
+                <button
+                  type="button"
+                  className={`tab-btn ${createItemKind === 'normal' ? 'active' : ''}`}
+                  onClick={() => {
+                    setCreateItemKind('normal')
+                    setNewItemForm((prev) => ({ ...prev, rarity: '' }))
+                  }}
+                >
+                  Normal
+                </button>
+                <button
+                  type="button"
+                  className={`tab-btn ${createItemKind === 'magic' ? 'active' : ''}`}
+                  onClick={() => setCreateItemKind('magic')}
+                >
+                  Magique
+                </button>
+              </div>
+
               <label htmlFor="new-item-name">Nom</label>
               <input
                 id="new-item-name"
@@ -815,6 +1022,19 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
 
               <label htmlFor="new-item-category">Catégorie</label>
               <input id="new-item-category" type="text" value={newItemForm.category} onChange={(event) => setNewItemForm((prev) => ({ ...prev, category: event.target.value }))} />
+
+              {createItemKind === 'magic' ? (
+                <>
+                  <label htmlFor="new-item-rarity">Rareté</label>
+                  <input
+                    id="new-item-rarity"
+                    type="text"
+                    placeholder="Ex. Peu commun, Rare, Très rare…"
+                    value={newItemForm.rarity}
+                    onChange={(event) => setNewItemForm((prev) => ({ ...prev, rarity: event.target.value }))}
+                  />
+                </>
+              ) : null}
 
               <label htmlFor="new-item-cost">Coût</label>
               <input id="new-item-cost" type="text" placeholder="Ex. 15 gp" value={newItemForm.cost} onChange={(event) => setNewItemForm((prev) => ({ ...prev, cost: event.target.value }))} />
@@ -1018,81 +1238,366 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
       )}
 
       {isDndEquipmentModalOpen && canImportDndEquipment && (
+        <>
         <div
           className="modal-backdrop"
           onClick={() => {
-            if (!dndEquipmentLoading && dndEquipmentAddingId == null) {
+            if (dndCatalogDetailOpen) return
+            if (
+              !dndEquipmentLoading &&
+              !dndMagicLoading &&
+              dndEquipmentAddingId == null &&
+              dndMagicAddingId == null
+            ) {
+              closeDndCatalogDetail()
               setIsDndEquipmentModalOpen(false)
             }
           }}
         >
           <div className="modal-card" onClick={(event) => event.stopPropagation()}>
-            <h3>Équipements D&D importés</h3>
-
-            <form
-              className="login-form"
-              onSubmit={(event) => {
-                event.preventDefault()
-                void loadDndEquipment({ q: dndEquipmentQuery, page: 1 })
-              }}
-            >
-              <label htmlFor="dnd-eq-search">Recherche</label>
-              <input id="dnd-eq-search" type="text" placeholder="Ex. longsword, shield…" value={dndEquipmentQuery} onChange={(event) => setDndEquipmentQuery(event.target.value)} disabled={dndEquipmentLoading} />
-
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button className="btn" type="submit" disabled={dndEquipmentLoading}>
-                  {dndEquipmentLoading ? 'Recherche…' : 'Rechercher'}
-                </button>
-                <button className="btn btn-secondary" type="button" disabled={dndEquipmentLoading} onClick={() => void loadDndEquipment({ q: '', page: 1 })}>
-                  Réinitialiser
-                </button>
-              </div>
-            </form>
-
-            {dndEquipmentLoading ? <p>Chargement…</p> : null}
-
-            {!dndEquipmentLoading && dndEquipmentItems.length === 0 ? <p>Aucun résultat.</p> : null}
-
-            {!dndEquipmentLoading && dndEquipmentItems.length > 0 ? (
-              <div className="table-wrap">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Nom</th>
-                      <th>Type</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {dndEquipmentItems.map((eq) => (
-                      <tr key={eq.id}>
-                        <td>{eq.name}</td>
-                        <td>{eq.type}</td>
-                        <td>
-                          <button className="btn btn-small" type="button" disabled={dndEquipmentAddingId === eq.id} onClick={() => void handleAddDndEquipment(eq.id)}>
-                            {dndEquipmentAddingId === eq.id ? 'Ajout…' : 'Ajouter'}
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : null}
-
-            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', alignItems: 'center' }}>
-              <button className="btn btn-secondary" type="button" disabled={dndEquipmentLoading || dndEquipmentPage <= 1} onClick={() => void loadDndEquipment({ q: dndEquipmentQuery, page: dndEquipmentPage - 1 })}>
-                Précédent
+            <h3>Importer depuis le SRD (D&D 5e)</h3>
+            <div className="dnd-import-tabs" style={{ display: 'flex', gap: '0.35rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+              <button
+                className={`btn btn-small ${dndImportTab === 'equipment' ? '' : 'btn-secondary'}`}
+                type="button"
+                disabled={dndEquipmentLoading || dndMagicLoading}
+                onClick={() => void handleDndImportTabChange('equipment')}
+              >
+                Équipement
               </button>
-              <span style={{ color: 'var(--muted)' }}>
-                Page {dndEquipmentPage} / {dndEquipmentTotalPages}
-              </span>
-              <button className="btn btn-secondary" type="button" disabled={dndEquipmentLoading || dndEquipmentPage >= dndEquipmentTotalPages} onClick={() => void loadDndEquipment({ q: dndEquipmentQuery, page: dndEquipmentPage + 1 })}>
-                Suivant
+              <button
+                className={`btn btn-small ${dndImportTab === 'magic' ? '' : 'btn-secondary'}`}
+                type="button"
+                disabled={dndEquipmentLoading || dndMagicLoading}
+                onClick={() => void handleDndImportTabChange('magic')}
+              >
+                Objets magiques
               </button>
             </div>
+
+            {dndImportTab === 'equipment' ? (
+              <>
+                <form
+                  className="login-form"
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    void loadDndEquipment({ q: dndEquipmentQuery, page: 1 })
+                  }}
+                >
+                  <label htmlFor="dnd-eq-search">Recherche</label>
+                  <input
+                    id="dnd-eq-search"
+                    type="text"
+                    placeholder="Ex. longsword, shield…"
+                    value={dndEquipmentQuery}
+                    onChange={(event) => setDndEquipmentQuery(event.target.value)}
+                    disabled={dndEquipmentLoading}
+                  />
+
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button className="btn" type="submit" disabled={dndEquipmentLoading}>
+                      {dndEquipmentLoading ? 'Recherche…' : 'Rechercher'}
+                    </button>
+                    <button className="btn btn-secondary" type="button" disabled={dndEquipmentLoading} onClick={() => void loadDndEquipment({ q: '', page: 1 })}>
+                      Réinitialiser
+                    </button>
+                  </div>
+                </form>
+
+                {dndEquipmentLoading ? <p>Chargement…</p> : null}
+
+                {!dndEquipmentLoading && dndEquipmentItems.length === 0 ? <p>Aucun résultat.</p> : null}
+
+                {!dndEquipmentLoading && dndEquipmentItems.length > 0 ? (
+                  <div className="table-wrap">
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>Nom</th>
+                          <th>Type</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dndEquipmentItems.map((eq) => (
+                          <tr
+                            key={eq.id}
+                            className="clickable-row"
+                            title="Cliquer pour la fiche complète"
+                            onClick={() => void openDndCatalogEquipmentDetail(eq.index)}
+                          >
+                            <td>{eq.name}</td>
+                            <td>{eq.type}</td>
+                            <td>
+                              <button
+                                className="btn btn-small"
+                                type="button"
+                                disabled={dndEquipmentAddingId === eq.id}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  void handleAddDndEquipment(eq.id)
+                                }}
+                              >
+                                {dndEquipmentAddingId === eq.id ? 'Ajout…' : 'Ajouter'}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', alignItems: 'center' }}>
+                  <button
+                    className="btn btn-secondary"
+                    type="button"
+                    disabled={dndEquipmentLoading || dndEquipmentPage <= 1}
+                    onClick={() => void loadDndEquipment({ q: dndEquipmentQuery, page: dndEquipmentPage - 1 })}
+                  >
+                    Précédent
+                  </button>
+                  <span style={{ color: 'var(--muted)' }}>
+                    Page {dndEquipmentPage} / {dndEquipmentTotalPages}
+                  </span>
+                  <button
+                    className="btn btn-secondary"
+                    type="button"
+                    disabled={dndEquipmentLoading || dndEquipmentPage >= dndEquipmentTotalPages}
+                    onClick={() => void loadDndEquipment({ q: dndEquipmentQuery, page: dndEquipmentPage + 1 })}
+                  >
+                    Suivant
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <form
+                  className="login-form"
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    void loadDndMagicItems({ q: dndMagicQuery, page: 1 })
+                  }}
+                >
+                  <label htmlFor="dnd-magic-search">Recherche</label>
+                  <input
+                    id="dnd-magic-search"
+                    type="text"
+                    placeholder="Ex. bag of holding, flame tongue…"
+                    value={dndMagicQuery}
+                    onChange={(event) => setDndMagicQuery(event.target.value)}
+                    disabled={dndMagicLoading}
+                  />
+
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button className="btn" type="submit" disabled={dndMagicLoading}>
+                      {dndMagicLoading ? 'Recherche…' : 'Rechercher'}
+                    </button>
+                    <button className="btn btn-secondary" type="button" disabled={dndMagicLoading} onClick={() => void loadDndMagicItems({ q: '', page: 1 })}>
+                      Réinitialiser
+                    </button>
+                  </div>
+                </form>
+
+                {dndMagicLoading ? <p>Chargement…</p> : null}
+
+                {!dndMagicLoading && dndMagicItems.length === 0 ? (
+                  <p>Aucun résultat. Exécutez l’import backend : npm run import-dnd5e-magic-items</p>
+                ) : null}
+
+                {!dndMagicLoading && dndMagicItems.length > 0 ? (
+                  <div className="table-wrap">
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>Nom</th>
+                          <th>Catégorie</th>
+                          <th>Rareté</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dndMagicItems.map((m) => (
+                          <tr
+                            key={m.id}
+                            className="clickable-row"
+                            title="Cliquer pour la fiche complète"
+                            onClick={() => void openDndCatalogMagicDetail(m.index)}
+                          >
+                            <td>{m.name}</td>
+                            <td>{m.categoryName ?? m.categoryIndex ?? '—'}</td>
+                            <td>{m.rarity ?? '—'}</td>
+                            <td>
+                              <button
+                                className="btn btn-small"
+                                type="button"
+                                disabled={dndMagicAddingId === m.id}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  void handleAddDndMagicItem(m.id)
+                                }}
+                              >
+                                {dndMagicAddingId === m.id ? 'Ajout…' : 'Ajouter'}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', alignItems: 'center' }}>
+                  <button
+                    className="btn btn-secondary"
+                    type="button"
+                    disabled={dndMagicLoading || dndMagicPage <= 1}
+                    onClick={() => void loadDndMagicItems({ q: dndMagicQuery, page: dndMagicPage - 1 })}
+                  >
+                    Précédent
+                  </button>
+                  <span style={{ color: 'var(--muted)' }}>
+                    Page {dndMagicPage} / {dndMagicTotalPages}
+                  </span>
+                  <button
+                    className="btn btn-secondary"
+                    type="button"
+                    disabled={dndMagicLoading || dndMagicPage >= dndMagicTotalPages}
+                    onClick={() => void loadDndMagicItems({ q: dndMagicQuery, page: dndMagicPage + 1 })}
+                  >
+                    Suivant
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
+
+        {dndCatalogDetailOpen ? (
+          <div
+            className="modal-backdrop modal-backdrop-stacked"
+            onClick={() => {
+              if (!dndCatalogDetailLoading) closeDndCatalogDetail()
+            }}
+          >
+            <div className="modal-card modal-card-srd-detail" onClick={(event) => event.stopPropagation()}>
+              <h3>
+                {dndCatalogDetailLoading
+                  ? 'Fiche SRD'
+                  : dndCatalogDetail?.kind === 'magic'
+                    ? 'Objet magique (SRD)'
+                    : 'Équipement (SRD)'}
+              </h3>
+              {dndCatalogDetailLoading ? <p>Chargement…</p> : null}
+
+              {!dndCatalogDetailLoading && dndCatalogDetail?.kind === 'equipment' ? (
+                <div className="item-details">
+                  <p>
+                    <strong>Index</strong> {dndCatalogDetail.data.index}
+                  </p>
+                  <p>
+                    <strong>Nom</strong> {dndCatalogDetail.data.name}
+                  </p>
+                  <p>
+                    <strong>Type</strong> {dndCatalogDetail.data.type ?? '—'}
+                  </p>
+                  <p>
+                    <strong>Catégorie</strong> {dndCatalogDetail.data.category ?? '—'}
+                  </p>
+                  <p>
+                    <strong>Sous-catégorie</strong> {dndCatalogDetail.data.subcategory ?? '—'}
+                  </p>
+                  <p>
+                    <strong>Coût</strong> {dndCatalogDetail.data.cost ?? '—'}
+                  </p>
+                  <p>
+                    <strong>Poids</strong> {dndCatalogDetail.data.weight ?? '—'}
+                  </p>
+                  <p style={{ whiteSpace: 'pre-wrap' }}>
+                    <strong>Description</strong>{' '}
+                    {dndCatalogDetail.data.description?.trim() ? dndCatalogDetail.data.description : '—'}
+                  </p>
+                  <p>
+                    <strong>Dégâts</strong> {dndCatalogDetail.data.damage ?? '—'}{' '}
+                    {dndCatalogDetail.data.damageType ? `(${dndCatalogDetail.data.damageType})` : ''}
+                  </p>
+                  <p>
+                    <strong>Portée</strong> {dndCatalogDetail.data.range ?? '—'}
+                  </p>
+                  <p>
+                    <strong>CA</strong> {dndCatalogDetail.data.armorClass ?? '—'}
+                  </p>
+                  <p>
+                    <strong>Désavantage discrétion</strong>{' '}
+                    {dndCatalogDetail.data.stealthDisadvantage == null
+                      ? '—'
+                      : dndCatalogDetail.data.stealthDisadvantage
+                        ? 'Oui'
+                        : 'Non'}
+                  </p>
+                  <p>
+                    <strong>Propriétés</strong>
+                  </p>
+                  <pre className="srd-raw-json">
+                    {dndCatalogDetail.data.properties == null
+                      ? '—'
+                      : formatJsonOrDash(dndCatalogDetail.data.properties)}
+                  </pre>
+                </div>
+              ) : null}
+
+              {!dndCatalogDetailLoading && dndCatalogDetail?.kind === 'magic' ? (
+                <div className="item-details">
+                  <p>
+                    <strong>Index</strong> {dndCatalogDetail.data.index}
+                  </p>
+                  <p>
+                    <strong>Nom</strong> {dndCatalogDetail.data.name}
+                  </p>
+                  <p>
+                    <strong>Catégorie</strong>{' '}
+                    {dndCatalogDetail.data.categoryName ?? dndCatalogDetail.data.categoryIndex ?? '—'}
+                  </p>
+                  <p>
+                    <strong>Rareté</strong> {dndCatalogDetail.data.rarity ?? '—'}
+                  </p>
+                  <p>
+                    <strong>Variante</strong> {dndCatalogDetail.data.variant ? 'Oui' : 'Non'}
+                  </p>
+                  <p>
+                    <strong>Variantes (liste API)</strong>
+                  </p>
+                  <pre className="srd-raw-json">
+                    {dndCatalogDetail.data.variants == null ? '—' : formatJsonOrDash(dndCatalogDetail.data.variants)}
+                  </pre>
+                  <p>
+                    <strong>Image (chemin API)</strong> {dndCatalogDetail.data.image ?? '—'}
+                  </p>
+                  <p style={{ whiteSpace: 'pre-wrap' }}>
+                    <strong>Description</strong>{' '}
+                    {dndCatalogDetail.data.description?.trim() ? dndCatalogDetail.data.description : '—'}
+                  </p>
+                  <p>
+                    <strong>Données brutes (JSON)</strong>
+                  </p>
+                  <pre className="srd-raw-json">{formatJsonOrDash(dndCatalogDetail.data.raw)}</pre>
+                </div>
+              ) : null}
+
+              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+                <button
+                  className="btn btn-secondary"
+                  type="button"
+                  disabled={dndCatalogDetailLoading}
+                  onClick={closeDndCatalogDetail}
+                >
+                  Fermer
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+        </>
       )}
     </div>
   )

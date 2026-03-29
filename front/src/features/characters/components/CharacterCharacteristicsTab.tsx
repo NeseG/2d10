@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSnackbar } from '../../../app/hooks/useSnackbar'
 import { apiGet, apiPut } from '../../../shared/api/client'
 
@@ -124,6 +124,97 @@ function numberOrUndefined(value: string): number | undefined {
   return Number.isNaN(parsed) ? undefined : parsed
 }
 
+type CharacteristicsFormFields = {
+  name: string
+  race: string
+  class: string
+  level: string
+  background: string
+  alignment: string
+  experiencePoints: string
+  hitPointsMax: string
+  currentHitPoints: string
+  hitDice: string
+  hitDiceRemaining: string
+  armorClass: string
+  speed: string
+  strength: string
+  dexterity: string
+  constitution: string
+  intelligence: string
+  wisdom: string
+  charisma: string
+  description: string
+  notes: string
+}
+
+type SkillsStateMap = Record<string, { proficient: boolean; expertise: boolean }>
+type SavingThrowsStateMap = Record<string, { proficient: boolean }>
+
+function buildCharacteristicsPersistSnapshot(
+  characterId: string,
+  sessionView: boolean,
+  sessionId: string | undefined,
+  form: CharacteristicsFormFields,
+  skillsState: SkillsStateMap,
+  savingThrowsState: SavingThrowsStateMap,
+): string {
+  const st = ['STRENGTH', 'DEXTERITY', 'CONSTITUTION', 'INTELLIGENCE', 'WISDOM', 'CHARISMA'].map((ability) => [
+    ability,
+    Boolean(savingThrowsState[ability]?.proficient),
+  ])
+  if (sessionView && sessionId) {
+    return JSON.stringify({
+      mode: 'sv',
+      characterId,
+      sessionId,
+      currentHitPoints: form.currentHitPoints,
+      hitDiceRemaining: form.hitDiceRemaining,
+      strength: form.strength,
+      dexterity: form.dexterity,
+      constitution: form.constitution,
+      intelligence: form.intelligence,
+      wisdom: form.wisdom,
+      charisma: form.charisma,
+      st,
+    })
+  }
+  const skillsPayload = DND_5E_SKILLS_FR.map((item) => {
+    const entry = skillsState[item.key]
+    let mastery: 'N' | 'P' | 'E' = 'N'
+    if (entry?.expertise) mastery = 'E'
+    else if (entry?.proficient) mastery = 'P'
+    return [item.key, mastery] as const
+  })
+  return JSON.stringify({
+    mode: 'full',
+    characterId,
+    name: form.name,
+    race: form.race,
+    class: form.class,
+    level: form.level,
+    background: form.background,
+    alignment: form.alignment,
+    experiencePoints: form.experiencePoints,
+    hitPointsMax: form.hitPointsMax,
+    currentHitPoints: form.currentHitPoints,
+    hitDice: form.hitDice,
+    hitDiceRemaining: form.hitDiceRemaining,
+    armorClass: form.armorClass,
+    speed: form.speed,
+    strength: form.strength,
+    dexterity: form.dexterity,
+    constitution: form.constitution,
+    intelligence: form.intelligence,
+    wisdom: form.wisdom,
+    charisma: form.charisma,
+    description: form.description,
+    notes: form.notes,
+    skills: skillsPayload,
+    st,
+  })
+}
+
 function getModifier(scoreRaw: string): number {
   const score = Number(scoreRaw)
   if (Number.isNaN(score)) return 0
@@ -132,6 +223,102 @@ function getModifier(scoreRaw: string): number {
 
 function formatModifier(mod: number): string {
   return mod >= 0 ? `+${mod}` : String(mod)
+}
+
+/** Propriétés d’arme D&D 5e : tableau `[{ name }]` ou objet `{ properties: [...] }` (import SRD). */
+function formatDnDWeaponPropertyNames(raw: unknown): string {
+  const names: string[] = []
+  const pushFromArray = (arr: unknown) => {
+    if (!Array.isArray(arr)) return
+    for (const p of arr) {
+      if (p && typeof p === 'object' && typeof (p as { name?: unknown }).name === 'string') {
+        const n = (p as { name: string }).name.trim()
+        if (n) names.push(n)
+      }
+    }
+  }
+  if (raw == null) return '—'
+  if (Array.isArray(raw)) {
+    pushFromArray(raw)
+    return names.length ? names.join(', ') : '—'
+  }
+  if (typeof raw === 'object') {
+    const obj = raw as Record<string, unknown>
+    pushFromArray(obj.properties)
+    if (names.length) return names.join(', ')
+  }
+  return '—'
+}
+
+function formatItemDamageLine(damage: string | null | undefined, damageType: string | null | undefined): string {
+  const d = String(damage ?? '').trim()
+  const t = String(damageType ?? '').trim()
+  if (!d && !t) return '—'
+  if (d && t) return `${d} (${t})`
+  return d || t
+}
+
+type InventoryLineForSession = {
+  id: number
+  item_id?: number | null
+  name?: string | null
+  type?: string | null
+  category?: string | null
+  is_equipped?: boolean
+  properties?: unknown
+}
+
+type SessionEquippedWeaponRow = {
+  id: number
+  item_id: number | null
+  name: string
+  damage: string
+  propertiesLabel: string
+}
+
+type ItemDetail = {
+  id: number
+  index?: string
+  name: string
+  type?: string
+  category?: string | null
+  subcategory?: string | null
+  cost?: string | null
+  weight?: number | null
+  description?: string | null
+  damage?: string | null
+  damageType?: string | null
+  range?: string | null
+  armorClass?: number | null
+  stealthDisadvantage?: boolean | null
+  properties?: unknown
+  raw?: unknown
+  isActive?: boolean
+  createdAt?: string | null
+  updatedAt?: string | null
+}
+
+function isEquippedWeaponRow(row: InventoryLineForSession): boolean {
+  const t = String(row.type || '')
+    .trim()
+    .toLowerCase()
+  return t === 'weapon' && Boolean(row.is_equipped)
+}
+
+function isEquippedNonWeaponRow(row: InventoryLineForSession): boolean {
+  if (!row.is_equipped) return false
+  const t = String(row.type || '')
+    .trim()
+    .toLowerCase()
+  return t !== 'weapon'
+}
+
+type SessionEquippedOtherRow = {
+  id: number
+  item_id: number | null
+  name: string
+  typeLabel: string
+  categoryLabel: string
 }
 
 export function CharacterCharacteristicsTab(props: {
@@ -144,7 +331,8 @@ export function CharacterCharacteristicsTab(props: {
   const { characterId, token, onNameLoaded, sessionView = false, sessionId } = props
   const { showSnackbar } = useSnackbar()
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
+  const lastPersistedKeyRef = useRef('')
+  const wasLoadingRef = useRef(true)
 
   const [form, setForm] = useState({
     name: '',
@@ -186,10 +374,107 @@ export function CharacterCharacteristicsTab(props: {
     }, {}),
   )
 
+  const formRef = useRef(form)
+  const skillsStateRef = useRef(skillsState)
+  const savingThrowsStateRef = useRef(savingThrowsState)
+  formRef.current = form
+  skillsStateRef.current = skillsState
+  savingThrowsStateRef.current = savingThrowsState
+
+  const onNameLoadedRef = useRef(onNameLoaded)
+  onNameLoadedRef.current = onNameLoaded
+
+  const [sessionEquippedWeapons, setSessionEquippedWeapons] = useState<SessionEquippedWeaponRow[]>([])
+  const [sessionEquippedOtherItems, setSessionEquippedOtherItems] = useState<SessionEquippedOtherRow[]>([])
+  const [isWeaponItemDetailsOpen, setIsWeaponItemDetailsOpen] = useState(false)
+  const [weaponItemDetailsLoading, setWeaponItemDetailsLoading] = useState(false)
+  const [weaponItemDetails, setWeaponItemDetails] = useState<ItemDetail | null>(null)
+
+  const persistCharacteristicsPayload = useCallback(
+    async (f: CharacteristicsFormFields, sk: SkillsStateMap, sv: SavingThrowsStateMap) => {
+      if (sessionView && sessionId) {
+        await apiPut(
+          `/api/sessions/${sessionId}/characters/${characterId}/state`,
+          {
+            currentHitPoints: numberOrUndefined(f.currentHitPoints),
+            hitDiceRemaining: numberOrUndefined(f.hitDiceRemaining),
+          },
+          token,
+        )
+        await apiPut(
+          `/api/characters/${characterId}`,
+          {
+            strength: numberOrUndefined(f.strength),
+            dexterity: numberOrUndefined(f.dexterity),
+            constitution: numberOrUndefined(f.constitution),
+            intelligence: numberOrUndefined(f.intelligence),
+            wisdom: numberOrUndefined(f.wisdom),
+            charisma: numberOrUndefined(f.charisma),
+            savingThrows: ['STRENGTH', 'DEXTERITY', 'CONSTITUTION', 'INTELLIGENCE', 'WISDOM', 'CHARISMA'].map((ability) => ({
+              ability,
+              proficient: Boolean(sv[ability]?.proficient),
+            })),
+          },
+          token,
+        )
+        return
+      }
+
+      await apiPut(
+        `/api/characters/${characterId}`,
+        {
+          name: f.name.trim(),
+          race: f.race.trim() || undefined,
+          class: f.class.trim() || undefined,
+          level: numberOrUndefined(f.level),
+          background: f.background.trim() || undefined,
+          alignment: f.alignment.trim() || undefined,
+          experiencePoints: numberOrUndefined(f.experiencePoints),
+          hitPointsMax: numberOrUndefined(f.hitPointsMax),
+          currentHitPoints: numberOrUndefined(f.currentHitPoints),
+          hitDice: f.hitDice.trim() || undefined,
+          hitDiceRemaining: numberOrUndefined(f.hitDiceRemaining),
+          armorClass: numberOrUndefined(f.armorClass),
+          speed: numberOrUndefined(f.speed),
+          strength: numberOrUndefined(f.strength),
+          dexterity: numberOrUndefined(f.dexterity),
+          constitution: numberOrUndefined(f.constitution),
+          intelligence: numberOrUndefined(f.intelligence),
+          wisdom: numberOrUndefined(f.wisdom),
+          charisma: numberOrUndefined(f.charisma),
+          description: f.description.trim() || undefined,
+          notes: f.notes.trim() || undefined,
+          skills: DND_5E_SKILLS_FR.map((item) => {
+            const entry = sk[item.key]
+            let mastery: 'NOT_PROFICIENT' | 'PROFICIENT' | 'EXPERTISE' = 'NOT_PROFICIENT'
+            if (entry?.expertise) mastery = 'EXPERTISE'
+            else if (entry?.proficient) mastery = 'PROFICIENT'
+            return { skill: item.key, mastery }
+          }),
+          savingThrows: ['STRENGTH', 'DEXTERITY', 'CONSTITUTION', 'INTELLIGENCE', 'WISDOM', 'CHARISMA'].map((ability) => ({
+            ability,
+            proficient: Boolean(sv[ability]?.proficient),
+          })),
+        },
+        token,
+      )
+      onNameLoadedRef.current?.(f.name.trim())
+    },
+    [characterId, sessionView, sessionId, token],
+  )
+
   useEffect(() => {
     async function loadCharacter() {
       setLoading(true)
+      if (!sessionView) {
+        setSessionEquippedWeapons([])
+        setSessionEquippedOtherItems([])
+      }
       try {
+        const inventoryPromise = sessionView
+          ? apiGet<{ inventory: InventoryLineForSession[] }>(`/api/inventory/${characterId}`, token).catch(() => null)
+          : Promise.resolve(null)
+
         const response = await apiGet<{ success: boolean; character: CharacterDetail }>(`/api/characters/${characterId}`, token)
         const c = response.character
 
@@ -225,7 +510,7 @@ export function CharacterCharacteristicsTab(props: {
           notes: c.notes ?? '',
         })
 
-        onNameLoaded?.(c.name ?? '')
+        onNameLoadedRef.current?.(c.name ?? '')
 
         if (Array.isArray(c.skills)) {
           setSkillsState(
@@ -276,7 +561,53 @@ export function CharacterCharacteristicsTab(props: {
             // ignore: fallback already set from character values
           }
         }
+
+        if (sessionView) {
+          const invRes = await inventoryPromise
+          const lines = invRes?.inventory ?? []
+          const weaponLines = lines.filter(isEquippedWeaponRow)
+          const rows: SessionEquippedWeaponRow[] = await Promise.all(
+            weaponLines.map(async (line) => {
+              let damage = '—'
+              if (line.item_id != null) {
+                try {
+                  const itRes = await apiGet<{
+                    item: { damage?: string | null; damageType?: string | null }
+                  }>(`/api/items/${line.item_id}`, token)
+                  damage = formatItemDamageLine(itRes.item?.damage, itRes.item?.damageType)
+                } catch {
+                  /* dégâts indisponibles */
+                }
+              }
+              return {
+                id: line.id,
+                item_id: line.item_id != null ? line.item_id : null,
+                name: line.name?.trim() ? line.name : '—',
+                damage,
+                propertiesLabel: formatDnDWeaponPropertyNames(line.properties),
+              }
+            }),
+          )
+          setSessionEquippedWeapons(rows)
+
+          const otherLines = lines.filter(isEquippedNonWeaponRow).sort((a, b) =>
+            String(a.name || '').localeCompare(String(b.name || ''), 'fr', { sensitivity: 'base' }),
+          )
+          setSessionEquippedOtherItems(
+            otherLines.map((line) => ({
+              id: line.id,
+              item_id: line.item_id != null ? line.item_id : null,
+              name: line.name?.trim() ? line.name : '—',
+              typeLabel: line.type?.trim() ? String(line.type) : '—',
+              categoryLabel: line.category?.trim() ? line.category : '—',
+            })),
+          )
+        }
       } catch (err) {
+        if (sessionView) {
+          setSessionEquippedWeapons([])
+          setSessionEquippedOtherItems([])
+        }
         showSnackbar({
           message: err instanceof Error ? err.message : 'Erreur de chargement',
           severity: 'error',
@@ -287,7 +618,87 @@ export function CharacterCharacteristicsTab(props: {
     }
 
     void loadCharacter()
-  }, [characterId, token, onNameLoaded, sessionView, sessionId, showSnackbar])
+  }, [characterId, token, sessionView, sessionId, showSnackbar])
+
+  useEffect(() => {
+    if (wasLoadingRef.current && !loading) {
+      lastPersistedKeyRef.current = buildCharacteristicsPersistSnapshot(
+        characterId,
+        sessionView,
+        sessionId,
+        form as CharacteristicsFormFields,
+        skillsState,
+        savingThrowsState,
+      )
+      wasLoadingRef.current = false
+    } else if (loading) {
+      wasLoadingRef.current = true
+    }
+  }, [loading, characterId, sessionView, sessionId, form, skillsState, savingThrowsState])
+
+  useEffect(() => {
+    if (loading) return
+    const key = buildCharacteristicsPersistSnapshot(
+      characterId,
+      sessionView,
+      sessionId,
+      form as CharacteristicsFormFields,
+      skillsState,
+      savingThrowsState,
+    )
+    if (key === lastPersistedKeyRef.current) return
+    if (!sessionView && !form.name.trim()) return
+
+    const timer = setTimeout(() => {
+      void (async () => {
+        const f = formRef.current as CharacteristicsFormFields
+        const sk = skillsStateRef.current
+        const sv = savingThrowsStateRef.current
+        if (!sessionView && !f.name.trim()) return
+        const k = buildCharacteristicsPersistSnapshot(characterId, sessionView, sessionId, f, sk, sv)
+        if (k === lastPersistedKeyRef.current) return
+        try {
+          await persistCharacteristicsPayload(f, sk, sv)
+          lastPersistedKeyRef.current = k
+        } catch (err) {
+          showSnackbar({
+            message: err instanceof Error ? err.message : 'Erreur de sauvegarde',
+            severity: 'error',
+          })
+        }
+      })()
+    }, 450)
+    return () => clearTimeout(timer)
+  }, [
+    form,
+    skillsState,
+    savingThrowsState,
+    loading,
+    characterId,
+    sessionView,
+    sessionId,
+    showSnackbar,
+    persistCharacteristicsPayload,
+  ])
+
+  useEffect(() => {
+    return () => {
+      const f = formRef.current as CharacteristicsFormFields
+      const sk = skillsStateRef.current
+      const sv = savingThrowsStateRef.current
+      const k = buildCharacteristicsPersistSnapshot(characterId, sessionView, sessionId, f, sk, sv)
+      if (k === lastPersistedKeyRef.current) return
+      if (!sessionView && !f.name.trim()) return
+      void (async () => {
+        try {
+          await persistCharacteristicsPayload(f, sk, sv)
+          lastPersistedKeyRef.current = k
+        } catch {
+          /* démontage / navigation */
+        }
+      })()
+    }
+  }, [characterId, sessionView, sessionId, persistCharacteristicsPayload])
 
   const proficiencyBonus = useMemo(() => {
     const levelNumber = Number(form.level)
@@ -323,6 +734,23 @@ export function CharacterCharacteristicsTab(props: {
     return rows
   }, [skillsState, form, proficiencyBonus])
 
+  async function openSessionItemDetailsModal(itemId: number) {
+    setIsWeaponItemDetailsOpen(true)
+    setWeaponItemDetails(null)
+    setWeaponItemDetailsLoading(true)
+    try {
+      const res = await apiGet<{ item: ItemDetail }>(`/api/items/${itemId}`, token)
+      setWeaponItemDetails(res.item)
+    } catch (err) {
+      showSnackbar({
+        message: err instanceof Error ? err.message : "Erreur lors du chargement de l'objet",
+        severity: 'error',
+      })
+    } finally {
+      setWeaponItemDetailsLoading(false)
+    }
+  }
+
   const skillsSummaryUnderAbilities = (
     <details className="character-skills-accordion">
       <summary className="character-skills-accordion-summary">Mes compétences</summary>
@@ -351,93 +779,15 @@ export function CharacterCharacteristicsTab(props: {
     </details>
   )
 
-  async function handleSaveCharacteristics(event: React.FormEvent) {
-    event.preventDefault()
-    setSaving(true)
-    try {
-      if (sessionView && sessionId) {
-        await apiPut(
-          `/api/sessions/${sessionId}/characters/${characterId}/state`,
-          {
-            currentHitPoints: numberOrUndefined(form.currentHitPoints),
-            hitDiceRemaining: numberOrUndefined(form.hitDiceRemaining),
-          },
-          token,
-        )
-        await apiPut(
-          `/api/characters/${characterId}`,
-          {
-            strength: numberOrUndefined(form.strength),
-            dexterity: numberOrUndefined(form.dexterity),
-            constitution: numberOrUndefined(form.constitution),
-            intelligence: numberOrUndefined(form.intelligence),
-            wisdom: numberOrUndefined(form.wisdom),
-            charisma: numberOrUndefined(form.charisma),
-            savingThrows: ['STRENGTH', 'DEXTERITY', 'CONSTITUTION', 'INTELLIGENCE', 'WISDOM', 'CHARISMA'].map((ability) => ({
-              ability,
-              proficient: Boolean(savingThrowsState[ability]?.proficient),
-            })),
-          },
-          token,
-        )
-        showSnackbar({ message: 'État de jeu enregistré pour cette campagne.', severity: 'success' })
-        return
-      }
-
-      await apiPut(
-        `/api/characters/${characterId}`,
-        {
-          name: form.name.trim(),
-          race: form.race.trim() || undefined,
-          class: form.class.trim() || undefined,
-          level: numberOrUndefined(form.level),
-          background: form.background.trim() || undefined,
-          alignment: form.alignment.trim() || undefined,
-          experiencePoints: numberOrUndefined(form.experiencePoints),
-          hitPointsMax: numberOrUndefined(form.hitPointsMax),
-          currentHitPoints: numberOrUndefined(form.currentHitPoints),
-          hitDice: form.hitDice.trim() || undefined,
-          hitDiceRemaining: numberOrUndefined(form.hitDiceRemaining),
-          armorClass: numberOrUndefined(form.armorClass),
-          speed: numberOrUndefined(form.speed),
-          strength: numberOrUndefined(form.strength),
-          dexterity: numberOrUndefined(form.dexterity),
-          constitution: numberOrUndefined(form.constitution),
-          intelligence: numberOrUndefined(form.intelligence),
-          wisdom: numberOrUndefined(form.wisdom),
-          charisma: numberOrUndefined(form.charisma),
-          description: form.description.trim() || undefined,
-          notes: form.notes.trim() || undefined,
-          skills: DND_5E_SKILLS_FR.map((item) => {
-            const entry = skillsState[item.key]
-            let mastery: 'NOT_PROFICIENT' | 'PROFICIENT' | 'EXPERTISE' = 'NOT_PROFICIENT'
-            if (entry?.expertise) mastery = 'EXPERTISE'
-            else if (entry?.proficient) mastery = 'PROFICIENT'
-            return { skill: item.key, mastery }
-          }),
-          savingThrows: ['STRENGTH', 'DEXTERITY', 'CONSTITUTION', 'INTELLIGENCE', 'WISDOM', 'CHARISMA'].map((ability) => ({
-            ability,
-            proficient: Boolean(savingThrowsState[ability]?.proficient),
-          })),
-        },
-        token,
-      )
-      showSnackbar({ message: 'Personnage enregistré avec succès.', severity: 'success' })
-      onNameLoaded?.(form.name.trim())
-    } catch (err) {
-      showSnackbar({
-        message: err instanceof Error ? err.message : 'Erreur de sauvegarde',
-        severity: 'error',
-      })
-    } finally {
-      setSaving(false)
-    }
-  }
-
   if (loading) return <p>Chargement...</p>
 
   return (
-    <form className="login-form" onSubmit={handleSaveCharacteristics}>
+    <form
+      className="login-form"
+      onSubmit={(event) => {
+        event.preventDefault()
+      }}
+    >
       {sessionView ? (
         <div className="session-character-meta-row">
           <div>
@@ -573,6 +923,74 @@ export function CharacterCharacteristicsTab(props: {
             ))}
           </div>
           {skillsSummaryUnderAbilities}
+
+          <div className="session-weapons-section">
+            <h4 className="session-weapons-title">Armes</h4>
+            {sessionEquippedWeapons.length === 0 ? (
+              <p className="session-weapons-empty">Aucune arme équipée.</p>
+            ) : (
+              <div className="table-wrap">
+                <table className="table inventory-items-table session-weapons-table">
+                  <thead>
+                    <tr>
+                      <th>Nom</th>
+                      <th>Dégâts</th>
+                      <th>Propriétés</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sessionEquippedWeapons.map((w) => (
+                      <tr
+                        key={w.id}
+                        className={w.item_id != null ? 'clickable-row session-weapons-row' : 'session-weapons-row'}
+                        onClick={() => {
+                          if (w.item_id != null) void openSessionItemDetailsModal(w.item_id)
+                        }}
+                      >
+                        <td data-label="Nom">{w.name}</td>
+                        <td data-label="Dégâts">{w.damage}</td>
+                        <td data-label="Propriétés">{w.propertiesLabel}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <div className="session-items-section">
+            <h4 className="session-items-title">Items</h4>
+            {sessionEquippedOtherItems.length === 0 ? (
+              <p className="session-items-empty">Aucun autre objet équipé.</p>
+            ) : (
+              <div className="table-wrap">
+                <table className="table inventory-items-table session-items-table">
+                  <thead>
+                    <tr>
+                      <th>Nom</th>
+                      <th>Type</th>
+                      <th>Catégorie</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sessionEquippedOtherItems.map((it) => (
+                      <tr
+                        key={it.id}
+                        className={it.item_id != null ? 'clickable-row session-items-row' : 'session-items-row'}
+                        onClick={() => {
+                          if (it.item_id != null) void openSessionItemDetailsModal(it.item_id)
+                        }}
+                      >
+                        <td data-label="Nom">{it.name}</td>
+                        <td data-label="Type">{it.typeLabel}</td>
+                        <td data-label="Catégorie">{it.categoryLabel}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </>
       ) : null}
 
@@ -679,9 +1097,81 @@ export function CharacterCharacteristicsTab(props: {
         </>
       ) : null}
 
-      <button className="btn" type="submit" disabled={saving}>
-        {saving ? 'Enregistrement...' : 'Enregistrer'}
-      </button>
+      {isWeaponItemDetailsOpen ? (
+        <div
+          className="modal-backdrop"
+          onClick={() => {
+            if (!weaponItemDetailsLoading) setIsWeaponItemDetailsOpen(false)
+          }}
+        >
+          <div className="modal-card" onClick={(event) => event.stopPropagation()}>
+            <h3>Détails de l’objet</h3>
+            {weaponItemDetailsLoading ? <p>Chargement…</p> : null}
+            {!weaponItemDetailsLoading && weaponItemDetails ? (
+              <div className="item-details">
+                <p>
+                  <strong>Index</strong> {(weaponItemDetails.index as string) ?? '—'}
+                </p>
+                <p>
+                  <strong>Nom</strong> {weaponItemDetails.name}
+                </p>
+                <p>
+                  <strong>Type</strong> {(weaponItemDetails.type as string) ?? '—'}
+                </p>
+                <p>
+                  <strong>Catégorie</strong> {weaponItemDetails.category ?? '—'}
+                </p>
+                <p>
+                  <strong>Sous-catégorie</strong> {weaponItemDetails.subcategory ?? '—'}
+                </p>
+                <p>
+                  <strong>Coût</strong> {weaponItemDetails.cost ?? '—'}
+                </p>
+                <p>
+                  <strong>Poids</strong> {weaponItemDetails.weight ?? '—'}
+                </p>
+                <p>
+                  <strong>Description</strong>{' '}
+                  {weaponItemDetails.description?.trim() ? weaponItemDetails.description : '—'}
+                </p>
+                <p>
+                  <strong>Dégâts</strong> {weaponItemDetails.damage ?? '—'}{' '}
+                  {weaponItemDetails.damageType ? `(${weaponItemDetails.damageType})` : ''}
+                </p>
+                <p>
+                  <strong>Portée</strong> {weaponItemDetails.range ?? '—'}
+                </p>
+                <p>
+                  <strong>CA</strong> {weaponItemDetails.armorClass ?? '—'}
+                </p>
+                <p>
+                  <strong>Désavantage discrétion</strong>{' '}
+                  {weaponItemDetails.stealthDisadvantage == null
+                    ? '—'
+                    : weaponItemDetails.stealthDisadvantage
+                      ? 'Oui'
+                      : 'Non'}
+                </p>
+                <p>
+                  <strong>Propriétés</strong>{' '}
+                  {weaponItemDetails.properties == null ? '—' : JSON.stringify(weaponItemDetails.properties, null, 2)}
+                </p>
+              </div>
+            ) : null}
+
+            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+              <button
+                className="btn btn-secondary"
+                type="button"
+                disabled={weaponItemDetailsLoading}
+                onClick={() => setIsWeaponItemDetailsOpen(false)}
+              >
+                Fermer
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </form>
   )
 }
