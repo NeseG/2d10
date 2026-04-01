@@ -1,4 +1,4 @@
-import React from 'react'
+import { MarkdownContent } from '../../../shared/components/MarkdownContent'
 
 export type ItemDetail = {
   id: number
@@ -233,9 +233,7 @@ export function ItemDetailsModal(props: {
             ) : null}
 
             <div className="item-details">
-              <p style={{ whiteSpace: 'pre-wrap' }}>
-                {itemDetails.description?.trim() ? itemDetails.description : '—'}
-              </p>
+              <MarkdownContent content={itemDetails.description} />
             </div>
           </>
         ) : null}

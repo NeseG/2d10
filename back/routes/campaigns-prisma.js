@@ -1,6 +1,10 @@
 const express = require('express');
 const prisma = require('../lib/prisma');
 const { authenticateToken, requireRole } = require('../middleware/auth');
+const path = require('path');
+const fs = require('fs/promises');
+const { MAP_UPLOAD_ROOT, mapImageUploadMiddleware } = require('../lib/campaign-map-upload');
+const { broadcastSessionMap, buildSessionMapPayload } = require('../ws/session-map');
 
 const router = express.Router();
 
@@ -30,6 +34,24 @@ function formatCampaign(campaign, includeGm = false) {
   return formatted;
 }
 
+function mapImagePath(campaignId, mapId) {
+  return `/api/campaigns/${campaignId}/maps/${mapId}/image`;
+}
+
+function formatCampaignMap(map) {
+  return {
+    id: map.id,
+    campaign_id: map.campaignId,
+    name: map.name,
+    image_url: mapImagePath(map.campaignId, map.id),
+    fog_state: map.fogState ?? null,
+    tokens_state: map.tokensState ?? null,
+    is_active: map.isActive,
+    created_at: map.createdAt,
+    updated_at: map.updatedAt,
+  };
+}
+
 function formatCampaignCharacter(record) {
   return {
     id: record.id,
@@ -46,6 +68,32 @@ function formatCampaignCharacter(record) {
     race: record.character?.race,
     player_username: record.character?.user?.username,
   };
+}
+
+async function canAccessCampaignCharacter(reqUser, campaignId, characterId) {
+  const userId = reqUser?.id;
+  const role = reqUser?.role_name;
+  if (!userId || !role) return { ok: false, status: 401, error: 'Non authentifié' };
+
+  if (role === 'admin') return { ok: true };
+
+  const link = await prisma.campaignCharacter.findFirst({
+    where: { campaignId, characterId, isActive: true },
+    select: {
+      id: true,
+      campaign: { select: { gmId: true, isActive: true } },
+      character: { select: { userId: true, isActive: true } },
+    },
+  });
+
+  if (!link || !link.campaign?.isActive || !link.character?.isActive) {
+    return { ok: false, status: 404, error: 'Lien campagne-personnage non trouvé' };
+  }
+
+  if (role === 'gm' && link.campaign.gmId === userId) return { ok: true };
+  if (role === 'user' && link.character.userId === userId) return { ok: true };
+
+  return { ok: false, status: 403, error: 'Accès refusé' };
 }
 
 function formatSession(session) {
@@ -108,6 +156,12 @@ const checkCampaignOwnership = async (req, res, next) => {
     res.status(500).json({ error: 'Erreur serveur' });
   }
 };
+
+async function findActiveCampaignMap(campaignId, mapId) {
+  return prisma.campaignMap.findFirst({
+    where: { id: mapId, campaignId, isActive: true },
+  });
+}
 
 // Obtenir toutes les campagnes (GM et Admin voient leurs campagnes, Admin voit tout)
 router.get('/', authenticateToken, async (req, res) => {
@@ -206,7 +260,7 @@ router.get('/:campaignId', authenticateToken, async (req, res) => {
     res.json({
       success: true,
       campaign: {
-        ...formatCampaign(campaign, userRole === 'admin'),
+        ...formatCampaign(campaign, true),
         characters: campaign.characters.map(formatCampaignCharacter),
         sessions: campaign.sessions.map(formatSession),
       },
@@ -214,6 +268,252 @@ router.get('/:campaignId', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Erreur lors de la récupération de la campagne:', error);
     res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// === Cartes de campagne (Maps) ===
+// Note: pour l'instant, l'accès est volontairement limité à GM/Admin.
+// L'accès joueur sera ouvert plus tard via la partie sessions-live.
+
+router.get('/:campaignId/maps/:mapId/image', authenticateToken, checkCampaignOwnership, async (req, res) => {
+  try {
+    const campaignId = parseInt(req.params.campaignId, 10);
+    const mapId = parseInt(req.params.mapId, 10);
+    if (Number.isNaN(campaignId) || Number.isNaN(mapId)) {
+      return res.status(400).json({ error: 'ID invalide' });
+    }
+
+    const map = await findActiveCampaignMap(campaignId, mapId);
+    if (!map) return res.status(404).json({ error: 'Carte non trouvée' });
+
+    const safeName = path.basename(map.imageKey || '');
+    if (!safeName || safeName !== map.imageKey) {
+      return res.status(404).json({ error: 'Fichier introuvable' });
+    }
+
+    const dir = path.join(MAP_UPLOAD_ROOT, String(campaignId));
+    const filePath = path.join(dir, safeName);
+    const resolvedFile = path.resolve(filePath);
+    const resolvedDir = path.resolve(dir);
+    if (!resolvedFile.startsWith(resolvedDir)) {
+      return res.status(400).json({ error: 'Chemin invalide' });
+    }
+
+    try {
+      await fs.access(resolvedFile);
+    } catch {
+      return res.status(404).json({ error: 'Fichier introuvable' });
+    }
+
+    const ext = path.extname(safeName).toLowerCase();
+    const ct =
+      ext === '.png' ? 'image/png' : ext === '.gif' ? 'image/gif' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
+    res.setHeader('Content-Type', ct);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    return res.sendFile(resolvedFile);
+  } catch (error) {
+    console.error('Erreur map image:', error);
+    return res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Lister les cartes d'une campagne (GM/Admin)
+router.get('/:campaignId/maps', authenticateToken, checkCampaignOwnership, async (req, res) => {
+  try {
+    const campaignId = parseInt(req.params.campaignId, 10);
+    if (Number.isNaN(campaignId)) {
+      return res.status(400).json({ error: 'ID de campagne invalide' });
+    }
+
+    const maps = await prisma.campaignMap.findMany({
+      where: { campaignId, isActive: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    return res.json({
+      success: true,
+      maps: maps.map(formatCampaignMap),
+    });
+  } catch (error) {
+    console.error('Erreur lors de la récupération des cartes:', error);
+    return res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Obtenir une carte (GM/Admin)
+router.get('/:campaignId/maps/:mapId', authenticateToken, checkCampaignOwnership, async (req, res) => {
+  try {
+    const campaignId = parseInt(req.params.campaignId, 10);
+    const mapId = parseInt(req.params.mapId, 10);
+    if (Number.isNaN(campaignId) || Number.isNaN(mapId)) {
+      return res.status(400).json({ error: 'ID invalide' });
+    }
+
+    const map = await findActiveCampaignMap(campaignId, mapId);
+    if (!map) return res.status(404).json({ error: 'Carte non trouvée' });
+
+    return res.json({
+      success: true,
+      map: formatCampaignMap(map),
+    });
+  } catch (error) {
+    console.error('Erreur lors de la récupération de la carte:', error);
+    return res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Créer une carte (GM/Admin)
+router.post('/:campaignId/maps', authenticateToken, checkCampaignOwnership, mapImageUploadMiddleware, async (req, res) => {
+  try {
+    const campaignId = parseInt(req.params.campaignId, 10);
+    if (Number.isNaN(campaignId)) {
+      return res.status(400).json({ error: 'ID de campagne invalide' });
+    }
+
+    const nameRaw = req.body?.name;
+    const name = nameRaw == null ? '' : String(nameRaw).trim();
+
+    if (!name) return res.status(400).json({ error: 'Le nom de la carte est requis' });
+    if (name.length > 200) return res.status(400).json({ error: 'Nom de carte trop long' });
+    if (!req.file?.filename) return res.status(400).json({ error: 'Image requise (champ "image")' });
+
+    function parseMaybeJson(value) {
+      if (value == null) return null;
+      if (typeof value === 'object') return value;
+      const s = String(value).trim();
+      if (!s) return null;
+      try {
+        return JSON.parse(s);
+      } catch {
+        return value;
+      }
+    }
+
+    const fogState = parseMaybeJson(req.body?.fog_state ?? req.body?.fogState ?? null);
+    const tokensState = parseMaybeJson(req.body?.tokens_state ?? req.body?.tokensState ?? null);
+
+    const created = await prisma.campaignMap.create({
+      data: {
+        campaignId,
+        name,
+        imageKey: req.file.filename,
+        fogState,
+        tokensState,
+      },
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Carte créée avec succès',
+      map: formatCampaignMap(created),
+    });
+  } catch (error) {
+    console.error('Erreur lors de la création de la carte:', error);
+    return res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Mettre à jour une carte (GM/Admin)
+router.put('/:campaignId/maps/:mapId', authenticateToken, checkCampaignOwnership, mapImageUploadMiddleware, async (req, res) => {
+  try {
+    const campaignId = parseInt(req.params.campaignId, 10);
+    const mapId = parseInt(req.params.mapId, 10);
+    if (Number.isNaN(campaignId) || Number.isNaN(mapId)) {
+      return res.status(400).json({ error: 'ID invalide' });
+    }
+
+    const existing = await findActiveCampaignMap(campaignId, mapId);
+    if (!existing) return res.status(404).json({ error: 'Carte non trouvée' });
+
+    const updateData = {};
+
+    if (req.body?.name !== undefined) {
+      const name = req.body.name == null ? '' : String(req.body.name).trim();
+      if (!name) return res.status(400).json({ error: 'Le nom de la carte est requis' });
+      if (name.length > 200) return res.status(400).json({ error: 'Nom de carte trop long' });
+      updateData.name = name;
+    }
+
+    if (req.file?.filename) updateData.imageKey = req.file.filename;
+
+    function parseMaybeJson(value) {
+      if (value == null) return null;
+      if (typeof value === 'object') return value;
+      const s = String(value).trim();
+      if (!s) return null;
+      try {
+        return JSON.parse(s);
+      } catch {
+        return value;
+      }
+    }
+
+    if (req.body?.fog_state !== undefined || req.body?.fogState !== undefined) {
+      updateData.fogState = parseMaybeJson(req.body?.fog_state ?? req.body?.fogState ?? null);
+    }
+
+    if (req.body?.tokens_state !== undefined || req.body?.tokensState !== undefined) {
+      updateData.tokensState = parseMaybeJson(req.body?.tokens_state ?? req.body?.tokensState ?? null);
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ error: 'Aucune donnée à mettre à jour' });
+    }
+
+    const updated = await prisma.campaignMap.update({
+      where: { id: existing.id },
+      data: updateData,
+    });
+
+    // Si cette map est active dans une ou plusieurs sessions, pousser la mise à jour en live.
+    try {
+      const sessions = await prisma.gameSession.findMany({
+        where: { isActive: true, activeMapId: updated.id },
+        select: { id: true },
+      });
+      for (const s of sessions) {
+        const payload = await buildSessionMapPayload(s.id);
+        if (payload) broadcastSessionMap(s.id, payload);
+      }
+    } catch {
+      /* ignore */
+    }
+
+    return res.json({
+      success: true,
+      message: 'Carte mise à jour avec succès',
+      map: formatCampaignMap(updated),
+    });
+  } catch (error) {
+    console.error('Erreur lors de la mise à jour de la carte:', error);
+    return res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Supprimer une carte (soft-delete) (GM/Admin)
+router.delete('/:campaignId/maps/:mapId', authenticateToken, checkCampaignOwnership, async (req, res) => {
+  try {
+    const campaignId = parseInt(req.params.campaignId, 10);
+    const mapId = parseInt(req.params.mapId, 10);
+    if (Number.isNaN(campaignId) || Number.isNaN(mapId)) {
+      return res.status(400).json({ error: 'ID invalide' });
+    }
+
+    const existing = await findActiveCampaignMap(campaignId, mapId);
+    if (!existing) return res.status(404).json({ error: 'Carte non trouvée' });
+
+    await prisma.campaignMap.update({
+      where: { id: existing.id },
+      data: { isActive: false },
+    });
+
+    return res.json({
+      success: true,
+      message: 'Carte supprimée avec succès',
+    });
+  } catch (error) {
+    console.error('Erreur lors de la suppression de la carte:', error);
+    return res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
@@ -557,6 +857,67 @@ router.get('/stats/overview', authenticateToken, requireRole(['gm', 'admin']), a
     });
   } catch (error) {
     console.error('Erreur lors de la récupération des statistiques des campagnes:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Notes WYSIWYG par personnage et par campagne (joueur propriétaire, GM de la campagne ou admin)
+router.get('/:campaignId/characters/:characterId/notes-wysiwyg', authenticateToken, async (req, res) => {
+  try {
+    const campaignId = parseInt(req.params.campaignId, 10);
+    const characterId = parseInt(req.params.characterId, 10);
+    if (Number.isNaN(campaignId) || Number.isNaN(characterId)) {
+      return res.status(400).json({ error: 'ID invalide' });
+    }
+
+    const access = await canAccessCampaignCharacter(req.user, campaignId, characterId);
+    if (!access.ok) return res.status(access.status).json({ error: access.error });
+
+    const link = await prisma.campaignCharacter.findFirst({
+      where: { campaignId, characterId, isActive: true },
+      select: { notesWysiwyg: true, updatedAt: true },
+    });
+    if (!link) return res.status(404).json({ error: 'Lien campagne-personnage non trouvé' });
+
+    return res.json({
+      success: true,
+      notes_wysiwyg: link.notesWysiwyg ?? '',
+      updated_at: link.updatedAt,
+    });
+  } catch (error) {
+    console.error('Erreur lecture notes wysiwyg:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+router.put('/:campaignId/characters/:characterId/notes-wysiwyg', authenticateToken, async (req, res) => {
+  try {
+    const campaignId = parseInt(req.params.campaignId, 10);
+    const characterId = parseInt(req.params.characterId, 10);
+    if (Number.isNaN(campaignId) || Number.isNaN(characterId)) {
+      return res.status(400).json({ error: 'ID invalide' });
+    }
+
+    const access = await canAccessCampaignCharacter(req.user, campaignId, characterId);
+    if (!access.ok) return res.status(access.status).json({ error: access.error });
+
+    const raw = req.body?.notes_wysiwyg;
+    const next = raw == null ? '' : String(raw);
+    if (next.length > 200000) return res.status(400).json({ error: 'notes_wysiwyg trop long' });
+
+    const updated = await prisma.campaignCharacter.update({
+      where: { campaignId_characterId: { campaignId, characterId } },
+      data: { notesWysiwyg: next },
+      select: { notesWysiwyg: true, updatedAt: true },
+    });
+
+    return res.json({
+      success: true,
+      notes_wysiwyg: updated.notesWysiwyg ?? '',
+      updated_at: updated.updatedAt,
+    });
+  } catch (error) {
+    console.error('Erreur update notes wysiwyg:', error);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });

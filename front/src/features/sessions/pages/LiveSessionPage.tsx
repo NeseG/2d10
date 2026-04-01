@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { Card } from '../../../shared/components/Card'
 import { useAuth } from '../../../app/hooks/useAuth'
 import { useSnackbar } from '../../../app/hooks/useSnackbar'
-import { apiGet } from '../../../shared/api/client'
+import { apiGet, getApiBaseUrl } from '../../../shared/api/client'
 import {
   CharacterCharacteristicsTab,
   DEFAULT_SESSION_LIVE_ACCORDIONS,
@@ -18,6 +18,9 @@ import {
   type SessionLiveTraitsAccordionState,
 } from '../../characters/components/CharacterFeaturesTab'
 import { SessionLiveChat } from '../components/SessionLiveChat'
+import { SessionCampaignNotesTab } from '../components/SessionCampaignNotesTab'
+import { SessionInitiativeTrackerTab } from '../components/SessionInitiativeTrackerTab'
+import { SessionMapTab } from '../components/SessionMapTab'
 import { useHeader } from '../../../app/hooks/useHeader'
 
 type JoinedSession = {
@@ -39,14 +42,21 @@ type SessionDetail = {
   title?: string | null
   campaign_name?: string | null
   session_date?: string | null
+  campaign_id?: number | null
   gm_id?: number | null
   attendance?: SessionAttendance[]
 }
 
-function SessionLiveCharacterHeading(props: { characterId: string; label: string }) {
-  const { characterId, label } = props
+function SessionLiveCharacterHeading(props: { characterId: string; label: string; avatarUrl?: string }) {
+  const { characterId, label, avatarUrl } = props
+  const resolvedAvatarUrl = avatarUrl
+    ? `${getApiBaseUrl()}${avatarUrl.startsWith('/') ? avatarUrl : `/${avatarUrl}`}`
+    : ''
   return (
     <div className="session-live-character-title-row">
+      <div className="session-live-character-avatar">
+        {resolvedAvatarUrl ? <img src={resolvedAvatarUrl} alt={`Avatar de ${label}`} /> : <span>{(label.trim()[0] || '?').toUpperCase()}</span>}
+      </div>
       <h4 className="session-live-character-panel-title">{label}</h4>
       <Link
         to={`/characters/${characterId}/edit`}
@@ -84,8 +94,10 @@ export function LiveSessionPage() {
   const [sessionLoadFailed, setSessionLoadFailed] = useState(false)
   const [selectedCharacterId, setSelectedCharacterId] = useState<string>('')
   const [selectedCharacterName, setSelectedCharacterName] = useState<string>('')
-  const [mainTab, setMainTab] = useState<'character' | 'chat'>('character')
-  const [characterSubTab, setCharacterSubTab] = useState<'characteristic' | 'inventory' | 'grimoire' | 'traits'>(
+  const [mainTab, setMainTab] = useState<'character' | 'chat' | 'initiative' | 'map'>('character')
+  const [characterSubTab, setCharacterSubTab] = useState<
+    'characteristic' | 'inventory' | 'grimoire' | 'traits' | 'notes'
+  >(
     'characteristic',
   )
 
@@ -172,6 +184,7 @@ export function LiveSessionPage() {
   }, [user, sessionDetail, accessibleCharacters.length])
 
   const [characterDisplayNames, setCharacterDisplayNames] = useState<Record<string, string>>({})
+  const [characterAvatarUrls, setCharacterAvatarUrls] = useState<Record<string, string>>({})
   const [sessionAccordionByCharacterId, setSessionAccordionByCharacterId] = useState<
     Record<string, SessionLiveAccordionState>
   >({})
@@ -278,11 +291,47 @@ export function LiveSessionPage() {
                 >
                   Chat
                 </button>
+                <button
+                  className={`tab-btn ${mainTab === 'initiative' ? 'active' : ''}`}
+                  type="button"
+                  onClick={() => setMainTab('initiative')}
+                >
+                  Initiative
+                </button>
+                <button
+                  className={`tab-btn ${mainTab === 'map' ? 'active' : ''}`}
+                  type="button"
+                  onClick={() => setMainTab('map')}
+                >
+                  Map
+                </button>
               </div>
 
               {mainTab === 'chat' && user ? (
                 <div className="session-live-content session-live-chat-panel" style={{ marginTop: '0.75rem' }}>
                   <SessionLiveChat sessionId={session.id} token={token} currentUserId={user.id} />
+                </div>
+              ) : null}
+
+              {mainTab === 'initiative' ? (
+                <div className="session-live-content" style={{ marginTop: '0.75rem' }}>
+                  <SessionInitiativeTrackerTab
+                    sessionId={session.id}
+                    token={token}
+                    isOwner={isSessionOwner}
+                    quickAddCharacters={sessionDetail?.attendance ?? []}
+                  />
+                </div>
+              ) : null}
+
+              {mainTab === 'map' ? (
+                <div className="session-live-content" style={{ marginTop: '0.75rem' }}>
+                  <SessionMapTab
+                    sessionId={session.id}
+                    token={token}
+                    isOwner={isSessionOwner}
+                    campaignId={sessionDetail?.campaign_id ?? null}
+                  />
                 </div>
               ) : null}
 
@@ -327,7 +376,12 @@ export function LiveSessionPage() {
                     return (
                       <div key={entry.id} className="session-live-character-panel">
                         <div className="session-live-content session-live-character-panel-inner">
-                          <SessionLiveCharacterHeading characterId={cid} label={title} />
+                          <SessionLiveCharacterHeading
+                            characterId={cid}
+                            label={title}
+                            avatarUrl={characterAvatarUrls[cid] ?? ''}
+                          />
+
                           {characterSubTab === 'characteristic' ? (
                             <CharacterCharacteristicsTab
                               characterId={cid}
@@ -338,6 +392,9 @@ export function LiveSessionPage() {
                               onSessionLiveAccordionsChange={(p) => patchSessionLiveAccordions(cid, p)}
                               onNameLoaded={(name) =>
                                 setCharacterDisplayNames((p) => ({ ...p, [cid]: name }))
+                              }
+                              onAvatarLoaded={(avatarUrl) =>
+                                setCharacterAvatarUrls((p) => ({ ...p, [cid]: avatarUrl }))
                               }
                             />
                           ) : null}
@@ -364,6 +421,13 @@ export function LiveSessionPage() {
                               onSessionTraitsAccordionsChange={(p) => patchSessionLiveTraitsAccordions(cid, p)}
                             />
                           ) : null}
+                          {characterSubTab === 'notes' ? (
+                            <SessionCampaignNotesTab
+                              token={token}
+                              campaignId={sessionDetail?.campaign_id ?? null}
+                              characterId={cid}
+                            />
+                          ) : null}
                         </div>
                       </div>
                     )
@@ -374,6 +438,7 @@ export function LiveSessionPage() {
                   <SessionLiveCharacterHeading
                     characterId={selectedCharacterId}
                     label={selectedCharacterName || 'Mon personnage'}
+                    avatarUrl={characterAvatarUrls[selectedCharacterId] ?? ''}
                   />
                   {characterSubTab === 'characteristic' ? (
                     <CharacterCharacteristicsTab
@@ -386,6 +451,9 @@ export function LiveSessionPage() {
                         patchSessionLiveAccordions(selectedCharacterId, p)
                       }
                       onNameLoaded={(name) => setSelectedCharacterName(name)}
+                      onAvatarLoaded={(avatarUrl) =>
+                        setCharacterAvatarUrls((p) => ({ ...p, [selectedCharacterId]: avatarUrl }))
+                      }
                     />
                   ) : null}
                   {characterSubTab === 'inventory' ? <CharacterInventoryTab characterId={selectedCharacterId} token={token} /> : null}
@@ -405,6 +473,13 @@ export function LiveSessionPage() {
                       sessionView
                       sessionTraitsAccordions={getSessionLiveTraitsAccordions(selectedCharacterId)}
                       onSessionTraitsAccordionsChange={(p) => patchSessionLiveTraitsAccordions(selectedCharacterId, p)}
+                    />
+                  ) : null}
+                  {characterSubTab === 'notes' ? (
+                    <SessionCampaignNotesTab
+                      token={token}
+                      campaignId={sessionDetail?.campaign_id ?? null}
+                      characterId={selectedCharacterId}
                     />
                   ) : null}
                 </div>
@@ -447,6 +522,15 @@ export function LiveSessionPage() {
                     }}
                   >
                     Traits
+                  </button>
+                  <button
+                    className={`tab-btn ${characterSubTab === 'notes' ? 'active' : ''}`}
+                    type="button"
+                    onClick={() => {
+                      setCharacterSubTab('notes')
+                    }}
+                  >
+                    Notes
                   </button>
                 </div>
               ) : null}

@@ -18,9 +18,9 @@ type NavItem = {
 const navItems: NavItem[] = [
   { to: '/', label: 'Accueil' },
   { to: '/characters', label: 'Mes personnages' },
-  { to: '/sessions', label: 'Sessions' },
   { to: '/users', label: 'Gestion utilisateurs', roles: ['admin'] },
   { to: '/campaigns', label: 'Gestion campagnes', roles: ['admin', 'gm'] },
+  { to: '/sessions', label: 'Gestion sessions' },
 ]
 
 export function Sidebar({ role, hasJoinedSession = false, isOpen = true, onNavigate, onLogout }: SidebarProps) {

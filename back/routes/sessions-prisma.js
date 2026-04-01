@@ -4,6 +4,8 @@ const express = require('express');
 const prisma = require('../lib/prisma');
 const { authenticateToken, requireRole } = require('../middleware/auth');
 const { broadcastSessionChat } = require('../ws/session-chat');
+const { broadcastSessionInitiative } = require('../ws/session-initiative');
+const { broadcastSessionMap, buildSessionMapPayload } = require('../ws/session-map');
 const { findSessionForChat, getChatDisplayName, displayNamesForUserIds } = require('../lib/session-chat-access');
 const { CHAT_UPLOAD_ROOT, chatImageUploadMiddleware } = require('../lib/session-chat-upload');
 
@@ -356,6 +358,174 @@ router.post(
     }
   },
 );
+
+// ——— Initiative tracker (state HTTP + push WebSocket) ———
+
+function filterInitiativeStateForPlayer(state) {
+  if (!state || typeof state !== 'object') return state;
+  const combatants = Array.isArray(state.combatants) ? state.combatants : [];
+  return {
+    ...state,
+    combatants: combatants.filter((c) => !c?.hidden),
+  };
+}
+
+router.get('/:sessionId/initiative', authenticateToken, async (req, res) => {
+  try {
+    const sessionId = parseInt(req.params.sessionId, 10);
+    if (Number.isNaN(sessionId)) return res.status(400).json({ error: 'ID de session invalide' });
+
+    const session = await findSessionForChat(sessionId, req.user);
+    if (!session) return res.status(404).json({ error: 'Session non trouvée' });
+
+    const row = await prisma.gameSession.findFirst({
+      where: { id: sessionId, isActive: true },
+      select: {
+        initiativeState: true,
+        campaign: { select: { gmId: true, isActive: true } },
+      },
+    });
+    if (!row || !row.campaign?.isActive) return res.status(404).json({ error: 'Session non trouvée' });
+
+    const isOwner = req.user.role_name === 'admin' || row.campaign.gmId === req.user.id;
+    const state = row.initiativeState ?? null;
+    res.json({ success: true, state: isOwner ? state : filterInitiativeStateForPlayer(state), is_owner: isOwner });
+  } catch (error) {
+    console.error('Erreur initiative GET:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+router.put('/:sessionId/initiative', authenticateToken, checkSessionOwnership, async (req, res) => {
+  try {
+    const sessionId = parseInt(req.params.sessionId, 10);
+    if (Number.isNaN(sessionId)) return res.status(400).json({ error: 'ID de session invalide' });
+
+    const nextState = req.body?.state ?? null;
+    if (nextState !== null && typeof nextState !== 'object') {
+      return res.status(400).json({ error: 'State invalide' });
+    }
+
+    const updated = await prisma.gameSession.update({
+      where: { id: sessionId },
+      data: { initiativeState: nextState },
+      select: { id: true, initiativeState: true },
+    });
+
+    broadcastSessionInitiative(sessionId, { type: 'initiative_state', state: updated.initiativeState ?? null });
+
+    res.json({ success: true, state: updated.initiativeState ?? null });
+  } catch (error) {
+    console.error('Erreur initiative PUT:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// ——— Map live (active map per session + push WebSocket) ———
+
+router.get('/:sessionId/map', authenticateToken, async (req, res) => {
+  try {
+    const sessionId = parseInt(req.params.sessionId, 10);
+    if (Number.isNaN(sessionId)) return res.status(400).json({ error: 'ID de session invalide' });
+
+    const session = await findSessionForChat(sessionId, req.user);
+    if (!session) return res.status(404).json({ error: 'Session non trouvée' });
+
+    const payload = await buildSessionMapPayload(sessionId);
+    if (!payload) return res.status(404).json({ error: 'Session non trouvée' });
+    return res.json({ success: true, ...payload });
+  } catch (error) {
+    console.error('Erreur session map GET:', error);
+    return res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+router.put('/:sessionId/map/active', authenticateToken, checkSessionOwnership, async (req, res) => {
+  try {
+    const sessionId = parseInt(req.params.sessionId, 10);
+    if (Number.isNaN(sessionId)) return res.status(400).json({ error: 'ID de session invalide' });
+
+    const raw = req.body?.map_id;
+    const mapId = raw == null || raw === '' ? null : parseInt(String(raw), 10);
+    if (mapId !== null && Number.isNaN(mapId)) return res.status(400).json({ error: 'map_id invalide' });
+
+    const sess = await prisma.gameSession.findFirst({
+      where: { id: sessionId, isActive: true },
+      select: { id: true, campaignId: true },
+    });
+    if (!sess) return res.status(404).json({ error: 'Session non trouvée' });
+
+    if (mapId !== null) {
+      const map = await prisma.campaignMap.findFirst({
+        where: { id: mapId, isActive: true },
+        select: { id: true, campaignId: true },
+      });
+      if (!map || map.campaignId !== sess.campaignId) {
+        return res.status(400).json({ error: 'Carte invalide pour cette session' });
+      }
+    }
+
+    await prisma.gameSession.update({
+      where: { id: sessionId },
+      data: { activeMapId: mapId },
+      select: { id: true },
+    });
+
+    const payload = await buildSessionMapPayload(sessionId);
+    if (payload) broadcastSessionMap(sessionId, payload);
+
+    return res.json({ success: true, active_map_id: mapId });
+  } catch (error) {
+    console.error('Erreur session map active PUT:', error);
+    return res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+router.put('/:sessionId/map/state', authenticateToken, checkSessionOwnership, async (req, res) => {
+  try {
+    const sessionId = parseInt(req.params.sessionId, 10);
+    if (Number.isNaN(sessionId)) return res.status(400).json({ error: 'ID de session invalide' });
+
+    const rawTokens = req.body?.tokens_state ?? null;
+    const rawFog = req.body?.fog_state ?? null;
+    const rawView = req.body?.view_state ?? undefined;
+    if (rawTokens !== null && typeof rawTokens !== 'object') return res.status(400).json({ error: 'tokens_state invalide' });
+    if (rawFog !== null && typeof rawFog !== 'object') return res.status(400).json({ error: 'fog_state invalide' });
+    if (rawView !== undefined && rawView !== null && typeof rawView !== 'object') return res.status(400).json({ error: 'view_state invalide' });
+
+    const sess = await prisma.gameSession.findFirst({
+      where: { id: sessionId, isActive: true },
+      select: { id: true, activeMapId: true },
+    });
+    if (!sess) return res.status(404).json({ error: 'Session non trouvée' });
+    if (!sess.activeMapId) return res.status(400).json({ error: 'Aucune map active' });
+
+    if (rawView !== undefined) {
+      await prisma.gameSession.update({
+        where: { id: sessionId },
+        data: { mapViewState: rawView },
+        select: { id: true },
+      });
+    }
+
+    await prisma.campaignMap.update({
+      where: { id: sess.activeMapId },
+      data: {
+        ...(rawTokens !== undefined ? { tokensState: rawTokens } : {}),
+        ...(rawFog !== undefined ? { fogState: rawFog } : {}),
+      },
+      select: { id: true },
+    });
+
+    const payload = await buildSessionMapPayload(sessionId);
+    if (payload) broadcastSessionMap(sessionId, payload);
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Erreur session map state PUT:', error);
+    return res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
 
 // Obtenir une session par ID
 router.get('/:sessionId', authenticateToken, async (req, res) => {

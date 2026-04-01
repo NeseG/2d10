@@ -12,7 +12,13 @@ function normalizeItemType(value) {
 
 function canEquipItemType(value) {
   const normalized = normalizeItemType(value);
-  return normalized === 'armor' || normalized === 'weapon' || normalized === 'gear';
+  return (
+    normalized === 'armor' ||
+    normalized === 'weapon' ||
+    normalized === 'gear' ||
+    normalized === 'consumable' ||
+    normalized === 'ammunition'
+  );
 }
 
 /** Slot générique pour l’équipement depuis l’inventaire (plusieurs objets autorisés). Créé si absent. */
@@ -131,8 +137,8 @@ router.post('/:characterId/items', authenticateToken, checkCharacterOwnership, a
     const quantitySource =
       rawQuantity === undefined || rawQuantity === null || rawQuantity === '' ? 1 : rawQuantity;
     const quantity = parseInt(quantitySource, 10);
-    if (Number.isNaN(quantity) || quantity < 1) {
-      return res.status(400).json({ error: 'Quantité invalide (minimum 1)' });
+    if (Number.isNaN(quantity) || quantity < 0) {
+      return res.status(400).json({ error: 'Quantité invalide (minimum 0)' });
     }
 
     if (Number.isNaN(itemId)) return res.status(400).json({ error: 'ID de l\'objet requis' });
@@ -186,7 +192,9 @@ router.put('/:characterId/items/:inventoryId', authenticateToken, checkCharacter
     if (is_equipped !== undefined) {
       if (is_equipped) {
         if (!canEquipItemType(existing.item?.type)) {
-          return res.status(400).json({ error: 'Seuls les items de type armor, weapon ou gear peuvent être équipés.' });
+          return res.status(400).json({
+            error: 'Seuls les items de type armor, weapon, gear, consumable ou ammunition peuvent être équipés.',
+          });
         }
 
         let slotId = parseInt(equipment_slot_id, 10);

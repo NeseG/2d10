@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { apiDelete, apiGet, apiPost, apiPut } from '../../../shared/api/client'
 import { useAuth } from '../../../app/hooks/useAuth'
 import { useSnackbar } from '../../../app/hooks/useSnackbar'
@@ -103,7 +103,13 @@ function isEquipableItemType(typeValue?: string | null): boolean {
   const normalized = String(typeValue || '')
     .trim()
     .toLowerCase()
-  return normalized === 'armor' || normalized === 'weapon' || normalized === 'gear'
+  return (
+    normalized === 'armor' ||
+    normalized === 'weapon' ||
+    normalized === 'gear' ||
+    normalized === 'consumable' ||
+    normalized === 'ammunition'
+  )
 }
 
 type PurseDraft = {
@@ -126,6 +132,61 @@ const DND5E_ITEM_TYPES: Array<{ value: string; label: string }> = [
   { value: 'other', label: 'other' },
 ]
 
+const ITEM_CATEGORY_SUGGESTIONS = [
+  'Melee Weapon',
+  'Ranged Weapon',
+  'Magic Weapon',
+  'Light Armor',
+  'Medium Armor',
+  'Heavy Armor',
+  'Magic Armor',
+  'Shield',
+  'Magic Shield',
+  'Adventuring Gear',
+  'Tool',
+  'Artisan Tool',
+  'Musical Instrument',
+  'Gaming Set',
+  'Mount',
+  'Vehicle',
+  'Ammunition',
+  'Consumable',
+  'Potion',
+  'Scroll',
+  'Wondrous Item',
+  'Ring',
+  'Rod',
+  'Staff',
+  'Wand',
+  'Artifact',
+  'Wonderous Item',
+]
+
+const ITEM_SUBCATEGORY_SUGGESTIONS = [
+  'Simple Melee',
+  'Martial Melee',
+  'Simple Ranged',
+  'Martial Ranged',
+  'Light',
+  'Medium',
+  'Heavy',
+  'Shield',
+  'Arcane Focus',
+  'Druidic Focus',
+  'Holy Symbol',
+  'Ammunition',
+  'Potion',
+  'Scroll',
+  'Common',
+  'Uncommon',
+  'Rare',
+  'Very Rare',
+  'Legendary',
+  'Artifact',
+  'Varies',
+  'Unknown',
+]
+
 function parseJsonOrNull(raw: string): unknown | null {
   if (!raw.trim()) return null
   try {
@@ -133,6 +194,47 @@ function parseJsonOrNull(raw: string): unknown | null {
   } catch {
     return null
   }
+}
+
+function extractArmorDexBonus(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const armorClass = (value as Record<string, unknown>).armor_class
+  if (!armorClass || typeof armorClass !== 'object' || Array.isArray(armorClass)) return false
+  return Boolean((armorClass as Record<string, unknown>).dex_bonus)
+}
+
+function parseItemRange(value: unknown): { normal: string; long: string } {
+  if (value == null) return { normal: '', long: '' }
+  if (typeof value === 'number') return { normal: String(value), long: '' }
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    const obj = value as Record<string, unknown>
+    const normal = obj.normal != null ? String(obj.normal) : ''
+    const long = obj.long != null ? String(obj.long) : ''
+    return { normal, long }
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return { normal: '', long: '' }
+    try {
+      return parseItemRange(JSON.parse(trimmed) as unknown)
+    } catch {
+      const [normal, long] = trimmed.split('/').map((entry) => entry.trim())
+      if (long !== undefined) return { normal: normal || '', long: long || '' }
+      return { normal: trimmed, long: '' }
+    }
+  }
+  return { normal: String(value), long: '' }
+}
+
+function serializeItemRange(normal: string, long: string): string | null {
+  const trimmedNormal = normal.trim()
+  const trimmedLong = long.trim()
+  if (!trimmedNormal && !trimmedLong) return null
+  if (trimmedNormal && !trimmedLong) return trimmedNormal
+  return JSON.stringify({
+    normal: trimmedNormal ? Number(trimmedNormal) || trimmedNormal : null,
+    long: trimmedLong ? Number(trimmedLong) || trimmedLong : null,
+  })
 }
 
 function computeDraftGoldValue(draft: PurseDraft | null): number {
@@ -200,6 +302,9 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([])
   const [inventoryQuantityDraft, setInventoryQuantityDraft] = useState<Record<number, string>>({})
   const [savingQuantityId, setSavingQuantityId] = useState<number | null>(null)
+  const [inventorySearch, setInventorySearch] = useState('')
+  const [inventoryFiltersOpen, setInventoryFiltersOpen] = useState(false)
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([])
 
   const [isCreateItemModalOpen, setIsCreateItemModalOpen] = useState(false)
   const [createItemSaving, setCreateItemSaving] = useState(false)
@@ -210,6 +315,7 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
     quantity: '1',
     type: 'other',
     category: '',
+    subcategory: '',
     rarity: '',
     cost: '',
     weight: '',
@@ -225,7 +331,6 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
   const [editItemId, setEditItemId] = useState<number | null>(null)
   const [editInventoryLineId, setEditInventoryLineId] = useState<number | null>(null)
   const [editItemForm, setEditItemForm] = useState<EditItemFormState>({
-    index: '',
     name: '',
     description: '',
     type: 'other',
@@ -235,8 +340,10 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
     weight: '',
     damage: '',
     damageType: '',
-    range: '',
+    rangeNormal: '',
+    rangeLong: '',
     armorClass: '',
+    armorDexBonus: false,
     stealthDisadvantage: false,
     propertiesJson: '',
   })
@@ -376,6 +483,24 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
     })
   }, [inventoryItems])
 
+  const availableCategories = useMemo(
+    () =>
+      Array.from(new Set(inventoryItems.map((item) => item.category?.trim() || 'Sans catégorie'))).sort((a, b) =>
+        a.localeCompare(b, 'fr', { sensitivity: 'base' }),
+      ),
+    [inventoryItems],
+  )
+
+  const filteredInventoryItems = useMemo(() => {
+    const normalizedSearch = inventorySearch.trim().toLowerCase()
+    return inventoryItems.filter((item) => {
+      const itemCategory = item.category?.trim() || 'Sans catégorie'
+      const matchesSearch = !normalizedSearch || String(item.name || '').toLowerCase().includes(normalizedSearch)
+      const matchesCategory = selectedCategories.length === 0 || selectedCategories.includes(itemCategory)
+      return matchesSearch && matchesCategory
+    })
+  }, [inventoryItems, inventorySearch, selectedCategories])
+
   function schedulePursePersist() {
     if (purseSaveTimerRef.current) clearTimeout(purseSaveTimerRef.current)
     purseSaveTimerRef.current = setTimeout(() => {
@@ -429,10 +554,10 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
     const row = inventoryItems.find((x) => x.id === inventoryLineId)
     if (!row) return
 
-    if (Number.isNaN(parsed) || parsed < 1) {
+    if (Number.isNaN(parsed) || parsed < 0) {
       setInventoryQuantityDraft((d) => ({ ...d, [inventoryLineId]: String(row.quantity) }))
       showSnackbar({
-        message: 'La quantité doit être un entier au moins égal à 1.',
+        message: 'La quantité doit être un entier au moins égal à 0.',
         severity: 'error',
       })
       return
@@ -460,11 +585,52 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
     }
   }
 
+  async function handleInventoryQuantityStep(inventoryLineId: number, delta: number) {
+    const row = inventoryItems.find((x) => x.id === inventoryLineId)
+    if (!row || savingQuantityId === inventoryLineId) return
+    const currentDraft = Number.parseInt(String(inventoryQuantityDraft[inventoryLineId] ?? row.quantity).trim(), 10)
+    const safeCurrent = Number.isNaN(currentDraft) ? row.quantity : currentDraft
+    const nextQuantity = Math.max(0, safeCurrent + delta)
+    setInventoryQuantityDraft((d) => ({ ...d, [inventoryLineId]: String(nextQuantity) }))
+    await handleInventoryQuantityBlurWithValue(inventoryLineId, nextQuantity, row.quantity)
+  }
+
+  async function handleInventoryQuantityBlurWithValue(inventoryLineId: number, parsed: number, fallbackQuantity: number) {
+    if (Number.isNaN(parsed) || parsed < 0) {
+      setInventoryQuantityDraft((d) => ({ ...d, [inventoryLineId]: String(fallbackQuantity) }))
+      showSnackbar({
+        message: 'La quantité doit être un entier au moins égal à 0.',
+        severity: 'error',
+      })
+      return
+    }
+
+    if (parsed === fallbackQuantity) {
+      setInventoryQuantityDraft((d) => ({ ...d, [inventoryLineId]: String(parsed) }))
+      return
+    }
+
+    setSavingQuantityId(inventoryLineId)
+    try {
+      await apiPut(`/api/inventory/${characterId}/items/${inventoryLineId}`, { quantity: parsed }, token)
+      setInventoryItems((prev) => prev.map((it) => (it.id === inventoryLineId ? { ...it, quantity: parsed } : it)))
+      setInventoryQuantityDraft((d) => ({ ...d, [inventoryLineId]: String(parsed) }))
+    } catch (err) {
+      setInventoryQuantityDraft((d) => ({ ...d, [inventoryLineId]: String(fallbackQuantity) }))
+      showSnackbar({
+        message: err instanceof Error ? err.message : 'Erreur lors de la mise à jour de la quantité.',
+        severity: 'error',
+      })
+    } finally {
+      setSavingQuantityId(null)
+    }
+  }
+
   async function handleToggleEquipped(item: InventoryItem, nextIsEquipped: boolean) {
     if (!characterId) return
     if (!isEquipableItemType(item.type)) {
       showSnackbar({
-        message: 'Seuls les items de type armor, weapon ou gear peuvent être équipés.',
+        message: 'Seuls les items de type armor, weapon, gear, consumable ou ammunition peuvent être équipés.',
         severity: 'error',
       })
       return
@@ -493,6 +659,7 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
       quantity: '1',
       type: 'other',
       category: '',
+      subcategory: '',
       rarity: '',
       cost: '',
       weight: '',
@@ -515,6 +682,7 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
         description: newItemForm.description.trim() || null,
         type: newItemForm.type,
         category: newItemForm.category.trim() || null,
+        subcategory: newItemForm.subcategory.trim() || null,
         cost: newItemForm.cost.trim() || null,
         weight: newItemForm.weight.trim() === '' ? null : Number.parseInt(newItemForm.weight, 10),
       }
@@ -573,8 +741,9 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
     try {
       const itemRes = await apiGet<{ item: ItemDetail }>(`/api/items/${params.itemId}`, token)
       const it = itemRes.item
+      const armorDexBonus = extractArmorDexBonus(it.raw) || extractArmorDexBonus(it.properties)
+      const parsedRange = parseItemRange(it.range)
       setEditItemForm({
-        index: (it.index as string) ?? '',
         name: it.name ?? '',
         description: it.description ?? '',
         type: (it.type as string) ?? 'other',
@@ -584,8 +753,10 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
         weight: it.weight != null ? String(it.weight) : '',
         damage: it.damage ?? '',
         damageType: it.damageType ?? '',
-        range: it.range ?? '',
+        rangeNormal: parsedRange.normal,
+        rangeLong: parsedRange.long,
         armorClass: it.armorClass != null ? String(it.armorClass) : '',
+        armorDexBonus,
         stealthDisadvantage: Boolean(it.stealthDisadvantage),
         propertiesJson: it.properties ? JSON.stringify(it.properties, null, 2) : '',
       })
@@ -604,10 +775,22 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
     if (!editItemId) return
     setEditItemSaving(true)
     try {
+      const parsedProperties = parseJsonOrNull(editItemForm.propertiesJson)
+      const armorProperties =
+        editItemForm.type === 'armor'
+          ? {
+              ...(parsedProperties && typeof parsedProperties === 'object' && !Array.isArray(parsedProperties)
+                ? (parsedProperties as Record<string, unknown>)
+                : {}),
+              armor_class: {
+                base: editItemForm.armorClass.trim() === '' ? null : Number.parseInt(editItemForm.armorClass, 10),
+                dex_bonus: Boolean(editItemForm.armorDexBonus),
+              },
+            }
+          : parsedProperties
       await apiPut(
         `/api/items/${editItemId}`,
         {
-          index: editItemForm.index.trim() || undefined,
           name: editItemForm.name.trim(),
           description: editItemForm.description.trim() || null,
           type: editItemForm.type,
@@ -617,10 +800,11 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
           weight: editItemForm.weight.trim() === '' ? null : Number.parseInt(editItemForm.weight, 10),
           damage: editItemForm.damage.trim() || null,
           damageType: editItemForm.damageType.trim() || null,
-          range: editItemForm.range.trim() || null,
+          range: serializeItemRange(editItemForm.rangeNormal, editItemForm.rangeLong),
           armorClass: editItemForm.armorClass.trim() === '' ? null : Number.parseInt(editItemForm.armorClass, 10),
+          armorDexBonus: Boolean(editItemForm.armorDexBonus),
           stealthDisadvantage: Boolean(editItemForm.stealthDisadvantage),
-          properties: parseJsonOrNull(editItemForm.propertiesJson),
+          properties: armorProperties,
         },
         token,
       )
@@ -760,6 +944,12 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
     }
   }
 
+  function toggleCategoryFilter(category: string) {
+    setSelectedCategories((prev) =>
+      prev.includes(category) ? prev.filter((entry) => entry !== category) : [...prev, category],
+    )
+  }
+
   return (
     <div>
       {inventoryLoading && <p>Chargement inventaire...</p>}
@@ -875,6 +1065,13 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
             <button className="btn" type="button" onClick={() => void openCreateItemModal()}>
               Créer un item
             </button>
+            <button
+              className="btn btn-secondary"
+              type="button"
+              onClick={() => setInventoryFiltersOpen((prev) => !prev)}
+            >
+              Filtres
+            </button>
             {canImportDndEquipment ? (
               <button className="btn btn-secondary" type="button" onClick={() => void openDndEquipmentModal()}>
                 Importer (SRD D&D)
@@ -882,55 +1079,123 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
             ) : null}
           </div>
 
+          <div className="inventory-search-row">
+            <input
+              className="inventory-search-input"
+              type="search"
+              placeholder="Rechercher un item..."
+              value={inventorySearch}
+              onChange={(event) => setInventorySearch(event.target.value)}
+            />
+          </div>
+
+          {inventoryFiltersOpen ? (
+            <div className="inventory-filters-panel">
+              <div className="inventory-filters-head">
+                <strong>Catégories</strong>
+                {selectedCategories.length > 0 ? (
+                  <button
+                    className="btn btn-secondary btn-small"
+                    type="button"
+                    onClick={() => setSelectedCategories([])}
+                  >
+                    Réinitialiser
+                  </button>
+                ) : null}
+              </div>
+              <div className="inventory-filter-tags">
+                {availableCategories.length === 0 ? (
+                  <span className="inventory-filter-empty">Aucune catégorie</span>
+                ) : (
+                  availableCategories.map((category) => (
+                    <label key={category} className="inventory-filter-tag">
+                      <input
+                        type="checkbox"
+                        checked={selectedCategories.includes(category)}
+                        onChange={() => toggleCategoryFilter(category)}
+                      />
+                      <span>{category}</span>
+                    </label>
+                  ))
+                )}
+              </div>
+            </div>
+          ) : null}
+
           {inventoryItems.length === 0 ? (
             <p>Aucun item dans l’inventaire.</p>
+          ) : filteredInventoryItems.length === 0 ? (
+            <p>Aucun item ne correspond à la recherche ou aux filtres.</p>
           ) : (
             <div className="table-wrap inventory-table-wrap">
               <table className="table inventory-items-table">
                 <thead>
                   <tr>
                     <th>Nom</th>
-                    <th>Quantité</th>
+                    <th>Qty</th>
                     <th>Équipé</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {inventoryItems.map((item) => (
+                  {filteredInventoryItems.map((item) => (
                     <tr
                       key={item.id}
                       className={item.item_id ? 'clickable-row' : undefined}
                       onClick={() => (item.item_id ? void openItemDetailsModal(item) : undefined)}
                     >
                       <td data-label="Nom">{item.name ?? '—'}</td>
-                      <td data-label="Quantité">
-                        <input
-                          type="number"
-                          className="inventory-qty-input"
-                          min={1}
-                          disabled={savingQuantityId === item.id}
-                          value={inventoryQuantityDraft[item.id] ?? String(item.quantity)}
-                          onChange={(event) =>
-                            setInventoryQuantityDraft((d) => ({
-                              ...d,
-                              [item.id]: event.target.value,
-                            }))
-                          }
-                          onBlur={() => void handleInventoryQuantityBlur(item.id)}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter') {
-                              ;(event.target as HTMLInputElement).blur()
+                      <td data-label="Qty">
+                        <div className="inventory-qty-control" onClick={(event) => event.stopPropagation()}>
+                          <button
+                            type="button"
+                            className="inventory-qty-step"
+                            disabled={savingQuantityId === item.id}
+                            onClick={() => void handleInventoryQuantityStep(item.id, -1)}
+                            aria-label={`Diminuer la quantité de ${item.name ?? 'cet objet'}`}
+                          >
+                            -
+                          </button>
+                          <input
+                            type="number"
+                            className="inventory-qty-input"
+                            min={0}
+                            disabled={savingQuantityId === item.id}
+                            value={inventoryQuantityDraft[item.id] ?? String(item.quantity)}
+                            onChange={(event) =>
+                              setInventoryQuantityDraft((d) => ({
+                                ...d,
+                                [item.id]: event.target.value,
+                              }))
                             }
-                          }}
-                          onClick={(event) => event.stopPropagation()}
-                        />
+                            onBlur={() => void handleInventoryQuantityBlur(item.id)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') {
+                                ;(event.target as HTMLInputElement).blur()
+                              }
+                            }}
+                          />
+                          <button
+                            type="button"
+                            className="inventory-qty-step"
+                            disabled={savingQuantityId === item.id}
+                            onClick={() => void handleInventoryQuantityStep(item.id, 1)}
+                            aria-label={`Augmenter la quantité de ${item.name ?? 'cet objet'}`}
+                          >
+                            +
+                          </button>
+                        </div>
                       </td>
                       <td data-label="Équipé">
                         <input
                           type="checkbox"
                           checked={Boolean(item.is_equipped)}
                           disabled={!isEquipableItemType(item.type)}
-                          title={!isEquipableItemType(item.type) ? 'Disponible uniquement pour armor, weapon et gear' : undefined}
+                          title={
+                            !isEquipableItemType(item.type)
+                              ? 'Disponible uniquement pour armor, weapon, gear, consumable et ammunition'
+                              : undefined
+                          }
                           onChange={(event) => {
                             event.stopPropagation()
                             void handleToggleEquipped(item, event.target.checked)
@@ -1005,7 +1270,32 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
               </select>
 
               <label htmlFor="new-item-category">Catégorie</label>
-              <input id="new-item-category" type="text" value={newItemForm.category} onChange={(event) => setNewItemForm((prev) => ({ ...prev, category: event.target.value }))} />
+              <input
+                id="new-item-category"
+                type="text"
+                list="new-item-category-suggestions"
+                value={newItemForm.category}
+                onChange={(event) => setNewItemForm((prev) => ({ ...prev, category: event.target.value }))}
+              />
+              <datalist id="new-item-category-suggestions">
+                {ITEM_CATEGORY_SUGGESTIONS.map((category) => (
+                  <option key={category} value={category} />
+                ))}
+              </datalist>
+
+              <label htmlFor="new-item-subcategory">Sous-catégorie</label>
+              <input
+                id="new-item-subcategory"
+                type="text"
+                list="new-item-subcategory-suggestions"
+                value={newItemForm.subcategory}
+                onChange={(event) => setNewItemForm((prev) => ({ ...prev, subcategory: event.target.value }))}
+              />
+              <datalist id="new-item-subcategory-suggestions">
+                {ITEM_SUBCATEGORY_SUGGESTIONS.map((subcategory) => (
+                  <option key={subcategory} value={subcategory} />
+                ))}
+              </datalist>
 
               {createItemKind === 'magic' ? (
                 <>
@@ -1030,7 +1320,7 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
               <textarea id="new-item-description" rows={3} value={newItemForm.description} onChange={(event) => setNewItemForm((prev) => ({ ...prev, description: event.target.value }))} />
 
               <label htmlFor="new-item-quantity">Quantité</label>
-              <input id="new-item-quantity" type="number" min={1} value={newItemForm.quantity} onChange={(event) => setNewItemForm((prev) => ({ ...prev, quantity: event.target.value }))} />
+              <input id="new-item-quantity" type="number" min={0} value={newItemForm.quantity} onChange={(event) => setNewItemForm((prev) => ({ ...prev, quantity: event.target.value }))} />
 
               <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
                 <button className="btn" type="submit" disabled={createItemSaving}>

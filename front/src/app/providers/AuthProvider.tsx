@@ -1,7 +1,7 @@
 import { createContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { AuthUser } from '../../shared/types'
-import { fetchProfile, login } from '../../features/auth/services/authService'
+import { fetchProfile, login, register } from '../../features/auth/services/authService'
 
 type AuthContextValue = {
   user: AuthUser | null
@@ -9,6 +9,7 @@ type AuthContextValue = {
   isLoading: boolean
   isAuthenticated: boolean
   loginWithCredentials: (email: string, password: string) => Promise<void>
+  registerWithCredentials: (username: string, email: string, password: string) => Promise<void>
   refreshProfile: () => Promise<void>
   logout: () => void
 }
@@ -46,6 +47,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setToken(nextToken)
           setUser(nextUser)
           localStorage.setItem('auth_token', nextToken)
+        } finally {
+          setIsLoading(false)
+        }
+      },
+      registerWithCredentials: async (username, email, password) => {
+        setIsLoading(true)
+        try {
+          const { token: nextToken } = await register({ username, email, password })
+          setToken(nextToken)
+          localStorage.setItem('auth_token', nextToken)
+          const nextUser = await fetchProfile(nextToken)
+          setUser(nextUser)
         } finally {
           setIsLoading(false)
         }

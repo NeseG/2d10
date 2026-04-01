@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom'
 
 type CharacterRow = Character & {
   ownerUsername?: string | null
+  campaigns: Array<{ id: number; name: string }>
 }
 
 export function CharactersPage() {
@@ -15,7 +16,9 @@ export function CharactersPage() {
   const { token } = useAuth()
   const { showSnackbar } = useSnackbar()
   const [characters, setCharacters] = useState<CharacterRow[]>([])
+  const [selectedCharacter, setSelectedCharacter] = useState<CharacterRow | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [name, setName] = useState('')
   const [race, setRace] = useState('')
@@ -33,6 +36,9 @@ export function CharactersPage() {
           race: string
           level: number
           user?: { username?: string | null } | null
+          campaignCharacters?: Array<{
+            campaign?: { id: number; name: string } | null
+          }> | null
         }>
       }>('/api/characters', token)
       setCharacters(
@@ -43,6 +49,10 @@ export function CharactersPage() {
           race: c.race,
           level: c.level,
           ownerUsername: c.user?.username ?? null,
+          campaigns:
+            c.campaignCharacters
+              ?.map((cc) => cc.campaign)
+              .filter((campaign): campaign is { id: number; name: string } => Boolean(campaign)) ?? [],
         })),
       )
     } catch (err) {
@@ -96,7 +106,7 @@ export function CharactersPage() {
 
   return (
     <Card title="Mes personnages">
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: '0.75rem' }}>
         <button className="btn" type="button" onClick={() => setIsModalOpen(true)}>
           Créer un personnage
         </button>
@@ -110,6 +120,7 @@ export function CharactersPage() {
               <th>Classe</th>
               <th>Race</th>
               <th>Niveau</th>
+              <th>Campagnes</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -121,7 +132,19 @@ export function CharactersPage() {
                 <td data-label="Classe">{character.className}</td>
                 <td data-label="Race">{character.race}</td>
                 <td data-label="Niveau">{character.level}</td>
+                <td data-label="Campagnes">{character.campaigns.length}</td>
                 <td data-label="Actions">
+                  <button
+                    className="btn btn-small btn-secondary"
+                    type="button"
+                    onClick={() => {
+                      setSelectedCharacter(character)
+                      setIsDetailsModalOpen(true)
+                    }}
+                    style={{ marginRight: '0.5rem' }}
+                  >
+                    Détails
+                  </button>
                   <button
                     className="btn btn-small"
                     type="button"
@@ -135,6 +158,45 @@ export function CharactersPage() {
           </tbody>
         </table>
       </div>
+
+      {isDetailsModalOpen && selectedCharacter && (
+        <div className="modal-backdrop modal-backdrop-stacked" onClick={() => setIsDetailsModalOpen(false)}>
+          <div className="modal-card" onClick={(event) => event.stopPropagation()}>
+            <div className="item-details-header" style={{ marginBottom: '0.75rem' }}>
+              <div>
+                <div className="item-details-header-name">{selectedCharacter.name}</div>
+                <div className="item-details-header-submeta">
+                  {selectedCharacter.className} • Niveau {selectedCharacter.level} • {selectedCharacter.race}
+                </div>
+              </div>
+              <button className="btn btn-small btn-secondary" type="button" onClick={() => setIsDetailsModalOpen(false)}>
+                Fermer
+              </button>
+            </div>
+
+            <div style={{ display: 'grid', gap: '0.5rem' }}>
+              <div>
+                <strong>Joueur</strong> : {selectedCharacter.ownerUsername ?? '—'}
+              </div>
+              <div>
+                <strong>Campagnes</strong> : {selectedCharacter.campaigns.length}
+              </div>
+              <div>
+                <strong>Liste</strong> :
+                {selectedCharacter.campaigns.length === 0 ? (
+                  <div style={{ marginTop: '0.25rem', color: 'var(--muted)' }}>Aucune campagne.</div>
+                ) : (
+                  <ul style={{ margin: '0.25rem 0 0', paddingLeft: '1.1rem' }}>
+                    {selectedCharacter.campaigns.map((c) => (
+                      <li key={c.id}>{c.name}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isModalOpen && (
         <div className="modal-backdrop" onClick={() => !isSaving && setIsModalOpen(false)}>

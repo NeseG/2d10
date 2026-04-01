@@ -1,7 +1,27 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000'
+/** Chaîne vide = même origine que la page (recommandé avec le proxy Vite : LAN, Docker). */
+function resolveApiBaseUrl(): string {
+  const v = import.meta.env.VITE_API_BASE_URL as string | undefined
+  if (v === '') return ''
+  if (v != null && v.length > 0) return v
+  return 'http://localhost:3000'
+}
 
-export function getApiBaseUrl() {
+const API_BASE_URL = resolveApiBaseUrl()
+
+export function getApiBaseUrl(): string {
   return API_BASE_URL
+}
+
+/** Base WebSocket : si l’API est same-origin, reprend le host du navigateur (ex. IP Wi‑Fi). */
+export function getWsApiBaseUrl(): string {
+  if (API_BASE_URL) {
+    return API_BASE_URL.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:')
+  }
+  if (typeof window === 'undefined') {
+    return 'ws://127.0.0.1:3000'
+  }
+  const { protocol, host } = window.location
+  return protocol === 'https:' ? `wss://${host}` : `ws://${host}`
 }
 
 /** Évite un plantage `JSON.parse` si le serveur renvoie du HTML (404 SPA, mauvaise URL, route API manquante). */
@@ -64,6 +84,23 @@ export async function apiPost<T>(
 export async function apiPostFormData<T>(path: string, formData: FormData, token: string): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: formData,
+  })
+
+  const body = await readApiJson<T>(response)
+  if (!response.ok) {
+    throw new Error(body.error ?? `Erreur API (${response.status})`)
+  }
+
+  return body
+}
+
+export async function apiPutFormData<T>(path: string, formData: FormData, token: string): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'PUT',
     headers: {
       Authorization: `Bearer ${token}`,
     },

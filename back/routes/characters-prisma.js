@@ -1,6 +1,12 @@
 const express = require('express');
+const fs = require('fs/promises');
+const path = require('path');
 const prisma = require('../lib/prisma');
 const { authenticateToken } = require('../middleware/auth');
+const {
+  CHARACTER_AVATAR_UPLOAD_ROOT,
+  characterAvatarUploadMiddleware,
+} = require('../lib/character-avatar-upload');
 
 const router = express.Router();
 const DND_SKILLS = [
@@ -39,6 +45,11 @@ async function getAccessibleCharacterOrNull(characterId, user) {
     ...(user.role_name !== 'admin' && user.role_name !== 'gm' ? { userId: user.id } : {}),
   };
   return prisma.character.findFirst({ where, select: { id: true } });
+}
+
+function buildCharacterAvatarUrl(character) {
+  if (!character?.id || !character?.avatarImageKey) return null;
+  return `/uploads/character-avatars/${character.id}/${character.avatarImageKey}`;
 }
 
 function normalizeSkills(skillsInput) {
@@ -103,6 +114,16 @@ router.get('/', authenticateToken, async (req, res) => {
             email: true
           }
         },
+        campaignCharacters: {
+          include: {
+            campaign: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
         grimoire: {
           include: {
             spell: {
@@ -127,7 +148,10 @@ router.get('/', authenticateToken, async (req, res) => {
 
     res.json({
       success: true,
-      characters,
+      characters: characters.map((character) => ({
+        ...character,
+        avatar_url: buildCharacterAvatarUrl(character),
+      })),
       count: characters.length
     });
   } catch (error) {
@@ -228,7 +252,10 @@ router.post('/', authenticateToken, async (req, res) => {
     res.status(201).json({
       success: true,
       message: 'Personnage créé avec succès',
-      character
+      character: {
+        ...character,
+        avatar_url: buildCharacterAvatarUrl(character),
+      }
     });
   } catch (error) {
     console.error('Erreur lors de la création du personnage:', error);
@@ -280,7 +307,9 @@ router.get('/:id', authenticateToken, async (req, res) => {
               select: {
                 id: true,
                 name: true,
-                status: true
+                status: true,
+                currentPlayers: true,
+                maxPlayers: true,
               }
             }
           }
@@ -297,6 +326,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
       character: {
         ...character,
         hitPointsMax: character.hitPoints ?? null,
+        avatar_url: buildCharacterAvatarUrl(character),
       },
     });
   } catch (error) {
@@ -484,6 +514,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
     }
 
     const {
+      userId: nextOwnerUserId,
       skills,
       savingThrows,
       spellSlots,
@@ -515,6 +546,25 @@ router.put('/:id', authenticateToken, async (req, res) => {
       notes,
     } = req.body;
 
+    let ownerPatch = {};
+    if (nextOwnerUserId !== undefined) {
+      if (userRole !== 'admin' && userRole !== 'gm') {
+        return res.status(403).json({ error: 'Accès refusé. Privilèges administrateur ou GM requis.' });
+      }
+      const parsedOwnerId = Number.parseInt(String(nextOwnerUserId), 10);
+      if (!Number.isFinite(parsedOwnerId)) {
+        return res.status(400).json({ error: 'userId invalide' });
+      }
+      const targetUser = await prisma.user.findFirst({
+        where: { id: parsedOwnerId, isActive: true },
+        select: { id: true },
+      });
+      if (!targetUser) {
+        return res.status(400).json({ error: 'Utilisateur cible introuvable ou inactif' });
+      }
+      ownerPatch = { userId: parsedOwnerId };
+    }
+
     const normalizedSkills = normalizeSkills(skills);
     const normalizedSavingThrows = normalizeSavingThrows(savingThrows);
     const normalizedSpellSlots = normalizeSpellSlots(spellSlots);
@@ -522,6 +572,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
       const nextCharacter = await tx.character.update({
         where: { id: parseInt(id) },
         data: {
+          ...ownerPatch,
           ...(name !== undefined ? { name } : {}),
           ...(race !== undefined ? { race } : {}),
           ...(characterClass !== undefined ? { class: characterClass } : {}),
@@ -648,11 +699,52 @@ router.put('/:id', authenticateToken, async (req, res) => {
       message: 'Personnage modifié avec succès',
       character:
         updatedCharacter
-          ? { ...updatedCharacter, hitPointsMax: updatedCharacter.hitPoints ?? null }
+          ? {
+              ...updatedCharacter,
+              hitPointsMax: updatedCharacter.hitPoints ?? null,
+              avatar_url: buildCharacterAvatarUrl(updatedCharacter),
+            }
           : updatedCharacter
     });
   } catch (error) {
     console.error('Erreur lors de la modification du personnage:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+router.put('/:id/avatar', authenticateToken, characterAvatarUploadMiddleware, async (req, res) => {
+  try {
+    const characterId = parseInt(req.params.id, 10);
+    if (Number.isNaN(characterId)) return res.status(400).json({ error: 'ID personnage invalide' });
+
+    const accessible = await getAccessibleCharacterOrNull(characterId, req.user);
+    if (!accessible) return res.status(404).json({ error: 'Personnage non trouvé' });
+    if (!req.file) return res.status(400).json({ error: 'Image requise' });
+
+    const existing = await prisma.character.findUnique({
+      where: { id: characterId },
+      select: { id: true, avatarImageKey: true },
+    });
+    if (!existing) return res.status(404).json({ error: 'Personnage non trouvé' });
+
+    if (existing.avatarImageKey && existing.avatarImageKey !== req.file.filename) {
+      const previousPath = path.join(CHARACTER_AVATAR_UPLOAD_ROOT, String(characterId), existing.avatarImageKey);
+      await fs.unlink(previousPath).catch(() => {});
+    }
+
+    const updated = await prisma.character.update({
+      where: { id: characterId },
+      data: { avatarImageKey: req.file.filename },
+      select: { id: true, avatarImageKey: true },
+    });
+
+    res.json({
+      success: true,
+      avatar_url: buildCharacterAvatarUrl(updated),
+      message: 'Avatar mis à jour',
+    });
+  } catch (error) {
+    console.error('Erreur lors de la mise à jour de l\'avatar personnage:', error);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });

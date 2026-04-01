@@ -12,6 +12,18 @@ type LoginResponse = {
   }
 }
 
+type RegisterResponse = {
+  message: string
+  token: string
+  user: {
+    id: number
+    username: string
+    email: string
+    role_id: number
+    created_at: string
+  }
+}
+
 type ProfileResponse = {
   user: {
     id: number
@@ -40,6 +52,13 @@ export async function login(payload: { email: string; password: string }) {
   return {
     token: response.token,
     user: normalizeUser(response.user),
+  }
+}
+
+export async function register(payload: { username: string; email: string; password: string }) {
+  const response = await apiPost<RegisterResponse>('/api/auth/register', payload)
+  return {
+    token: response.token,
   }
 }
 

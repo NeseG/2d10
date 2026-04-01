@@ -137,7 +137,7 @@ router.post(
 
       if (Number.isNaN(characterId)) return res.status(400).json({ error: 'ID personnage invalide' });
       if (Number.isNaN(magicItemId)) return res.status(400).json({ error: 'magic_item_id requis' });
-      if (Number.isNaN(quantity) || quantity < 1) return res.status(400).json({ error: 'Quantité invalide' });
+      if (Number.isNaN(quantity) || quantity < 0) return res.status(400).json({ error: 'Quantité invalide' });
 
       const [character, magicItem] = await Promise.all([
         prisma.character.findFirst({ where: { id: characterId, isActive: true }, select: { id: true } }),

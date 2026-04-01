@@ -1,9 +1,12 @@
 const http = require('http');
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 const config = require('./config');
 const prisma = require('./lib/prisma');
 const { attachSessionChatWss } = require('./ws/session-chat');
+const { attachSessionInitiativeWss } = require('./ws/session-initiative');
+const { attachSessionMapWss } = require('./ws/session-map');
 
 // Import des routes (nouvelles routes Prisma)
 const authRoutes = require('./routes/auth-prisma');
@@ -17,6 +20,7 @@ const purseRoutes = require('./routes/purse-prisma');
 const campaignRoutes = require('./routes/campaigns-prisma');
 const grimoireRoutes = require('./routes/grimoire-prisma');
 const sessionRoutes = require('./routes/sessions-prisma');
+const usersRoutes = require('./routes/users-prisma');
 const dnd5eEquipmentRoutes = require('./routes/dnd5e-equipment-prisma');
 const dnd5eMagicItemsRoutes = require('./routes/dnd5e-magic-items-prisma');
 const dnd5eSpellsRoutes = require('./routes/dnd5e-spells-prisma');
@@ -29,6 +33,7 @@ const port = config.port;
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Initialiser la base de données avec Prisma
 async function initializeDatabase() {
@@ -60,12 +65,15 @@ app.use('/api/purse', purseRoutes);
 app.use('/api/campaigns', campaignRoutes);
 app.use('/api/grimoire', grimoireRoutes);
 app.use('/api/sessions', sessionRoutes);
+app.use('/api/users', usersRoutes);
 app.use('/api/dnd5e', dnd5eEquipmentRoutes);
 app.use('/api/dnd5e', dnd5eMagicItemsRoutes);
 app.use('/api/dnd5e', dnd5eSpellsRoutes);
 app.use('/api/spells', spellRoutes);
 
 attachSessionChatWss(server);
+attachSessionInitiativeWss(server);
+attachSessionMapWss(server);
 
 // Route de test
 app.get('/', (req, res) => {

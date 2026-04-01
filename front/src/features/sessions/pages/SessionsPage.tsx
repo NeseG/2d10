@@ -78,6 +78,7 @@ export function SessionsPage() {
     selectedCharacterId: 0,
   })
   const [deletingSessionId, setDeletingSessionId] = useState<number | null>(null)
+  const [deleteSessionTarget, setDeleteSessionTarget] = useState<{ id: number; title: string } | null>(null)
   const [addCharacterSaving, setAddCharacterSaving] = useState(false)
 
   const canManageSessions = user?.role === 'admin' || user?.role === 'gm'
@@ -255,16 +256,16 @@ export function SessionsPage() {
     }
   }
 
-  async function handleDeleteSession(sessionId: number) {
-    const confirmDelete = window.confirm('Confirmer la suppression de cette session ?')
-    if (!confirmDelete) return
-    setDeletingSessionId(sessionId)
+  async function handleDeleteSession() {
+    if (!deleteSessionTarget) return
+    setDeletingSessionId(deleteSessionTarget.id)
     try {
-      await apiDelete(`/api/sessions/${sessionId}`, token)
+      await apiDelete(`/api/sessions/${deleteSessionTarget.id}`, token)
       showSnackbar({ message: 'Session supprimée.', severity: 'success' })
-      if (editForm.sessionId === sessionId) {
+      if (editForm.sessionId === deleteSessionTarget.id) {
         setIsEditModalOpen(false)
       }
+      setDeleteSessionTarget(null)
       await loadSessions()
     } catch (err) {
       showSnackbar({
@@ -307,25 +308,31 @@ export function SessionsPage() {
                 <td data-label="Date">{session.session_date ?? '—'}</td>
                 <td data-label="Statut">{session.is_active ? 'active' : 'inactive'}</td>
                 <td data-label="Actions">
-                  <button className="btn btn-small" type="button" onClick={() => handleJoinSession(session)}>
-                    Rejoindre
-                  </button>
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <button className="btn btn-small" type="button" onClick={() => handleJoinSession(session)}>
+                      Rejoindre
+                    </button>
                   {canManageSessions ? (
                     <>
-                      {' '}
                       <button className="btn btn-small btn-secondary" type="button" onClick={() => void openEditSession(session.id)}>
                         Éditer
-                      </button>{' '}
+                      </button>
                       <button
                         className="btn btn-small btn-secondary"
                         type="button"
                         disabled={deletingSessionId === session.id}
-                        onClick={() => void handleDeleteSession(session.id)}
+                        onClick={() =>
+                          setDeleteSessionTarget({
+                            id: session.id,
+                            title: session.title ?? `Session #${session.session_number ?? session.id}`,
+                          })
+                        }
                       >
                         {deletingSessionId === session.id ? 'Suppression…' : 'Supprimer'}
                       </button>
                     </>
                   ) : null}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -504,13 +511,47 @@ export function SessionsPage() {
                     className="btn btn-secondary"
                     type="button"
                     disabled={editSaving || deletingSessionId === editForm.sessionId}
-                    onClick={() => void handleDeleteSession(editForm.sessionId)}
+                    onClick={() =>
+                      setDeleteSessionTarget({
+                        id: editForm.sessionId,
+                        title: editForm.title.trim() || `Session #${editForm.sessionId}`,
+                      })
+                    }
                   >
                     {deletingSessionId === editForm.sessionId ? 'Suppression…' : 'Supprimer'}
                   </button>
                 </div>
               </form>
             ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {deleteSessionTarget ? (
+        <div
+          className="modal-backdrop"
+          onClick={() => {
+            if (!deletingSessionId) setDeleteSessionTarget(null)
+          }}
+        >
+          <div className="modal-card" onClick={(event) => event.stopPropagation()}>
+            <h3>Supprimer la session</h3>
+            <p>
+              Confirmer la suppression de <strong>{deleteSessionTarget.title}</strong> ?
+            </p>
+            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+              <button className="btn" type="button" disabled={deletingSessionId != null} onClick={() => void handleDeleteSession()}>
+                {deletingSessionId != null ? 'Suppression…' : 'Oui, supprimer'}
+              </button>
+              <button
+                className="btn btn-secondary"
+                type="button"
+                disabled={deletingSessionId != null}
+                onClick={() => setDeleteSessionTarget(null)}
+              >
+                Annuler
+              </button>
+            </div>
           </div>
         </div>
       ) : null}

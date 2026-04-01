@@ -1,10 +1,7 @@
 import type { ApiAuthResponse, AuthUser } from '../types/auth'
+import { getApiBaseUrl } from '../shared/api/client'
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000'
-
-export function getApiBaseUrl() {
-  return API_BASE_URL
-}
+export { getApiBaseUrl }
 
 async function parseJson<T>(response: Response): Promise<T> {
   return (await response.json()) as T
@@ -23,7 +20,7 @@ export async function register(payload: {
 }
 
 export async function fetchProfile(token: string): Promise<AuthUser> {
-  const response = await fetch(`${API_BASE_URL}/api/auth/profile`, {
+  const response = await fetch(`${getApiBaseUrl()}/api/auth/profile`, {
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
@@ -42,7 +39,7 @@ async function callAuthEndpoint(
   path: string,
   payload: Record<string, string>,
 ): Promise<ApiAuthResponse> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(`${getApiBaseUrl()}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),

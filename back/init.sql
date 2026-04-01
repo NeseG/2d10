@@ -217,6 +217,7 @@ CREATE TABLE IF NOT EXISTS game_sessions (
     notes TEXT,
     xp_awarded INTEGER DEFAULT 0,
     gold_awarded DECIMAL(10,2) DEFAULT 0,
+    initiative_state JSONB,
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -232,6 +233,7 @@ CREATE TABLE IF NOT EXISTS campaign_characters (
     left_at TIMESTAMP,
     status VARCHAR(20) DEFAULT 'active', -- active, left, kicked
     notes TEXT,
+    notes_wysiwyg TEXT,
     is_active BOOLEAN DEFAULT true,
     UNIQUE(campaign_id, character_id)
 );

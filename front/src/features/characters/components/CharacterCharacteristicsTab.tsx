@@ -1,7 +1,9 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSnackbar } from '../../../app/hooks/useSnackbar'
-import { apiGet, apiPut } from '../../../shared/api/client'
+import { apiGet, apiPut, apiPutFormData, getApiBaseUrl } from '../../../shared/api/client'
 import { ItemDetailsModal, type ItemDetail } from '../../inventory/components/ItemDetailsModal'
+import type { AuthUser } from '../../../shared/types'
+import { CharacterIdentityAccordion } from './CharacterIdentityAccordion'
 
 const DND_5E_RACES = [
   'Humain',
@@ -87,6 +89,8 @@ const ABILITY_SKILL_DISPLAY: Record<AbilityScoreFormKey, { abbr: string; colorCl
 
 type CharacterDetail = {
   id: number
+  userId?: number | null
+  user?: { id: number; username: string; email: string } | null
   name: string
   race?: string | null
   class?: string | null
@@ -109,6 +113,7 @@ type CharacterDetail = {
   charisma?: number | null
   description?: string | null
   notes?: string | null
+  avatar_url?: string | null
   skills?: Array<{
     skill: string
     mastery: 'NOT_PROFICIENT' | 'PROFICIENT' | 'EXPERTISE'
@@ -290,10 +295,11 @@ function isEquippedNonWeaponRow(row: InventoryLineForSession): boolean {
   const t = String(row.type || '')
     .trim()
     .toLowerCase()
-  return t !== 'weapon'
+  return t !== 'weapon' && t !== 'consumable' && t !== 'ammunition'
 }
 
 function isConsumableRow(row: InventoryLineForSession): boolean {
+  if (!row.is_equipped) return false
   const t = String(row.type || '')
     .trim()
     .toLowerCase()
@@ -334,7 +340,9 @@ export const DEFAULT_SESSION_LIVE_ACCORDIONS: SessionLiveAccordionState = {
 export function CharacterCharacteristicsTab(props: {
   characterId: string
   token: string
+  user?: AuthUser | null
   onNameLoaded?: (name: string) => void
+  onAvatarLoaded?: (avatarUrl: string) => void
   sessionView?: boolean
   sessionId?: string
   sessionLiveAccordions?: SessionLiveAccordionState
@@ -343,7 +351,9 @@ export function CharacterCharacteristicsTab(props: {
   const {
     characterId,
     token,
+    user,
     onNameLoaded,
+    onAvatarLoaded,
     sessionView = false,
     sessionId,
     sessionLiveAccordions,
@@ -351,8 +361,14 @@ export function CharacterCharacteristicsTab(props: {
   } = props
   const { showSnackbar } = useSnackbar()
   const [loading, setLoading] = useState(true)
+  const [avatarUrl, setAvatarUrl] = useState('')
+  const [avatarUploading, setAvatarUploading] = useState(false)
   const lastPersistedKeyRef = useRef('')
   const wasLoadingRef = useRef(true)
+
+  const canEditOwner = !sessionView && (user?.role === 'admin' || user?.role === 'gm')
+  const [ownerUserId, setOwnerUserId] = useState<string>('')
+  const [availableUsers, setAvailableUsers] = useState<Array<{ id: number; username: string; email: string; role_name?: string | null }>>([])
 
   const [form, setForm] = useState({
     name: '',
@@ -403,6 +419,8 @@ export function CharacterCharacteristicsTab(props: {
 
   const onNameLoadedRef = useRef(onNameLoaded)
   onNameLoadedRef.current = onNameLoaded
+  const onAvatarLoadedRef = useRef(onAvatarLoaded)
+  onAvatarLoadedRef.current = onAvatarLoaded
 
   const [sessionEquippedWeapons, setSessionEquippedWeapons] = useState<SessionEquippedWeaponRow[]>([])
   const [sessionConsumables, setSessionConsumables] = useState<SessionConsumableRow[]>([])
@@ -482,6 +500,9 @@ export function CharacterCharacteristicsTab(props: {
       await apiPut(
         `/api/characters/${characterId}`,
         {
+          ...(canEditOwner && ownerUserId.trim()
+            ? { userId: Number.parseInt(ownerUserId.trim(), 10) }
+            : {}),
           name: f.name.trim(),
           race: f.race.trim() || undefined,
           class: f.class.trim() || undefined,
@@ -519,7 +540,7 @@ export function CharacterCharacteristicsTab(props: {
       )
       onNameLoadedRef.current?.(f.name.trim())
     },
-    [characterId, sessionView, sessionId, token],
+    [characterId, sessionView, sessionId, token, canEditOwner, ownerUserId],
   )
 
   useEffect(() => {
@@ -537,6 +558,7 @@ export function CharacterCharacteristicsTab(props: {
 
         const response = await apiGet<{ success: boolean; character: CharacterDetail }>(`/api/characters/${characterId}`, token)
         const c = response.character
+        setAvatarUrl(c.avatar_url ?? '')
 
         setForm({
           name: c.name ?? '',
@@ -570,7 +592,18 @@ export function CharacterCharacteristicsTab(props: {
           notes: c.notes ?? '',
         })
 
+        if (!sessionView) {
+          const existingOwnerId =
+            c.userId != null
+              ? String(c.userId)
+              : c.user?.id != null
+                ? String(c.user.id)
+                : ''
+          setOwnerUserId(existingOwnerId)
+        }
+
         onNameLoadedRef.current?.(c.name ?? '')
+        onAvatarLoadedRef.current?.(c.avatar_url ?? '')
 
         if (Array.isArray(c.skills)) {
           setSkillsState(
@@ -693,6 +726,30 @@ export function CharacterCharacteristicsTab(props: {
 
     void loadCharacter()
   }, [characterId, token, sessionView, sessionId, showSnackbar])
+
+  useEffect(() => {
+    if (!canEditOwner) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await apiGet<{
+          success: boolean
+          users: Array<{ id: number; username: string; email: string; role_name?: string | null }>
+        }>('/api/users', token)
+        if (cancelled) return
+        setAvailableUsers(Array.isArray(res.users) ? res.users : [])
+      } catch (err) {
+        if (cancelled) return
+        showSnackbar({
+          message: err instanceof Error ? err.message : 'Erreur de chargement des utilisateurs',
+          severity: 'error',
+        })
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [canEditOwner, token, showSnackbar])
 
   useEffect(() => {
     if (wasLoadingRef.current && !loading) {
@@ -831,10 +888,10 @@ export function CharacterCharacteristicsTab(props: {
     const row = sessionConsumables.find((x) => x.id === inventoryLineId)
     if (!row) return
 
-    if (Number.isNaN(parsed) || parsed < 1) {
+    if (Number.isNaN(parsed) || parsed < 0) {
       setSessionConsumableQtyDraft((d) => ({ ...d, [inventoryLineId]: String(row.quantity) }))
       showSnackbar({
-        message: 'La quantité doit être un entier au moins égal à 1.',
+        message: 'La quantité doit être un entier au moins égal à 0.',
         severity: 'error',
       })
       return
@@ -847,18 +904,62 @@ export function CharacterCharacteristicsTab(props: {
 
     setSavingConsumableQtyId(inventoryLineId)
     try {
+      await persistSessionConsumableQuantity(inventoryLineId, parsed, row.quantity)
+    } finally {
+      setSavingConsumableQtyId(null)
+    }
+  }
+
+  async function handleSessionConsumableQuantityStep(inventoryLineId: number, delta: number) {
+    const row = sessionConsumables.find((x) => x.id === inventoryLineId)
+    if (!row || savingConsumableQtyId === inventoryLineId) return
+    const currentDraft = Number.parseInt(String(sessionConsumableQtyDraft[inventoryLineId] ?? row.quantity).trim(), 10)
+    const safeCurrent = Number.isNaN(currentDraft) ? row.quantity : currentDraft
+    const nextQuantity = Math.max(0, safeCurrent + delta)
+    setSessionConsumableQtyDraft((d) => ({ ...d, [inventoryLineId]: String(nextQuantity) }))
+    setSavingConsumableQtyId(inventoryLineId)
+    try {
+      await persistSessionConsumableQuantity(inventoryLineId, nextQuantity, row.quantity)
+    } finally {
+      setSavingConsumableQtyId(null)
+    }
+  }
+
+  async function persistSessionConsumableQuantity(inventoryLineId: number, parsed: number, fallbackQuantity: number) {
+    try {
       await apiPut(`/api/inventory/${characterId}/items/${inventoryLineId}`, { quantity: parsed }, token)
       setSessionConsumables((prev) => prev.map((c) => (c.id === inventoryLineId ? { ...c, quantity: parsed } : c)))
       setSessionConsumableQtyDraft((d) => ({ ...d, [inventoryLineId]: String(parsed) }))
-      showSnackbar({ message: 'Quantité mise à jour.', severity: 'success' })
     } catch (err) {
-      setSessionConsumableQtyDraft((d) => ({ ...d, [inventoryLineId]: String(row.quantity) }))
+      setSessionConsumableQtyDraft((d) => ({ ...d, [inventoryLineId]: String(fallbackQuantity) }))
       showSnackbar({
         message: err instanceof Error ? err.message : 'Erreur lors de la mise à jour de la quantité.',
         severity: 'error',
       })
+    }
+  }
+
+  async function handleAvatarFileChange(file: File | null) {
+    if (!file || sessionView) return
+    setAvatarUploading(true)
+    try {
+      const fd = new FormData()
+      fd.append('image', file)
+      const res = await apiPutFormData<{ success: boolean; avatar_url?: string | null }>(
+        `/api/characters/${characterId}/avatar`,
+        fd,
+        token,
+      )
+      const nextAvatarUrl = res.avatar_url ?? ''
+      setAvatarUrl(nextAvatarUrl)
+      onAvatarLoadedRef.current?.(nextAvatarUrl)
+    } catch (err) {
+      showSnackbar({
+        message: err instanceof Error ? err.message : "Erreur lors de l'envoi de l'avatar",
+        severity: 'error',
+      })
     } finally {
-      setSavingConsumableQtyId(null)
+      setAvatarUploading(false)
     }
   }
 
@@ -896,12 +997,7 @@ export function CharacterCharacteristicsTab(props: {
       <summary className="character-skills-accordion-summary">Mes compétences</summary>
       {skillsAccordionPanel}
     </details>
-  ) : (
-    <details className="character-skills-accordion">
-      <summary className="character-skills-accordion-summary">Mes compétences</summary>
-      {skillsAccordionPanel}
-    </details>
-  )
+  ) : null
 
   if (loading) return <p>Chargement...</p>
 
@@ -928,50 +1024,101 @@ export function CharacterCharacteristicsTab(props: {
           </div>
         </div>
       ) : (
-        <>
-          <h4>Identite</h4>
-          <label htmlFor="char-name">Nom</label>
-          <input id="char-name" type="text" required value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} />
+        <CharacterIdentityAccordion
+          form={{
+            name: form.name,
+            race: form.race,
+            class: form.class,
+            level: form.level,
+            background: form.background,
+            description: form.description,
+            alignment: form.alignment,
+          }}
+          setForm={(updater) =>
+            setForm((prev) => ({
+              ...prev,
+              ...updater({
+                name: prev.name,
+                race: prev.race,
+                class: prev.class,
+                level: prev.level,
+                background: prev.background,
+                description: prev.description,
+                alignment: prev.alignment,
+              }),
+            }))
+          }
+          avatarUrl={
+            avatarUrl
+              ? `${getApiBaseUrl()}${avatarUrl.startsWith('/') ? avatarUrl : `/${avatarUrl}`}`
+              : ''
+          }
+          avatarUploading={avatarUploading}
+          onAvatarFileChange={(file) => {
+            void handleAvatarFileChange(file)
+          }}
+          canEditOwner={canEditOwner}
+          ownerUserId={ownerUserId}
+          setOwnerUserId={setOwnerUserId}
+          availableUsers={availableUsers.map((u) => ({ id: u.id, username: u.username, email: u.email }))}
+        />
+      )}
 
-          <label htmlFor="char-race">Race</label>
-          <input id="char-race" type="text" list="dnd-races" value={form.race} onChange={(e) => setForm((p) => ({ ...p, race: e.target.value }))} />
+      {!sessionView ? (
+        <>
           <datalist id="dnd-races">
             {DND_5E_RACES.map((race) => (
               <option key={race} value={race} />
             ))}
           </datalist>
-
-          <label htmlFor="char-class">Classe</label>
-          <input id="char-class" type="text" list="dnd-classes" value={form.class} onChange={(e) => setForm((p) => ({ ...p, class: e.target.value }))} />
           <datalist id="dnd-classes">
             {DND_5E_CLASSES.map((klass) => (
               <option key={klass} value={klass} />
             ))}
           </datalist>
-
-          <label htmlFor="char-level">Niveau</label>
-          <input id="char-level" type="number" min={1} value={form.level} onChange={(e) => setForm((p) => ({ ...p, level: e.target.value }))} />
         </>
-      )}
+      ) : null}
 
       {!sessionView ? (
-        <>
-          <label htmlFor="char-background">Background</label>
-          <input
-            id="char-background"
-            type="text"
-            value={form.background}
-            onChange={(e) => setForm((p) => ({ ...p, background: e.target.value }))}
-          />
+        <details className="character-skills-accordion" open>
+          <summary className="character-skills-accordion-summary">Combat</summary>
+          <div className="character-skills-accordion-panel">
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem 0.75rem' }}>
+              <div>
+                <label htmlFor="char-hp-max">PDV max</label>
+                <input
+                  id="char-hp-max"
+                  type="number"
+                  min={0}
+                  value={form.hitPointsMax}
+                  onChange={(e) => setForm((p) => ({ ...p, hitPointsMax: e.target.value }))}
+                />
+              </div>
 
-          <label htmlFor="char-alignment">Alignement</label>
-          <input
-            id="char-alignment"
-            type="text"
-            value={form.alignment}
-            onChange={(e) => setForm((p) => ({ ...p, alignment: e.target.value }))}
-          />
-        </>
+              <div>
+                <label htmlFor="char-ac">Classe d&apos;armure</label>
+                <input
+                  id="char-ac"
+                  type="number"
+                  min={0}
+                  value={form.armorClass}
+                  onChange={(e) => setForm((p) => ({ ...p, armorClass: e.target.value }))}
+                />
+              </div>
+
+              <div>
+                <label htmlFor="char-hit-dice">Dés de vie</label>
+                <input
+                  id="char-hit-dice"
+                  type="text"
+                  placeholder="ex: 1d8"
+                  value={form.hitDice}
+                  onChange={(e) => setForm((p) => ({ ...p, hitDice: e.target.value }))}
+                />
+              </div>
+            </div>
+          </div>
+        </details>
       ) : null}
 
       {sessionView ? (
@@ -1123,25 +1270,45 @@ export function CharacterCharacteristicsTab(props: {
                           >
                             <td data-label="Nom">{c.name}</td>
                             <td data-label="Qté" onClick={(e) => e.stopPropagation()}>
-                              <input
-                                type="number"
-                                className="inventory-qty-input"
-                                min={1}
-                                disabled={savingConsumableQtyId === c.id}
-                                value={sessionConsumableQtyDraft[c.id] ?? String(c.quantity)}
-                                onChange={(e) =>
-                                  setSessionConsumableQtyDraft((d) => ({ ...d, [c.id]: e.target.value }))
-                                }
-                                onBlur={() => void handleSessionConsumableQuantityBlur(c.id)}
-                                onKeyDown={(e) => {
-                                  e.stopPropagation()
-                                  if (e.key === 'Enter') {
-                                    ;(e.target as HTMLInputElement).blur()
+                              <div className="inventory-qty-control">
+                                <button
+                                  type="button"
+                                  className="inventory-qty-step"
+                                  disabled={savingConsumableQtyId === c.id}
+                                  onClick={() => void handleSessionConsumableQuantityStep(c.id, -1)}
+                                  aria-label={`Diminuer la quantité de ${c.name}`}
+                                >
+                                  -
+                                </button>
+                                <input
+                                  type="number"
+                                  className="inventory-qty-input"
+                                  min={0}
+                                  disabled={savingConsumableQtyId === c.id}
+                                  value={sessionConsumableQtyDraft[c.id] ?? String(c.quantity)}
+                                  onChange={(e) =>
+                                    setSessionConsumableQtyDraft((d) => ({ ...d, [c.id]: e.target.value }))
                                   }
-                                }}
-                                onClick={(e) => e.stopPropagation()}
-                                aria-label={`Quantité — ${c.name}`}
-                              />
+                                  onBlur={() => void handleSessionConsumableQuantityBlur(c.id)}
+                                  onKeyDown={(e) => {
+                                    e.stopPropagation()
+                                    if (e.key === 'Enter') {
+                                      ;(e.target as HTMLInputElement).blur()
+                                    }
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  aria-label={`Quantité — ${c.name}`}
+                                />
+                                <button
+                                  type="button"
+                                  className="inventory-qty-step"
+                                  disabled={savingConsumableQtyId === c.id}
+                                  onClick={() => void handleSessionConsumableQuantityStep(c.id, 1)}
+                                  aria-label={`Augmenter la quantité de ${c.name}`}
+                                >
+                                  +
+                                </button>
+                              </div>
                             </td>
                             <td data-label="Catégorie">{c.categoryLabel}</td>
                           </tr>
@@ -1197,106 +1364,110 @@ export function CharacterCharacteristicsTab(props: {
       ) : null}
 
       {!sessionView ? (
-        <>
-          <h4>Caracteristiques (D&D 5e)</h4>
-          <div className="ability-grid">
-            {[
-              { key: 'strength', label: 'Force', ability: 'STRENGTH' },
-              { key: 'dexterity', label: 'Dexterite', ability: 'DEXTERITY' },
-              { key: 'constitution', label: 'Constitution', ability: 'CONSTITUTION' },
-              { key: 'intelligence', label: 'Intelligence', ability: 'INTELLIGENCE' },
-              { key: 'wisdom', label: 'Sagesse', ability: 'WISDOM' },
-              { key: 'charisma', label: 'Charisme', ability: 'CHARISMA' },
-            ].map((row) => (
-              <Fragment key={row.key}>
-                <label htmlFor={`char-${row.key}`} className="ability-label">
-                  {row.label} ({formatModifier(getModifier((form as Record<string, string>)[row.key]))})
-                </label>
-                <input
-                  id={`char-${row.key}`}
-                  type="number"
-                  value={(form as Record<string, string>)[row.key]}
-                  onChange={(event) => setForm((prev) => ({ ...prev, [row.key]: event.target.value }))}
-                />
-                <label className="skill-check" aria-label={`${row.label} proficient`}>
+        <details className="character-skills-accordion" open>
+          <summary className="character-skills-accordion-summary">Caractéristiques</summary>
+          <div className="character-skills-accordion-panel">
+            <div className="ability-grid">
+              {[
+                { key: 'strength', label: 'Force', ability: 'STRENGTH' },
+                { key: 'dexterity', label: 'Dexterite', ability: 'DEXTERITY' },
+                { key: 'constitution', label: 'Constitution', ability: 'CONSTITUTION' },
+                { key: 'intelligence', label: 'Intelligence', ability: 'INTELLIGENCE' },
+                { key: 'wisdom', label: 'Sagesse', ability: 'WISDOM' },
+                { key: 'charisma', label: 'Charisme', ability: 'CHARISMA' },
+              ].map((row) => (
+                <Fragment key={row.key}>
+                  <label htmlFor={`char-${row.key}`} className="ability-label">
+                    {row.label} ({formatModifier(getModifier((form as Record<string, string>)[row.key]))})
+                  </label>
                   <input
-                    type="checkbox"
-                    checked={Boolean(savingThrowsState[row.ability]?.proficient)}
-                    onChange={(event) =>
-                      setSavingThrowsState((prev) => ({
-                        ...prev,
-                        [row.ability]: { proficient: event.target.checked },
-                      }))
-                    }
+                    id={`char-${row.key}`}
+                    type="number"
+                    value={(form as Record<string, string>)[row.key]}
+                    onChange={(event) => setForm((prev) => ({ ...prev, [row.key]: event.target.value }))}
                   />
-                </label>
-              </Fragment>
-            ))}
+                  <label className="skill-check" aria-label={`${row.label} proficient`}>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(savingThrowsState[row.ability]?.proficient)}
+                      onChange={(event) =>
+                        setSavingThrowsState((prev) => ({
+                          ...prev,
+                          [row.ability]: { proficient: event.target.checked },
+                        }))
+                      }
+                    />
+                  </label>
+                </Fragment>
+              ))}
+            </div>
+            {skillsSummaryUnderAbilities}
           </div>
-          {skillsSummaryUnderAbilities}
-        </>
+        </details>
       ) : null}
 
       {!sessionView ? (
-        <>
-          <h4>Competences</h4>
-          <div className="table-wrap">
-            <table className="table inventory-items-table">
-              <thead>
-                <tr>
-                  <th>Compétence</th>
-                  <th>Proficient</th>
-                  <th>Expertise</th>
-                </tr>
-              </thead>
-              <tbody>
-                {DND_5E_SKILLS_FR.map((skillItem) => {
-                  const skillState = skillsState[skillItem.key] ?? { proficient: false, expertise: false }
-                  return (
-                    <tr key={skillItem.key}>
-                      <td data-label="Compétence">{skillItem.label}</td>
-                      <td data-label="Proficient">
-                        <label className="skill-check">
-                          <input
-                            type="checkbox"
-                            checked={skillState.proficient}
-                            onChange={(event) => {
-                              const nextProficient = event.target.checked
-                              setSkillsState((prev) => ({
-                                ...prev,
-                                [skillItem.key]: {
-                                  proficient: nextProficient,
-                                  expertise: nextProficient ? prev[skillItem.key]?.expertise ?? false : false,
-                                },
-                              }))
-                            }}
-                          />
-                        </label>
-                      </td>
-                      <td data-label="Expertise">
-                        <label className="skill-check">
-                          <input
-                            type="checkbox"
-                            checked={skillState.expertise}
-                            onChange={(event) =>
-                              setSkillsState((prev) => ({
-                                ...prev,
-                                [skillItem.key]: {
-                                  proficient: event.target.checked ? true : prev[skillItem.key]?.proficient ?? false,
-                                  expertise: event.target.checked,
-                                },
-                              }))
-                            }
-                          />
-                        </label>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+        <details className="character-skills-accordion">
+          <summary className="character-skills-accordion-summary">Compétences</summary>
+          <div className="character-skills-accordion-panel">
+            <div className="table-wrap">
+              <table className="table inventory-items-table">
+                <thead>
+                  <tr>
+                    <th>Compétence</th>
+                    <th>Proficient</th>
+                    <th>Expertise</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {DND_5E_SKILLS_FR.map((skillItem) => {
+                    const skillState = skillsState[skillItem.key] ?? { proficient: false, expertise: false }
+                    return (
+                      <tr key={skillItem.key}>
+                        <td data-label="Compétence">{skillItem.label}</td>
+                        <td data-label="Proficient">
+                          <label className="skill-check">
+                            <input
+                              type="checkbox"
+                              checked={skillState.proficient}
+                              onChange={(event) => {
+                                const nextProficient = event.target.checked
+                                setSkillsState((prev) => ({
+                                  ...prev,
+                                  [skillItem.key]: {
+                                    proficient: nextProficient,
+                                    expertise: nextProficient ? prev[skillItem.key]?.expertise ?? false : false,
+                                  },
+                                }))
+                              }}
+                            />
+                          </label>
+                        </td>
+                        <td data-label="Expertise">
+                          <label className="skill-check">
+                            <input
+                              type="checkbox"
+                              checked={skillState.expertise}
+                              onChange={(event) =>
+                                setSkillsState((prev) => ({
+                                  ...prev,
+                                  [skillItem.key]: {
+                                    proficient: event.target.checked ? true : prev[skillItem.key]?.proficient ?? false,
+                                    expertise: event.target.checked,
+                                  },
+                                }))
+                              }
+                            />
+                          </label>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </>
+        </details>
       ) : null}
 
       <ItemDetailsModal

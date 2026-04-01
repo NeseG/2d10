@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSnackbar } from '../../../app/hooks/useSnackbar'
 import { apiDelete, apiGet, apiPost, apiPut } from '../../../shared/api/client'
 import type { AuthUser } from '../../../shared/types'
@@ -43,6 +43,17 @@ type Dnd5eSpellListItem = {
   level: number | null
   school: string | null
 }
+
+const SPELL_SCHOOL_SUGGESTIONS = [
+  'Abjuration',
+  'Conjuration',
+  'Divination',
+  'Enchantment',
+  'Evocation',
+  'Illusion',
+  'Necromancy',
+  'Transmutation',
+]
 
 function parseStoredLiveSlots(raw: string | null): Record<number, boolean[]> {
   if (!raw) return {}
@@ -101,7 +112,8 @@ export function CharacterGrimoireTab(props: {
       return acc
     }, {}),
   )
-  const [spellSlotsSaving, setSpellSlotsSaving] = useState(false)
+  const spellSlotsLoadedRef = useRef(false)
+  const spellSlotsSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [grimoireLoaded, setGrimoireLoaded] = useState(false)
   const [grimoireLoading, setGrimoireLoading] = useState(false)
@@ -109,7 +121,22 @@ export function CharacterGrimoireTab(props: {
 
   const [isCreateSpellModalOpen, setIsCreateSpellModalOpen] = useState(false)
   const [createSpellSaving, setCreateSpellSaving] = useState(false)
-  const [newSpellForm, setNewSpellForm] = useState({ name: '', level: '0', description: '' })
+  const [newSpellForm, setNewSpellForm] = useState({
+    is_known: true,
+    is_prepared: false,
+    notes: '',
+    name: '',
+    level: '0',
+    school: '',
+    castingTime: '',
+    range: '',
+    components: '',
+    duration: '',
+    description: '',
+    higherLevel: '',
+    ritual: false,
+    concentration: false,
+  })
 
   const [isImportSpellModalOpen, setIsImportSpellModalOpen] = useState(false)
   const [dndSpellQuery, setDndSpellQuery] = useState('')
@@ -186,13 +213,21 @@ export function CharacterGrimoireTab(props: {
           const found = slots.find((s) => s.level === lvl)
           slotsMap[lvl] = { slotsMax: found?.slotsMax != null ? String(found.slotsMax) : '0' }
         }
+        spellSlotsLoadedRef.current = false
         setSpellSlotsDraft(slotsMap)
+        spellSlotsLoadedRef.current = true
       } catch {
         // ignore
       }
     }
     void loadSlots()
   }, [characterId, token])
+
+  useEffect(() => {
+    return () => {
+      if (spellSlotsSaveTimerRef.current) clearTimeout(spellSlotsSaveTimerRef.current)
+    }
+  }, [])
 
   /** v2 : non coché par défaut ; coché = emplacement dépensé (clé nouvelle pour ne pas mélanger l’ancien sens). */
   const liveSlotsStorageKey =
@@ -223,6 +258,11 @@ export function CharacterGrimoireTab(props: {
     return map
   }, [grimoireItems])
 
+  const preparedSpellsCount = useMemo(
+    () => grimoireItems.filter((entry) => Boolean(entry.is_prepared)).length,
+    [grimoireItems],
+  )
+
   const [liveSlotSpend, setLiveSlotSpend] = useState<Record<number, boolean[]>>({})
 
   useEffect(() => {
@@ -251,7 +291,7 @@ export function CharacterGrimoireTab(props: {
 
   async function handleSaveSpellSlots(event: React.FormEvent) {
     event.preventDefault()
-    setSpellSlotsSaving(true)
+    if (!characterId) return
     try {
       const payload: CharacterSpellSlot[] = Array.from({ length: 10 }, (_, lvl) => lvl).map((lvl) => {
         const row = spellSlotsDraft[lvl] ?? { slotsMax: '0' }
@@ -260,16 +300,22 @@ export function CharacterGrimoireTab(props: {
       })
 
       await apiPut(`/api/characters/${characterId}`, { spellSlots: payload }, token)
-      showSnackbar({ message: 'Emplacements de sorts enregistrés.', severity: 'success' })
     } catch (err) {
       showSnackbar({
         message: err instanceof Error ? err.message : 'Erreur sauvegarde emplacements',
         severity: 'error',
       })
-    } finally {
-      setSpellSlotsSaving(false)
     }
   }
+
+  useEffect(() => {
+    if (sessionView || !spellSlotsLoadedRef.current || !characterId) return
+    if (spellSlotsSaveTimerRef.current) clearTimeout(spellSlotsSaveTimerRef.current)
+    spellSlotsSaveTimerRef.current = setTimeout(() => {
+      spellSlotsSaveTimerRef.current = null
+      void handleSaveSpellSlots({ preventDefault() {} } as React.FormEvent)
+    }, 500)
+  }, [spellSlotsDraft, sessionView, characterId])
 
   async function handleCreateSpell(event: React.FormEvent) {
     event.preventDefault()
@@ -288,13 +334,49 @@ export function CharacterGrimoireTab(props: {
 
       const created = await apiPost<{ item: { id: number } }>(
         `/api/spells`,
-        { name, level, description: newSpellForm.description.trim() || undefined },
+        {
+          name,
+          level,
+          school: newSpellForm.school.trim() || undefined,
+          castingTime: newSpellForm.castingTime.trim() || undefined,
+          range: newSpellForm.range.trim() || undefined,
+          components: newSpellForm.components.trim() || undefined,
+          duration: newSpellForm.duration.trim() || undefined,
+          description: newSpellForm.description.trim() || undefined,
+          higherLevel: newSpellForm.higherLevel.trim() || undefined,
+          ritual: Boolean(newSpellForm.ritual),
+          concentration: Boolean(newSpellForm.concentration),
+        },
         token,
       )
-      await apiPost(`/api/grimoire/${characterId}/spells`, { spell_id: created.item.id, is_known: true }, token)
+      await apiPost(
+        `/api/grimoire/${characterId}/spells`,
+        {
+          spell_id: created.item.id,
+          is_known: Boolean(newSpellForm.is_known),
+          is_prepared: Boolean(newSpellForm.is_prepared),
+          notes: newSpellForm.notes.trim() || undefined,
+        },
+        token,
+      )
 
       setIsCreateSpellModalOpen(false)
-      setNewSpellForm({ name: '', level: '0', description: '' })
+      setNewSpellForm({
+        is_known: true,
+        is_prepared: false,
+        notes: '',
+        name: '',
+        level: '0',
+        school: '',
+        castingTime: '',
+        range: '',
+        components: '',
+        duration: '',
+        description: '',
+        higherLevel: '',
+        ritual: false,
+        concentration: false,
+      })
       setGrimoireLoaded(false)
       showSnackbar({ message: 'Sort créé et ajouté au grimoire.', severity: 'success' })
     } catch (err) {
@@ -505,6 +587,29 @@ export function CharacterGrimoireTab(props: {
     }
   }
 
+  async function handleTogglePrepared(entry: GrimoireEntry, nextPrepared: boolean) {
+    try {
+      await apiPut(
+        `/api/grimoire/${characterId}/spells/${entry.id}`,
+        {
+          is_known: Boolean(entry.is_known),
+          is_prepared: nextPrepared,
+          notes: entry.notes ?? undefined,
+        },
+        token,
+      )
+      setGrimoireItems((prev) =>
+        prev.map((item) => (item.id === entry.id ? { ...item, is_prepared: nextPrepared } : item)),
+      )
+      showSnackbar({ message: nextPrepared ? 'Sort préparé.' : 'Sort non préparé.', severity: 'success' })
+    } catch (err) {
+      showSnackbar({
+        message: err instanceof Error ? err.message : 'Erreur mise à jour préparation du sort',
+        severity: 'error',
+      })
+    }
+  }
+
   return (
     <div>
       {sessionView ? (
@@ -595,105 +700,263 @@ export function CharacterGrimoireTab(props: {
         </div>
       ) : (
         <>
-      <h4>Emplacements de sorts</h4>
-      <form className="login-form" onSubmit={handleSaveSpellSlots}>
-        <div className="responsive-table">
-          <table className="inventory-items-table">
-            <thead>
-              <tr>
-                <th>Niveau</th>
-                <th>Max</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Array.from({ length: 10 }, (_, lvl) => (
-                <tr key={lvl}>
-                  <td data-label="Niveau">{lvl}</td>
-                  <td data-label="Max">
-                    <input
-                      type="number"
-                      className="inventory-qty-input"
-                      min={0}
-                      value={spellSlotsDraft[lvl]?.slotsMax ?? '0'}
-                      onChange={(event) => setSpellSlotsDraft((prev) => ({ ...prev, [lvl]: { slotsMax: event.target.value } }))}
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <button className="btn" type="submit" disabled={spellSlotsSaving}>
-          {spellSlotsSaving ? 'Enregistrement…' : 'Enregistrer'}
-        </button>
-      </form>
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+            <button className="btn" type="button" onClick={() => setIsCreateSpellModalOpen(true)}>
+              Créer un sort
+            </button>
+            {canImport && (
+              <button className="btn btn-secondary" type="button" onClick={() => void openImportSpellModal()}>
+                Importer un sort
+              </button>
+            )}
+          </div>
 
-      <h4 style={{ marginTop: '1rem' }}>Sorts</h4>
-      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
-        <button className="btn" type="button" onClick={() => setIsCreateSpellModalOpen(true)}>
-          Créer un sort
-        </button>
-        {canImport && (
-          <button className="btn btn-secondary" type="button" onClick={() => void openImportSpellModal()}>
-            Importer un sort
-          </button>
-        )}
-      </div>
+          <p className="grimoire-summary-caption">
+            {grimoireItems.length} sort{grimoireItems.length > 1 ? 's' : ''} dans le grimoire · {preparedSpellsCount} préparé
+            {preparedSpellsCount > 1 ? 's' : ''}
+          </p>
 
-      {grimoireLoading ? <p>Chargement…</p> : null}
-      {!grimoireLoading && grimoireItems.length === 0 ? <p>Aucun sort dans le grimoire.</p> : null}
+          {grimoireLoading ? <p>Chargement…</p> : null}
 
-      {!grimoireLoading && grimoireItems.length > 0 ? (
-        <div className="responsive-table">
-          <table className="inventory-items-table">
-            <thead>
-              <tr>
-                <th>Nom</th>
-                <th>Niveau</th>
-                <th>Préparé</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {grimoireItems.map((entry) => (
-                <tr key={entry.id} className="clickable-row" onClick={() => void openSpellDetailsModal(entry.spell_id)}>
-                  <td data-label="Nom">{entry.spell_name ?? '—'}</td>
-                  <td data-label="Niveau">{entry.spell_level ?? '—'}</td>
-                  <td data-label="Préparé">{entry.is_prepared ? 'Oui' : 'Non'}</td>
-                  <td data-label="Actions">
-                    <button
-                      className="btn btn-secondary btn-small"
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        void openEditGrimoireEntry(entry)
-                      }}
-                    >
-                      Éditer
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : null}
+          {!grimoireLoading ? (
+            <div className="grimoire-session-levels">
+              {Array.from({ length: 10 }, (_, level) => {
+                const spellsAtLevel = spellsGroupedByLevel.get(level) ?? []
+                const maxSlots = spellSlotsDraft[level]?.slotsMax ?? '0'
+                const show = level === 0 ? true : spellsAtLevel.length > 0 || Number.parseInt(maxSlots, 10) > 0
+                if (!show) return null
+                return (
+                  <details key={level} className="grimoire-session-level" open={spellsAtLevel.length > 0}>
+                    <summary className="grimoire-session-level-summary">
+                      <span className="grimoire-session-level-title">{grimoireLevelTitle(level)}</span>
+                      {level > 0 ? (
+                        <span
+                          className="grimoire-session-slot-boxes grimoire-edit-slot-boxes"
+                          onClick={(event) => event.preventDefault()}
+                          role="group"
+                          aria-label={`Emplacements max niveau ${level}`}
+                        >
+                          <label className="grimoire-edit-slot-label" htmlFor={`grimoire-slot-max-${level}`}>
+                            Emplacement
+                          </label>
+                          <input
+                            id={`grimoire-slot-max-${level}`}
+                            type="number"
+                            min={0}
+                            className="inventory-qty-input"
+                            value={maxSlots}
+                            onChange={(event) =>
+                              setSpellSlotsDraft((prev) => ({ ...prev, [level]: { slotsMax: event.target.value } }))
+                            }
+                            onClick={(event) => event.stopPropagation()}
+                          />
+                        </span>
+                      ) : null}
+                    </summary>
+                    <div className="grimoire-session-level-body">
+                      {spellsAtLevel.length === 0 ? (
+                        <p className="grimoire-session-empty">Aucun sort à ce niveau.</p>
+                      ) : (
+                        <ul className="grimoire-session-spell-list">
+                          {spellsAtLevel.map((entry) => (
+                              <li key={entry.id}>
+                                <div className="grimoire-spell-admin-row">
+                                  <button
+                                    type="button"
+                                    className="grimoire-session-spell-row"
+                                    onClick={() => void openSpellDetailsModal(entry.spell_id)}
+                                  >
+                                    <span className="grimoire-session-spell-title">
+                                      <span className="grimoire-session-spell-name">{entry.spell_name ?? '—'}</span>
+                                    </span>
+                                  </button>
+                                  <label className="grimoire-inline-check">
+                                    <input
+                                      type="checkbox"
+                                      checked={Boolean(entry.is_prepared)}
+                                      onChange={(event) => void handleTogglePrepared(entry, event.target.checked)}
+                                      onClick={(event) => event.stopPropagation()}
+                                    />
+                                    Préparé
+                                  </label>
+                                  <button
+                                    className="btn btn-secondary btn-small"
+                                    type="button"
+                                    onClick={() => void openEditGrimoireEntry(entry)}
+                                  >
+                                    Éditer
+                                  </button>
+                                </div>
+                              </li>
+                            ))}
+                        </ul>
+                      )}
+                    </div>
+                  </details>
+                )
+              })}
+            </div>
+          ) : null}
         </>
       )}
 
       {!sessionView && isCreateSpellModalOpen && (
         <div className="modal-backdrop" onClick={() => (!createSpellSaving ? setIsCreateSpellModalOpen(false) : null)}>
           <div className="modal-card" onClick={(event) => event.stopPropagation()}>
-            <h3>Créer un sort</h3>
-            <form className="login-form" onSubmit={handleCreateSpell}>
-              <label htmlFor="new-spell-name">Nom</label>
-              <input id="new-spell-name" type="text" required value={newSpellForm.name} onChange={(event) => setNewSpellForm((prev) => ({ ...prev, name: event.target.value }))} />
+            <label className="item-edit-title-field" htmlFor="new-spell-name">
+              <span>Créer un sort</span>
+              <input
+                id="new-spell-name"
+                type="text"
+                required
+                value={newSpellForm.name}
+                onChange={(event) => setNewSpellForm((prev) => ({ ...prev, name: event.target.value }))}
+              />
+            </label>
+            <form className="login-form item-edit-form" onSubmit={handleCreateSpell}>
+              <div className="item-edit-form-inline-pair spell-edit-level-school-row">
+                <label className="item-edit-form-row" htmlFor="new-spell-level">
+                  <span>Niveau</span>
+                  <input
+                    className="spell-edit-level-input"
+                    id="new-spell-level"
+                    type="number"
+                    min={0}
+                    max={9}
+                    value={newSpellForm.level}
+                    onChange={(event) => setNewSpellForm((prev) => ({ ...prev, level: event.target.value }))}
+                  />
+                </label>
 
-              <label htmlFor="new-spell-level">Niveau</label>
-              <input id="new-spell-level" type="number" min={0} max={9} value={newSpellForm.level} onChange={(event) => setNewSpellForm((prev) => ({ ...prev, level: event.target.value }))} />
+                <label className="item-edit-form-row" htmlFor="new-spell-school">
+                  <span>École</span>
+                  <input
+                    className="spell-edit-school-input"
+                    id="new-spell-school"
+                    type="text"
+                    list="new-spell-school-suggestions"
+                    value={newSpellForm.school}
+                    onChange={(event) => setNewSpellForm((prev) => ({ ...prev, school: event.target.value }))}
+                  />
+                </label>
+                <datalist id="new-spell-school-suggestions">
+                  {SPELL_SCHOOL_SUGGESTIONS.map((school) => (
+                    <option key={school} value={school} />
+                  ))}
+                </datalist>
+              </div>
 
-              <label htmlFor="new-spell-desc">Description</label>
-              <textarea id="new-spell-desc" rows={4} value={newSpellForm.description} onChange={(event) => setNewSpellForm((prev) => ({ ...prev, description: event.target.value }))} />
+              <div className="item-edit-form-inline-pair">
+                <label className="item-edit-form-row" htmlFor="new-spell-casting">
+                  <span>Casting time</span>
+                  <input
+                    id="new-spell-casting"
+                    type="text"
+                    value={newSpellForm.castingTime}
+                    onChange={(event) => setNewSpellForm((prev) => ({ ...prev, castingTime: event.target.value }))}
+                  />
+                </label>
+
+                <label className="item-edit-form-row" htmlFor="new-spell-duration">
+                  <span>Duration</span>
+                  <input
+                    id="new-spell-duration"
+                    type="text"
+                    value={newSpellForm.duration}
+                    onChange={(event) => setNewSpellForm((prev) => ({ ...prev, duration: event.target.value }))}
+                  />
+                </label>
+              </div>
+
+              <div className="item-edit-form-inline-pair">
+                <label className="item-edit-form-row" htmlFor="new-spell-range">
+                  <span>Range</span>
+                  <input
+                    id="new-spell-range"
+                    type="text"
+                    value={newSpellForm.range}
+                    onChange={(event) => setNewSpellForm((prev) => ({ ...prev, range: event.target.value }))}
+                  />
+                </label>
+
+                <label className="item-edit-form-row" htmlFor="new-spell-components">
+                  <span>Components</span>
+                  <input
+                    id="new-spell-components"
+                    type="text"
+                    value={newSpellForm.components}
+                    onChange={(event) => setNewSpellForm((prev) => ({ ...prev, components: event.target.value }))}
+                  />
+                </label>
+              </div>
+
+              <div className="item-edit-armor-checks">
+                <label className="skill-check item-edit-inline-check">
+                  <input
+                    type="checkbox"
+                    checked={newSpellForm.ritual}
+                    onChange={(event) => setNewSpellForm((prev) => ({ ...prev, ritual: event.target.checked }))}
+                  />
+                  Rituel
+                </label>
+                <label className="skill-check item-edit-inline-check">
+                  <input
+                    type="checkbox"
+                    checked={newSpellForm.concentration}
+                    onChange={(event) => setNewSpellForm((prev) => ({ ...prev, concentration: event.target.checked }))}
+                  />
+                  Concentration
+                </label>
+              </div>
+
+              <div className="item-edit-armor-checks">
+                <label className="skill-check item-edit-inline-check">
+                  <input
+                    type="checkbox"
+                    checked={newSpellForm.is_known}
+                    onChange={(event) => setNewSpellForm((prev) => ({ ...prev, is_known: event.target.checked }))}
+                  />
+                  Connu
+                </label>
+                <label className="skill-check item-edit-inline-check">
+                  <input
+                    type="checkbox"
+                    checked={newSpellForm.is_prepared}
+                    onChange={(event) => setNewSpellForm((prev) => ({ ...prev, is_prepared: event.target.checked }))}
+                  />
+                  Préparé
+                </label>
+              </div>
+
+              <label className="item-edit-form-row item-edit-form-row-textarea" htmlFor="new-spell-desc">
+                <span>Description</span>
+                <textarea
+                  id="new-spell-desc"
+                  rows={4}
+                  value={newSpellForm.description}
+                  onChange={(event) => setNewSpellForm((prev) => ({ ...prev, description: event.target.value }))}
+                />
+              </label>
+
+              <label className="item-edit-form-row item-edit-form-row-textarea" htmlFor="new-spell-higher">
+                <span>Higher level</span>
+                <textarea
+                  id="new-spell-higher"
+                  rows={3}
+                  value={newSpellForm.higherLevel}
+                  onChange={(event) => setNewSpellForm((prev) => ({ ...prev, higherLevel: event.target.value }))}
+                />
+              </label>
+
+              <label className="item-edit-form-row item-edit-form-row-textarea" htmlFor="new-spell-notes">
+                <span>Notes</span>
+                <textarea
+                  id="new-spell-notes"
+                  rows={4}
+                  value={newSpellForm.notes}
+                  onChange={(event) => setNewSpellForm((prev) => ({ ...prev, notes: event.target.value }))}
+                />
+              </label>
 
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <button className="btn" type="submit" disabled={createSpellSaving}>

@@ -1,14 +1,36 @@
 import { Card } from '../../../shared/components/Card'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../../app/hooks/useAuth'
 import { useSnackbar } from '../../../app/hooks/useSnackbar'
 import { apiGet } from '../../../shared/api/client'
+import { Link } from 'react-router-dom'
 
 type DashboardCounts = {
   characters: number
   campaigns: number
   sessions: number
   users: number | null
+}
+
+type JoinedSession = {
+  id: number
+  title: string
+  campaign_name?: string | null
+  session_date?: string | null
+}
+
+type DashboardSessionAttendance = {
+  character_id: number
+  character_name?: string | null
+  character_user_id?: number | null
+}
+
+type DashboardSessionDetail = {
+  id: number
+  title?: string | null
+  campaign_name?: string | null
+  session_date?: string | null
+  attendance?: DashboardSessionAttendance[]
 }
 
 export function DashboardPage() {
@@ -21,6 +43,27 @@ export function DashboardPage() {
     users: null,
   })
   const [loading, setLoading] = useState(true)
+  const [joinedSession, setJoinedSession] = useState<JoinedSession | null>(null)
+  const [joinedSessionDetail, setJoinedSessionDetail] = useState<DashboardSessionDetail | null>(null)
+
+  useEffect(() => {
+    function syncJoinedSession() {
+      const raw = localStorage.getItem('joined_session')
+      if (!raw) {
+        setJoinedSession(null)
+        return
+      }
+      try {
+        setJoinedSession(JSON.parse(raw) as JoinedSession)
+      } catch {
+        setJoinedSession(null)
+      }
+    }
+
+    syncJoinedSession()
+    window.addEventListener('joined-session-changed', syncJoinedSession)
+    return () => window.removeEventListener('joined-session-changed', syncJoinedSession)
+  }, [])
 
   useEffect(() => {
     async function loadDashboardCounts() {
@@ -85,6 +128,36 @@ export function DashboardPage() {
     }
   }, [token, user, showSnackbar])
 
+  useEffect(() => {
+    async function loadJoinedSessionDetail() {
+      if (!token || !joinedSession?.id) {
+        setJoinedSessionDetail(null)
+        return
+      }
+      try {
+        const res = await apiGet<{ success: boolean; session: DashboardSessionDetail }>(
+          `/api/sessions/${joinedSession.id}`,
+          token,
+        )
+        setJoinedSessionDetail(res.session ?? null)
+      } catch (err) {
+        setJoinedSessionDetail(null)
+        showSnackbar({
+          message: err instanceof Error ? err.message : 'Erreur de chargement de la session en cours',
+          severity: 'error',
+        })
+      }
+    }
+
+    void loadJoinedSessionDetail()
+  }, [joinedSession?.id, token, showSnackbar])
+
+  const currentSessionCharacterName = useMemo(() => {
+    if (!user || !joinedSessionDetail?.attendance) return ''
+    const mine = joinedSessionDetail.attendance.find((entry) => entry.character_user_id === user.id)
+    return mine?.character_name?.trim() ?? ''
+  }, [joinedSessionDetail?.attendance, user])
+
   return (
     <div className="grid">
       <Card title="Bienvenue">
@@ -100,6 +173,29 @@ export function DashboardPage() {
           <li>Utilisateurs: {loading ? '...' : counts.users ?? 'N/A'}</li>
         </ul>
       </Card>
+      {joinedSession ? (
+        <Card title="Session en cours">
+          <div className="topbar-session" style={{ marginLeft: 0, justifyItems: 'start', textAlign: 'left' }}>
+            <div className="topbar-session-title" style={{ maxWidth: '100%' }}>
+              <span className="topbar-session-campaign">
+                {joinedSessionDetail?.campaign_name ?? joinedSession.campaign_name ?? '—'}
+              </span>
+              <span className="topbar-session-session-name">
+                {joinedSessionDetail?.title ?? joinedSession.title ?? '—'}
+              </span>
+            </div>
+            <div className="topbar-session-date" style={{ maxWidth: '100%' }}>
+              {joinedSessionDetail?.session_date ?? joinedSession.session_date ?? '—'}
+            </div>
+          </div>
+          <p style={{ marginTop: '0.75rem', marginBottom: '0.9rem', color: 'var(--muted)' }}>
+            {currentSessionCharacterName || '—'}
+          </p>
+          <Link className="btn" to="/session-live">
+            Ouvrir la session
+          </Link>
+        </Card>
+      ) : null}
     </div>
   )
 }

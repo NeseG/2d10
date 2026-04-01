@@ -1,4 +1,4 @@
-import React from 'react'
+import { MarkdownContent } from '../../../shared/components/MarkdownContent'
 
 export type SpellDetail = {
   id: number
@@ -71,6 +71,7 @@ export function SpellDetailsModal(props: {
   if (!open) return null
 
   const damageTypeLabel = !loading && spellDetails ? getSpellDamageType(spellDetails) : null
+  const hasHigherLevel = !loading && spellDetails ? Boolean(String(spellDetails.higherLevel ?? '').trim()) : false
 
   return (
     <div className="modal-backdrop" onClick={() => (!loading ? onClose() : null)}>
@@ -142,8 +143,16 @@ export function SpellDetailsModal(props: {
             />
 
             <div className="item-details">
-              <p style={{ whiteSpace: 'pre-wrap' }}>{spellDetails.description?.trim() ? spellDetails.description : '—'}</p>
+              <MarkdownContent content={spellDetails.description} />
             </div>
+            {hasHigherLevel ? (
+              <div className="item-details">
+                <p>
+                  <strong>Higher level</strong>
+                </p>
+                <MarkdownContent content={spellDetails.higherLevel} />
+              </div>
+            ) : null}
           </>
         ) : null}
 

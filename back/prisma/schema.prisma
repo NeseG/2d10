@@ -103,6 +103,7 @@ model Character {
   userId          Int
   user            User     @relation(fields: [userId], references: [id])
   name            String
+  avatarImageKey  String?  @map("avatar_image_key")
   race            String?
   class           String?
   level           Int?
@@ -315,10 +316,33 @@ model Campaign {
   isActive      Boolean  @default(true)
   characters    CampaignCharacter[]
   sessions      GameSession[]
+  maps          CampaignMap[]
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   @@map("campaigns")
+}
+
+model CampaignMap {
+  id         Int      @id @default(autoincrement())
+  campaignId Int
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  name     String
+  imageKey String  @map("image_key")
+
+  // Préparation pour fog-of-war et tokens (implémentation plus tard)
+  fogState    Json?
+  tokensState Json?
+
+  activeSessions GameSession[] @relation("ActiveMap")
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([campaignId, id])
+  @@map("campaign_maps")
 }
 
 // Modèle GameSession
@@ -336,6 +360,10 @@ model GameSession {
   notes       String?
   xpAwarded   Int      @default(0)
   goldAwarded Float    @default(0)
+  initiativeState Json? @map("initiative_state")
+  activeMapId Int?     @map("active_map_id")
+  activeMap   CampaignMap? @relation("ActiveMap", fields: [activeMapId], references: [id])
+  mapViewState Json?   @map("map_view_state")
   isActive    Boolean  @default(true)
   attendance  SessionAttendance[]
   chatMessages SessionChatMessage[]
@@ -373,6 +401,7 @@ model CampaignCharacter {
   leftAt      DateTime?
   status      String   @default("active")
   notes       String?
+  notesWysiwyg String? @db.Text @map("notes_wysiwyg")
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { apiGet, apiPost, apiPostFormData, getApiBaseUrl } from '../../../shared/api/client'
+import { apiGet, apiPost, apiPostFormData, getApiBaseUrl, getWsApiBaseUrl } from '../../../shared/api/client'
 import { useSnackbar } from '../../../app/hooks/useSnackbar'
 
 export type SessionChatMessage = {
@@ -12,8 +12,7 @@ export type SessionChatMessage = {
 }
 
 function buildChatWebSocketUrl(sessionId: number, token: string): string {
-  const base = getApiBaseUrl()
-  const wsBase = base.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:')
+  const wsBase = getWsApiBaseUrl()
   const params = new URLSearchParams({
     sessionId: String(sessionId),
     token,
