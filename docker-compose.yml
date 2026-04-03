@@ -1,6 +1,13 @@
+# Profils :
+#   prod   → db + back + web (front build) + nginx (http://localhost)
+#   full   → db + pgadmin + back + front (Vite dev) — comme avant
+#   back   → db + back seul
+#   front  → db + back + front (Vite dev)
+#   dev    → db + pgadmin (outils)
+#
+# Exemple production : docker compose --profile prod up -d --build
 
 services:
-  # Base de données PostgreSQL
   db:
     image: postgres:15
     container_name: 2d10_db
@@ -21,11 +28,13 @@ services:
     networks:
       - 2d10_network
 
-  # Interface d'administration PostgreSQL
   pgadmin:
     image: dpage/pgadmin4
     container_name: 2d10_pgadmin
     restart: always
+    profiles:
+      - dev
+      - full
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@admin.com
       PGADMIN_DEFAULT_PASSWORD: admin
@@ -37,9 +46,8 @@ services:
     networks:
       - 2d10_network
 
-  # Backend Node.js/Express
   back:
-    build: 
+    build:
       context: ./back
       dockerfile: Dockerfile
     container_name: 2d10_backend
@@ -64,8 +72,9 @@ services:
     profiles:
       - back
       - full
+      - prod
 
-  # Frontend React (Vite)
+  # Front développement (Vite)
   front:
     image: node:20-alpine
     container_name: 2d10_frontend
@@ -75,7 +84,6 @@ services:
     ports:
       - "5173:5173"
     environment:
-      # Vide : le navigateur appelle http://<ton-ip>:5173/api/... (même hôte que Vite). Indispensable depuis le Wi‑Fi.
       VITE_API_BASE_URL: ""
       API_PROXY_TARGET: http://back:3000
       NODE_ENV: development
@@ -90,7 +98,23 @@ services:
       - front
       - full
 
-  # Nginx (reverse proxy pour la production)
+  # Front production (build statique + nginx interne), servi via le nginx edge
+  web:
+    build:
+      context: ./front
+      dockerfile: Dockerfile.prod
+      args:
+        VITE_API_BASE_URL: ""
+    image: 2d10-web:prod
+    container_name: 2d10_web
+    restart: always
+    profiles:
+      - prod
+    depends_on:
+      - back
+    networks:
+      - 2d10_network
+
   nginx:
     image: nginx:alpine
     container_name: 2d10_nginx
@@ -99,19 +123,19 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
-      - ./nginx/ssl:/etc/nginx/ssl
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
     depends_on:
       - back
-      - front
+      - web
     networks:
       - 2d10_network
     profiles:
-      - production
+      - prod
 
 volumes:
   db_data:
 
 networks:
- 2d10_network:
-   driver: bridge
+  2d10_network:
+    driver: bridge

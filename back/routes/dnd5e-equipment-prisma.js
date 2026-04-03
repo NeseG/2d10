@@ -1,5 +1,6 @@
 const express = require('express');
 const prisma = require('../lib/prisma');
+const { nextInventorySortOrder } = require('../lib/next-inventory-sort-order');
 const { authenticateToken, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
@@ -196,8 +197,9 @@ router.post(
       });
 
       // 2) Ajouter à l'inventaire "classique" : on crée aussi une nouvelle ligne
+      const sortOrder = await nextInventorySortOrder(prisma, characterId);
       const inv = await prisma.inventory.create({
-        data: { characterId, itemId: mirroredItem.id, quantity },
+        data: { characterId, itemId: mirroredItem.id, quantity, sortOrder },
       });
 
       res.status(201).json({

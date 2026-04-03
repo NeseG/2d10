@@ -737,6 +737,37 @@ router.put('/:sessionId', authenticateToken, checkSessionOwnership, async (req, 
   }
 });
 
+// Retirer un personnage de la session (ligne de présence)
+router.delete(
+  '/:sessionId/attendance/:attendanceId',
+  authenticateToken,
+  checkSessionOwnership,
+  async (req, res) => {
+    try {
+      const sessionId = parseInt(req.params.sessionId, 10);
+      const attendanceId = parseInt(req.params.attendanceId, 10);
+      if (Number.isNaN(sessionId) || Number.isNaN(attendanceId)) {
+        return res.status(400).json({ error: 'ID invalide' });
+      }
+
+      const row = await prisma.sessionAttendance.findFirst({
+        where: { id: attendanceId, sessionId },
+        select: { id: true },
+      });
+      if (!row) {
+        return res.status(404).json({ error: 'Personnage non présent dans cette session' });
+      }
+
+      await prisma.sessionAttendance.delete({ where: { id: attendanceId } });
+
+      res.json({ success: true, message: 'Personnage retiré de la session' });
+    } catch (error) {
+      console.error('Erreur lors du retrait du personnage de la session:', error);
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  },
+);
+
 // Supprimer une session (soft delete)
 router.delete('/:sessionId', authenticateToken, checkSessionOwnership, async (req, res) => {
   try {

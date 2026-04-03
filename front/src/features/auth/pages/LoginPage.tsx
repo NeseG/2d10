@@ -7,8 +7,8 @@ export function LoginPage() {
   const { loginWithCredentials, isAuthenticated } = useAuth()
   const { showSnackbar } = useSnackbar()
   const navigate = useNavigate()
-  const [email, setEmail] = useState('admin@2d10.com')
-  const [password, setPassword] = useState('admin123')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
 
   if (isAuthenticated) {

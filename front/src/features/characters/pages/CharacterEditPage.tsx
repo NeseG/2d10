@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import { Activity, Backpack, BookMarked, Clover, ScrollText } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Card } from '../../../shared/components/Card'
 import { useAuth } from '../../../app/hooks/useAuth'
@@ -129,32 +130,46 @@ export function CharacterEditPage() {
             className={`tab-btn ${activeTab === 'characteristics' ? 'active' : ''}`}
             type="button"
             onClick={() => setActiveTab('characteristics')}
+            title="Characteristic"
+            aria-label="Characteristic"
           >
-            Characteristic
+            <Activity size={22} aria-hidden="true" />
           </button>
           <button
             className={`tab-btn ${activeTab === 'inventory' ? 'active' : ''}`}
             type="button"
             onClick={() => setActiveTab('inventory')}
+            title="Inventory"
+            aria-label="Inventory"
           >
-            Inventory
+            <Backpack size={22} aria-hidden="true" />
           </button>
           <button
             className={`tab-btn ${activeTab === 'grimoire' ? 'active' : ''}`}
             type="button"
             onClick={() => setActiveTab('grimoire')}
+            title="Grimoire"
+            aria-label="Grimoire"
           >
-            Grimoire
+            <BookMarked size={22} aria-hidden="true" />
           </button>
           <button
             className={`tab-btn ${activeTab === 'features' ? 'active' : ''}`}
             type="button"
             onClick={() => setActiveTab('features')}
+            title="Traits"
+            aria-label="Traits"
           >
-            Traits
+            <Clover size={22} aria-hidden="true" />
           </button>
-          <button className={`tab-btn ${activeTab === 'notes' ? 'active' : ''}`} type="button" onClick={() => setActiveTab('notes')}>
-            Notes
+          <button
+            className={`tab-btn ${activeTab === 'notes' ? 'active' : ''}`}
+            type="button"
+            onClick={() => setActiveTab('notes')}
+            title="Notes"
+            aria-label="Notes"
+          >
+            <ScrollText size={22} aria-hidden="true" />
           </button>
         </div>
 

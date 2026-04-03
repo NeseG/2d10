@@ -37,7 +37,7 @@ enum DndSkillName {
   SURVIVAL
 }
 
-// Types d'objets insérés dans init.sql (table item_types).
+// Types d'objets de base (seed Prisma).
 // Le champ ItemType.name reste String pour permettre d'autres types (ex. via POST /api/items/types).
 enum ItemTypeName {
   Arme
@@ -106,7 +106,9 @@ model Character {
   avatarImageKey  String?  @map("avatar_image_key")
   race            String?
   class           String?
+  archetype       String?
   level           Int?
+  spellcastingAbility AbilityName? @map("spellcasting_ability")
   background      String?
   alignment       String?
   experiencePoints Int     @default(0)
@@ -196,7 +198,7 @@ model CharacterSavingThrow {
   @@map("character_saving_throws")
 }
 
-// Types de base documentés par enum ItemTypeName (même jeu que init.sql).
+// Types de base documentés par enum ItemTypeName.
 model ItemType {
   id          Int    @id @default(autoincrement())
   name        String @unique
@@ -218,7 +220,7 @@ model Item {
   subcategory String?
 
   cost        String?
-  weight      Int?
+  weight      Float?
   description String?
 
   damage      String?
@@ -259,6 +261,7 @@ model Inventory {
   item        Item     @relation(fields: [itemId], references: [id])
   quantity    Int      @default(1)
   notes       String?
+  sortOrder   Int      @default(0) @map("sort_order")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -284,7 +287,7 @@ model Equipment {
   @@map("character_equipment")
 }
 
-// Modèle Purse (colonnes alignées sur init.sql / character_purse)
+// Modèle Purse (colonnes alignées sur la table `character_purse`)
 model Purse {
   id               Int      @id @default(autoincrement())
   characterId      Int      @unique @map("character_id")

@@ -58,29 +58,7 @@ EOF
 
 echo "✅ Fichier .env créé"
 
-# Exécuter le script d'initialisation de la base de données
-echo "🚀 Initialisation de la base de données..."
-node -e "
-const { Pool } = require('pg');
-const fs = require('fs');
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-
-async function initDB() {
-  try {
-    const client = await pool.connect();
-    const initSQL = fs.readFileSync('./init.sql', 'utf8');
-    await client.query(initSQL);
-    console.log('✅ Base de données initialisée avec succès');
-    client.release();
-    process.exit(0);
-  } catch (error) {
-    console.error('❌ Erreur lors de l\'initialisation:', error.message);
-    process.exit(1);
-  }
-}
-
-initDB();
-"
+echo "ℹ️  Initialisation DB gérée par Prisma."
 
 echo ""
 echo "🎉 Installation terminée !"

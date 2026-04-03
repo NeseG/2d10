@@ -116,8 +116,10 @@ export function ItemDetailsModal(props: {
   loading: boolean
   itemDetails: ItemDetail | null
   onClose: () => void
+  onEdit?: () => void
+  editDisabled?: boolean
 }) {
-  const { open, loading, itemDetails, onClose } = props
+  const { open, loading, itemDetails, onClose, onEdit, editDisabled } = props
 
   if (!open) return null
 
@@ -239,6 +241,11 @@ export function ItemDetailsModal(props: {
         ) : null}
 
         <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+          {onEdit ? (
+            <button className="btn" type="button" disabled={loading || editDisabled} onClick={onEdit}>
+              Éditer
+            </button>
+          ) : null}
           <button className="btn btn-secondary" type="button" disabled={loading} onClick={onClose}>
             Fermer
           </button>

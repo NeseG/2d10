@@ -1,5 +1,6 @@
 const express = require('express');
 const prisma = require('../lib/prisma');
+const { nextInventorySortOrder } = require('../lib/next-inventory-sort-order');
 const { authenticateToken } = require('../middleware/auth');
 
 const router = express.Router();
@@ -69,6 +70,8 @@ function mapInventoryRow(inv, eqByItem) {
   return {
     id: inv.id,
     item_id: inv.itemId,
+    index: inv.item?.index ?? null,
+    sort_order: inv.sortOrder ?? 0,
     quantity: inv.quantity,
     is_equipped: Boolean(eq?.isEquipped),
     notes: inv.notes,
@@ -102,7 +105,7 @@ router.get('/:characterId', authenticateToken, checkCharacterOwnership, async (r
       prisma.inventory.findMany({
         where: { characterId },
         include: { item: true },
-        orderBy: { item: { name: 'asc' } },
+        orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
       }),
       prisma.equipment.findMany({
         where: { characterId, isEquipped: true },
@@ -112,7 +115,6 @@ router.get('/:characterId', authenticateToken, checkCharacterOwnership, async (r
 
     const eqByItem = new Map(equipment.map((e) => [e.itemId, e]));
     const rows = inventory.map((inv) => mapInventoryRow(inv, eqByItem));
-    rows.sort((a, b) => Number(b.is_equipped) - Number(a.is_equipped) || a.name.localeCompare(b.name));
 
     const totalWeight = rows.reduce((sum, item) => sum + (Number(item.weight) || 0) * item.quantity, 0);
 
@@ -123,6 +125,60 @@ router.get('/:characterId', authenticateToken, checkCharacterOwnership, async (r
     });
   } catch (error) {
     console.error('Erreur lors de la récupération de l\'inventaire:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+/** Persister l’ordre des lignes d’inventaire (drag & drop). */
+router.put('/:characterId/reorder', authenticateToken, checkCharacterOwnership, async (req, res) => {
+  try {
+    const characterId = parseInt(req.params.characterId, 10);
+    const { ordered_inventory_ids: orderedRaw } = req.body;
+
+    if (!Array.isArray(orderedRaw)) {
+      return res.status(400).json({ error: 'ordered_inventory_ids doit être un tableau' });
+    }
+
+    const ordered = orderedRaw
+      .map((id) => parseInt(String(id), 10))
+      .filter((id) => Number.isFinite(id) && id > 0);
+
+    if (ordered.length !== orderedRaw.length) {
+      return res.status(400).json({ error: 'IDs d’inventaire invalides' });
+    }
+
+    if (new Set(ordered).size !== ordered.length) {
+      return res.status(400).json({ error: 'IDs d’inventaire en doublon' });
+    }
+
+    const existing = await prisma.inventory.findMany({
+      where: { characterId },
+      select: { id: true },
+    });
+    const existingIds = new Set(existing.map((r) => r.id));
+
+    if (ordered.length !== existingIds.size) {
+      return res.status(400).json({ error: 'La liste d’ordre ne correspond pas à l’inventaire' });
+    }
+
+    for (const id of ordered) {
+      if (!existingIds.has(id)) {
+        return res.status(400).json({ error: 'ID d’inventaire inconnu pour ce personnage' });
+      }
+    }
+
+    await prisma.$transaction(
+      ordered.map((id, idx) =>
+        prisma.inventory.update({
+          where: { id },
+          data: { sortOrder: idx },
+        }),
+      ),
+    );
+
+    res.json({ success: true, message: 'Ordre mis à jour' });
+  } catch (error) {
+    console.error('Erreur lors du réordonnancement de l’inventaire:', error);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
@@ -159,8 +215,9 @@ router.post('/:characterId/items', authenticateToken, checkCharacterOwnership, a
       return res.json({ message: 'Quantité mise à jour', inventory_item: inventoryItem });
     }
 
+    const sortOrder = await nextInventorySortOrder(prisma, characterId);
     const inventoryItem = await prisma.inventory.create({
-      data: { characterId, itemId, quantity, notes },
+      data: { characterId, itemId, quantity, notes, sortOrder },
     });
     res.status(201).json({ message: 'Objet ajouté à l\'inventaire', inventory_item: inventoryItem });
   } catch (error) {

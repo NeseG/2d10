@@ -44,6 +44,7 @@ type SessionCampaignCharacter = {
 type SessionDetail = {
   id: number
   campaign_id: number
+  campaign_name?: string | null
   title?: string | null
   session_date?: string | null
   is_active: boolean
@@ -80,6 +81,13 @@ export function SessionsPage() {
   const [deletingSessionId, setDeletingSessionId] = useState<number | null>(null)
   const [deleteSessionTarget, setDeleteSessionTarget] = useState<{ id: number; title: string } | null>(null)
   const [addCharacterSaving, setAddCharacterSaving] = useState(false)
+  const [removeAttendanceTarget, setRemoveAttendanceTarget] = useState<{
+    attendanceId: number
+    characterName: string
+  } | null>(null)
+  const [removingAttendanceId, setRemovingAttendanceId] = useState<number | null>(null)
+  const [selectedSessionDetail, setSelectedSessionDetail] = useState<SessionDetail | null>(null)
+  const [sessionDetailLoading, setSessionDetailLoading] = useState(false)
 
   const canManageSessions = user?.role === 'admin' || user?.role === 'gm'
 
@@ -202,6 +210,22 @@ export function SessionsPage() {
     }
   }
 
+  async function openSessionDetail(sessionId: number) {
+    setSessionDetailLoading(true)
+    setSelectedSessionDetail(null)
+    try {
+      const response = await apiGet<{ success: boolean; session: SessionDetail }>(`/api/sessions/${sessionId}`, token)
+      setSelectedSessionDetail(response.session ?? null)
+    } catch (err) {
+      showSnackbar({
+        message: err instanceof Error ? err.message : 'Erreur de chargement de la session',
+        severity: 'error',
+      })
+    } finally {
+      setSessionDetailLoading(false)
+    }
+  }
+
   async function handleAddCharacterToSession() {
     if (!editForm.selectedCharacterId) {
       showSnackbar({ message: 'Sélectionne un personnage.', severity: 'error' })
@@ -256,6 +280,31 @@ export function SessionsPage() {
     }
   }
 
+  async function handleRemoveAttendanceFromSession() {
+    if (!removeAttendanceTarget) return
+    setRemovingAttendanceId(removeAttendanceTarget.attendanceId)
+    try {
+      await apiDelete(
+        `/api/sessions/${editForm.sessionId}/attendance/${removeAttendanceTarget.attendanceId}`,
+        token,
+      )
+      showSnackbar({ message: 'Personnage retiré de la session.', severity: 'success' })
+      setRemoveAttendanceTarget(null)
+      await openEditSession(editForm.sessionId)
+      if (selectedSessionDetail?.id === editForm.sessionId) {
+        await openSessionDetail(editForm.sessionId)
+      }
+      await loadSessions()
+    } catch (err) {
+      showSnackbar({
+        message: err instanceof Error ? err.message : 'Erreur retrait du personnage',
+        severity: 'error',
+      })
+    } finally {
+      setRemovingAttendanceId(null)
+    }
+  }
+
   async function handleDeleteSession() {
     if (!deleteSessionTarget) return
     setDeletingSessionId(deleteSessionTarget.id)
@@ -302,12 +351,17 @@ export function SessionsPage() {
           </thead>
           <tbody>
             {activeSessions.map((session) => (
-              <tr key={session.id}>
+              <tr
+                key={session.id}
+                className="clickable-row"
+                onClick={() => void openSessionDetail(session.id)}
+                title="Voir le détail de la session"
+              >
                 <td data-label="Session">{session.title ?? `Session #${session.session_number ?? session.id}`}</td>
                 <td data-label="Campagne">{session.campaign_name ?? '—'}</td>
                 <td data-label="Date">{session.session_date ?? '—'}</td>
                 <td data-label="Statut">{session.is_active ? 'active' : 'inactive'}</td>
-                <td data-label="Actions">
+                <td data-label="Actions" onClick={(event) => event.stopPropagation()}>
                   <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                     <button className="btn btn-small" type="button" onClick={() => handleJoinSession(session)}>
                       Rejoindre
@@ -452,6 +506,7 @@ export function SessionsPage() {
                           <th>Joueur</th>
                           <th>Classe</th>
                           <th>Niveau</th>
+                          <th></th>
                         </tr>
                       </thead>
                       <tbody>
@@ -461,6 +516,21 @@ export function SessionsPage() {
                             <td data-label="Joueur">{row.player_username ?? '—'}</td>
                             <td data-label="Classe">{row.class ?? '—'}</td>
                             <td data-label="Niveau">{row.level ?? '—'}</td>
+                            <td data-label="Actions">
+                              <button
+                                className="btn btn-secondary btn-small"
+                                type="button"
+                                disabled={editSaving || removingAttendanceId === row.id}
+                                onClick={() =>
+                                  setRemoveAttendanceTarget({
+                                    attendanceId: row.id,
+                                    characterName: row.character_name?.trim() || `Personnage #${row.character_id}`,
+                                  })
+                                }
+                              >
+                                Supprimer
+                              </button>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -527,6 +597,41 @@ export function SessionsPage() {
         </div>
       ) : null}
 
+      {removeAttendanceTarget ? (
+        <div
+          className="modal-backdrop modal-backdrop-stacked"
+          onClick={() => {
+            if (removingAttendanceId == null) setRemoveAttendanceTarget(null)
+          }}
+        >
+          <div className="modal-card" onClick={(event) => event.stopPropagation()}>
+            <h3>Retirer le personnage</h3>
+            <p>
+              Confirmer le retrait de{' '}
+              <strong>{removeAttendanceTarget.characterName}</strong> de cette session ?
+            </p>
+            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+              <button
+                className="btn"
+                type="button"
+                disabled={removingAttendanceId != null}
+                onClick={() => void handleRemoveAttendanceFromSession()}
+              >
+                {removingAttendanceId != null ? 'Suppression…' : 'Oui, retirer'}
+              </button>
+              <button
+                className="btn btn-secondary"
+                type="button"
+                disabled={removingAttendanceId != null}
+                onClick={() => setRemoveAttendanceTarget(null)}
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {deleteSessionTarget ? (
         <div
           className="modal-backdrop"
@@ -552,6 +657,85 @@ export function SessionsPage() {
                 Annuler
               </button>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {(sessionDetailLoading || selectedSessionDetail) ? (
+        <div
+          className="modal-backdrop modal-backdrop-stacked"
+          onClick={() => {
+            if (!sessionDetailLoading) setSelectedSessionDetail(null)
+          }}
+        >
+          <div className="modal-card" onClick={(event) => event.stopPropagation()}>
+            {sessionDetailLoading ? <p>Chargement…</p> : null}
+            {!sessionDetailLoading && selectedSessionDetail ? (
+              <>
+                <div className="item-details-header">
+                  <div>
+                    <div className="item-details-header-name" style={{ fontSize: '1.12rem' }}>
+                      {selectedSessionDetail.title?.trim() ? selectedSessionDetail.title : `Session #${selectedSessionDetail.id}`}
+                    </div>
+                    <div className="item-details-header-submeta">
+                      {selectedSessionDetail.campaign_name?.trim() || '—'}
+                    </div>
+                  </div>
+                  <div className="item-details-header-meta">
+                    <span className="item-details-header-type">
+                      {selectedSessionDetail.is_active ? 'active' : 'inactive'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="item-details" style={{ marginTop: '0.75rem' }}>
+                  <p style={{ margin: 0 }}>{selectedSessionDetail.session_date ?? '—'}</p>
+                </div>
+
+                <hr
+                  style={{
+                    border: 0,
+                    borderTop: '1px solid var(--border)',
+                    opacity: 0.7,
+                    margin: '0.75rem 0',
+                  }}
+                />
+
+                <h4 style={{ marginTop: '1rem' }}>Liste des personnages</h4>
+                {selectedSessionDetail.attendance?.length ? (
+                  <div className="table-wrap">
+                    <table className="table inventory-items-table">
+                      <thead>
+                        <tr>
+                          <th>Nom</th>
+                          <th>Joueur</th>
+                          <th>Classe</th>
+                          <th>Niveau</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedSessionDetail.attendance.map((row) => (
+                          <tr key={row.id}>
+                            <td data-label="Nom">{row.character_name ?? '—'}</td>
+                            <td data-label="Joueur">{row.player_username ?? '—'}</td>
+                            <td data-label="Classe">{row.class ?? '—'}</td>
+                            <td data-label="Niveau">{row.level ?? '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p>Aucun personnage lié.</p>
+                )}
+
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+                  <button className="btn btn-secondary" type="button" onClick={() => setSelectedSessionDetail(null)}>
+                    Fermer
+                  </button>
+                </div>
+              </>
+            ) : null}
           </div>
         </div>
       ) : null}

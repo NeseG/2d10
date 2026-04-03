@@ -242,11 +242,13 @@ export function ItemEditModal(props: {
             </label>
 
             <label className="item-edit-form-row" htmlFor="edit-item-weight">
-              <span>Poids</span>
+              <span>Poids (kg)</span>
               <input
                 id="edit-item-weight"
-                type="number"
-                min={0}
+                type="text"
+                inputMode="decimal"
+                autoComplete="off"
+                placeholder="ex. 1 ou 0,5"
                 disabled={loading || saving}
                 value={form.weight}
                 onChange={(event) => setForm((p) => ({ ...p, weight: event.target.value }))}

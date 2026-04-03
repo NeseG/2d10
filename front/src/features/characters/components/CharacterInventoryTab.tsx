@@ -1,5 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Car,
+  Cog,
+  Dog,
+  FlaskRound,
+  Funnel,
+  GripVertical,
+  Pickaxe,
+  RotateCcw,
+  Shapes,
+  Shield,
+  Sword,
+} from 'lucide-react'
 import { apiDelete, apiGet, apiPost, apiPut } from '../../../shared/api/client'
+import { parseLocalizedDecimalString } from '../../../shared/utils/parseLocalizedDecimal'
 import { useAuth } from '../../../app/hooks/useAuth'
 import { useSnackbar } from '../../../app/hooks/useSnackbar'
 import { ItemDetailsModal, type ItemDetail } from '../../inventory/components/ItemDetailsModal'
@@ -20,6 +34,8 @@ type CharacterPurse = {
 type InventoryItem = {
   id: number
   item_id?: number | null
+  index?: string | null
+  sort_order?: number
   name: string
   quantity: number
   is_equipped: boolean
@@ -27,6 +43,7 @@ type InventoryItem = {
   type?: string | null
   category?: string | null
   cost?: string | null
+  properties?: unknown
 }
 
 type Dnd5eEquipmentListItem = {
@@ -99,6 +116,25 @@ function formatJsonOrDash(value: unknown): string {
   }
 }
 
+function isDnd5eMagicItemProperties(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const v = value as Record<string, unknown>
+  return v.dnd5e_magic_item === true
+}
+
+function findInventoryRowElementFromPoint(clientX: number, clientY: number): HTMLElement | null {
+  if (typeof document.elementsFromPoint === 'function') {
+    for (const el of document.elementsFromPoint(clientX, clientY)) {
+      const tr = el.closest?.('tr[data-inventory-line-id]')
+      if (tr instanceof HTMLElement) return tr
+    }
+    return null
+  }
+  const hit = document.elementFromPoint(clientX, clientY)
+  const tr = hit?.closest?.('tr[data-inventory-line-id]')
+  return tr instanceof HTMLElement ? tr : null
+}
+
 function isEquipableItemType(typeValue?: string | null): boolean {
   const normalized = String(typeValue || '')
     .trim()
@@ -110,6 +146,24 @@ function isEquipableItemType(typeValue?: string | null): boolean {
     normalized === 'consumable' ||
     normalized === 'ammunition'
   )
+}
+
+function getItemTypeIcon(typeValue?: string | null): { icon: React.ReactNode; label: string } | null {
+  const t = String(typeValue ?? '')
+    .trim()
+    .toLowerCase()
+  if (!t) return { icon: <Shapes size={18} aria-hidden="true" />, label: 'other' }
+
+  if (t === 'armor') return { icon: <Shield size={18} aria-hidden="true" />, label: 'armor' }
+  if (t === 'weapon') return { icon: <Sword size={18} aria-hidden="true" />, label: 'weapon' }
+  if (t === 'gear') return { icon: <Cog size={18} aria-hidden="true" />, label: 'gear' }
+  if (t === 'tool') return { icon: <Pickaxe size={18} aria-hidden="true" />, label: 'tool' }
+  if (t === 'mount') return { icon: <Dog size={18} aria-hidden="true" />, label: 'mount' }
+  if (t === 'vehicle') return { icon: <Car size={18} aria-hidden="true" />, label: 'vehicle' }
+  if (t === 'ammunition') return { icon: <RotateCcw size={18} aria-hidden="true" />, label: 'ammunition' }
+  if (t === 'consumable') return { icon: <FlaskRound size={18} aria-hidden="true" />, label: 'consumable' }
+
+  return { icon: <Shapes size={18} aria-hidden="true" />, label: t }
 }
 
 type PurseDraft = {
@@ -305,6 +359,17 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
   const [inventorySearch, setInventorySearch] = useState('')
   const [inventoryFiltersOpen, setInventoryFiltersOpen] = useState(false)
   const [selectedCategories, setSelectedCategories] = useState<string[]>([])
+  const [draggingInventoryId, setDraggingInventoryId] = useState<number | null>(null)
+  const [dragOverInventoryId, setDragOverInventoryId] = useState<number | null>(null)
+  const [inventoryReorderSaving, setInventoryReorderSaving] = useState(false)
+  const reorderPointerRef = useRef<{
+    pointerId: number
+    sourceId: number
+    captureTarget: HTMLElement | null
+  } | null>(null)
+  const dragOverInventoryIdRef = useRef<number | null>(null)
+  /** Évite d’ouvrir la fiche item juste après un relâchement de glisser (mobile / souris). */
+  const skipNextInventoryRowClickRef = useRef(false)
 
   const [isCreateItemModalOpen, setIsCreateItemModalOpen] = useState(false)
   const [createItemSaving, setCreateItemSaving] = useState(false)
@@ -324,6 +389,7 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
   const [isItemDetailsModalOpen, setIsItemDetailsModalOpen] = useState(false)
   const [itemDetailsLoading, setItemDetailsLoading] = useState(false)
   const [itemDetails, setItemDetails] = useState<ItemDetail | null>(null)
+  const [itemDetailsInventoryLineId, setItemDetailsInventoryLineId] = useState<number | null>(null)
 
   const [isEditItemModalOpen, setIsEditItemModalOpen] = useState(false)
   const [editItemLoading, setEditItemLoading] = useState(false)
@@ -501,6 +567,109 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
     })
   }, [inventoryItems, inventorySearch, selectedCategories])
 
+  const canReorderInventory = useMemo(
+    () =>
+      inventoryItems.length > 1 && !inventorySearch.trim() && selectedCategories.length === 0,
+    [inventoryItems.length, inventorySearch, selectedCategories.length],
+  )
+
+  async function applyInventoryReorder(draggedId: number, targetId: number) {
+    if (!characterId || draggedId === targetId || !canReorderInventory) return
+    const prev = inventoryItems
+    const from = prev.findIndex((i) => i.id === draggedId)
+    const to = prev.findIndex((i) => i.id === targetId)
+    if (from < 0 || to < 0) return
+    const next = [...prev]
+    const [moved] = next.splice(from, 1)
+    next.splice(to, 0, moved)
+    const orderedIds = next.map((i) => i.id)
+    setInventoryItems(next)
+    setInventoryReorderSaving(true)
+    try {
+      await apiPut(`/api/inventory/${characterId}/reorder`, { ordered_inventory_ids: orderedIds }, token)
+    } catch (err) {
+      setInventoryItems(prev)
+      showSnackbar({
+        message: err instanceof Error ? err.message : 'Erreur lors de l’enregistrement de l’ordre',
+        severity: 'error',
+      })
+    } finally {
+      setInventoryReorderSaving(false)
+    }
+  }
+
+  function handleInventoryReorderPointerDown(
+    event: React.PointerEvent<HTMLTableCellElement>,
+    sourceId: number,
+  ) {
+    if (!canReorderInventory) return
+    if (event.pointerType === 'mouse' && event.button !== 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    const el = event.currentTarget
+    el.setPointerCapture(event.pointerId)
+    reorderPointerRef.current = {
+      pointerId: event.pointerId,
+      sourceId,
+      captureTarget: el,
+    }
+    dragOverInventoryIdRef.current = sourceId
+    setDraggingInventoryId(sourceId)
+    setDragOverInventoryId(sourceId)
+  }
+
+  function handleInventoryReorderPointerMove(event: React.PointerEvent<HTMLTableCellElement>) {
+    const st = reorderPointerRef.current
+    if (!st || event.pointerId !== st.pointerId) return
+    const tr = findInventoryRowElementFromPoint(event.clientX, event.clientY)
+    const raw = tr?.dataset?.inventoryLineId
+    const overId = raw != null ? Number.parseInt(raw, 10) : Number.NaN
+    if (!Number.isFinite(overId)) return
+    if (dragOverInventoryIdRef.current !== overId) {
+      dragOverInventoryIdRef.current = overId
+      setDragOverInventoryId(overId)
+    }
+  }
+
+  function clearInventoryReorderPointer(event: React.PointerEvent<HTMLTableCellElement>) {
+    const st = reorderPointerRef.current
+    if (!st || event.pointerId !== st.pointerId) return
+    event.stopPropagation()
+    try {
+      st.captureTarget?.releasePointerCapture(event.pointerId)
+    } catch {
+      /* déjà relâché */
+    }
+    const sourceId = st.sourceId
+    const targetId = dragOverInventoryIdRef.current
+    reorderPointerRef.current = null
+    dragOverInventoryIdRef.current = null
+    setDraggingInventoryId(null)
+    setDragOverInventoryId(null)
+    skipNextInventoryRowClickRef.current = true
+    window.setTimeout(() => {
+      skipNextInventoryRowClickRef.current = false
+    }, 0)
+    if (targetId != null && sourceId !== targetId) {
+      void applyInventoryReorder(sourceId, targetId)
+    }
+  }
+
+  function abortInventoryReorderPointer(event: React.PointerEvent<HTMLTableCellElement>) {
+    const st = reorderPointerRef.current
+    if (!st || event.pointerId !== st.pointerId) return
+    event.stopPropagation()
+    try {
+      st.captureTarget?.releasePointerCapture(event.pointerId)
+    } catch {
+      /* déjà relâché */
+    }
+    reorderPointerRef.current = null
+    dragOverInventoryIdRef.current = null
+    setDraggingInventoryId(null)
+    setDragOverInventoryId(null)
+  }
+
   function schedulePursePersist() {
     if (purseSaveTimerRef.current) clearTimeout(purseSaveTimerRef.current)
     purseSaveTimerRef.current = setTimeout(() => {
@@ -677,6 +846,16 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
     setCreateItemSaving(true)
     const createdAsMagic = createItemKind === 'magic'
     try {
+      let weightPayload: number | null = null
+      if (newItemForm.weight.trim() !== '') {
+        const w = parseLocalizedDecimalString(newItemForm.weight)
+        if (w == null) {
+          showSnackbar({ message: 'Poids invalide (ex. 1 ou 0,5).', severity: 'error' })
+          return
+        }
+        weightPayload = w
+      }
+
       const payload: Record<string, unknown> = {
         name: newItemForm.name.trim(),
         description: newItemForm.description.trim() || null,
@@ -684,7 +863,7 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
         category: newItemForm.category.trim() || null,
         subcategory: newItemForm.subcategory.trim() || null,
         cost: newItemForm.cost.trim() || null,
-        weight: newItemForm.weight.trim() === '' ? null : Number.parseInt(newItemForm.weight, 10),
+        weight: weightPayload,
       }
       if (createdAsMagic) {
         payload.subcategory = newItemForm.rarity.trim() || null
@@ -719,6 +898,7 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
     setIsItemDetailsModalOpen(true)
     setItemDetails(null)
     setItemDetailsLoading(true)
+    setItemDetailsInventoryLineId(item.id)
     try {
       const res = await apiGet<{ item: ItemDetail }>(`/api/items/${itemId}`, token)
       setItemDetails(res.item)
@@ -775,6 +955,16 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
     if (!editItemId) return
     setEditItemSaving(true)
     try {
+      let weightOut: number | null = null
+      if (editItemForm.weight.trim() !== '') {
+        const w = parseLocalizedDecimalString(editItemForm.weight)
+        if (w == null) {
+          showSnackbar({ message: 'Poids invalide (ex. 1 ou 0,5).', severity: 'error' })
+          return
+        }
+        weightOut = w
+      }
+
       const parsedProperties = parseJsonOrNull(editItemForm.propertiesJson)
       const armorProperties =
         editItemForm.type === 'armor'
@@ -797,7 +987,7 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
           category: editItemForm.category.trim() || null,
           subcategory: editItemForm.subcategory.trim() || null,
           cost: editItemForm.cost.trim() || null,
-          weight: editItemForm.weight.trim() === '' ? null : Number.parseInt(editItemForm.weight, 10),
+          weight: weightOut,
           damage: editItemForm.damage.trim() || null,
           damageType: editItemForm.damageType.trim() || null,
           range: serializeItemRange(editItemForm.rangeNormal, editItemForm.rangeLong),
@@ -1065,13 +1255,6 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
             <button className="btn" type="button" onClick={() => void openCreateItemModal()}>
               Créer un item
             </button>
-            <button
-              className="btn btn-secondary"
-              type="button"
-              onClick={() => setInventoryFiltersOpen((prev) => !prev)}
-            >
-              Filtres
-            </button>
             {canImportDndEquipment ? (
               <button className="btn btn-secondary" type="button" onClick={() => void openDndEquipmentModal()}>
                 Importer (SRD D&D)
@@ -1087,6 +1270,15 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
               value={inventorySearch}
               onChange={(event) => setInventorySearch(event.target.value)}
             />
+            <button
+              className={`btn btn-secondary inventory-filter-btn${inventoryFiltersOpen ? ' active' : ''}`}
+              type="button"
+              onClick={() => setInventoryFiltersOpen((prev) => !prev)}
+              title="Filtres"
+              aria-label="Filtres"
+            >
+              <Funnel size={18} aria-hidden="true" />
+            </button>
           </div>
 
           {inventoryFiltersOpen ? (
@@ -1122,6 +1314,16 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
             </div>
           ) : null}
 
+          {inventoryItems.length > 1 ? (
+            <p className="inventory-reorder-hint">
+              {canReorderInventory
+                ? inventoryReorderSaving
+                  ? 'Enregistrement de l’ordre…'
+                  : 'Maintenez ⋮⋮ et faites glisser (souris ou doigt) pour réordonner.'
+                : 'Pour réordonner, retirez la recherche et les filtres de catégorie.'}
+            </p>
+          ) : null}
+
           {inventoryItems.length === 0 ? (
             <p>Aucun item dans l’inventaire.</p>
           ) : filteredInventoryItems.length === 0 ? (
@@ -1134,17 +1336,57 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
                     <th>Nom</th>
                     <th>Qty</th>
                     <th>Équipé</th>
-                    <th>Actions</th>
+                    <th className="inventory-drag-handle-th" aria-label="Réordonner" title="Réordonner">
+                      <GripVertical size={16} aria-hidden="true" className="inventory-drag-header-icon" />
+                    </th>
+                    <th className="inventory-actions-col">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredInventoryItems.map((item) => (
                     <tr
                       key={item.id}
-                      className={item.item_id ? 'clickable-row' : undefined}
-                      onClick={() => (item.item_id ? void openItemDetailsModal(item) : undefined)}
+                      data-inventory-line-id={String(item.id)}
+                      className={[
+                        item.item_id ? 'clickable-row' : '',
+                        draggingInventoryId === item.id ? 'inventory-row-dragging' : '',
+                        draggingInventoryId != null &&
+                        dragOverInventoryId === item.id &&
+                        draggingInventoryId !== item.id
+                          ? 'inventory-row-drag-over'
+                          : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' ')}
+                      onClick={() => {
+                        if (skipNextInventoryRowClickRef.current) return
+                        if (!item.item_id) return
+                        const idx = typeof item.index === 'string' ? item.index.trim() : ''
+                        // `Item.index` est utilisé aussi pour les items custom (ex: `__manual__...`) :
+                        // on n'ouvre la fiche SRD que pour les vrais index SRD.
+                        const looksLikeSrdIndex =
+                          Boolean(idx) && !idx.includes('__manual__') && !idx.includes('__copy__')
+                        if (looksLikeSrdIndex) {
+                          if (isDnd5eMagicItemProperties(item.properties)) void openDndCatalogMagicDetail(idx)
+                          else void openDndCatalogEquipmentDetail(idx)
+                          return
+                        }
+                        void openItemDetailsModal(item)
+                      }}
                     >
-                      <td data-label="Nom">{item.name ?? '—'}</td>
+                      <td data-label="Nom">
+                        <span className="inventory-item-name">
+                          {(() => {
+                            const icon = getItemTypeIcon(item.type)
+                            return icon ? (
+                              <span className="inventory-item-type-icon" title={icon.label} aria-label={icon.label}>
+                                {icon.icon}
+                              </span>
+                            ) : null
+                          })()}
+                          <span>{item.name ?? '—'}</span>
+                        </span>
+                      </td>
                       <td data-label="Qty">
                         <div className="inventory-qty-control" onClick={(event) => event.stopPropagation()}>
                           <button
@@ -1203,7 +1445,37 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
                           onClick={(event) => event.stopPropagation()}
                         />
                       </td>
-                      <td data-label="Actions">
+                      <td
+                        data-label="Ordre"
+                        className="inventory-drag-handle-col"
+                        onPointerDown={(event) =>
+                          handleInventoryReorderPointerDown(event, item.id)
+                        }
+                        onPointerMove={handleInventoryReorderPointerMove}
+                        onPointerUp={clearInventoryReorderPointer}
+                        onPointerCancel={abortInventoryReorderPointer}
+                        onLostPointerCapture={(event) => {
+                          const st = reorderPointerRef.current
+                          if (!st || st.pointerId !== event.pointerId) return
+                          reorderPointerRef.current = null
+                          dragOverInventoryIdRef.current = null
+                          setDraggingInventoryId(null)
+                          setDragOverInventoryId(null)
+                        }}
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <span
+                          className="inventory-drag-handle"
+                          title={
+                            canReorderInventory
+                              ? 'Glisser pour réordonner'
+                              : 'Réordonner : retirez recherche et filtres'
+                          }
+                        >
+                          <GripVertical size={18} aria-hidden="true" />
+                        </span>
+                      </td>
+                      <td data-label="Actions" className="inventory-actions-col">
                         <button
                           className="btn btn-secondary btn-small"
                           type="button"
@@ -1313,8 +1585,16 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
               <label htmlFor="new-item-cost">Coût</label>
               <input id="new-item-cost" type="text" placeholder="Ex. 15 gp" value={newItemForm.cost} onChange={(event) => setNewItemForm((prev) => ({ ...prev, cost: event.target.value }))} />
 
-              <label htmlFor="new-item-weight">Poids</label>
-              <input id="new-item-weight" type="number" min={0} value={newItemForm.weight} onChange={(event) => setNewItemForm((prev) => ({ ...prev, weight: event.target.value }))} />
+              <label htmlFor="new-item-weight">Poids (kg)</label>
+              <input
+                id="new-item-weight"
+                type="text"
+                inputMode="decimal"
+                autoComplete="off"
+                placeholder="ex. 1 ou 0,5"
+                value={newItemForm.weight}
+                onChange={(event) => setNewItemForm((prev) => ({ ...prev, weight: event.target.value }))}
+              />
 
               <label htmlFor="new-item-description">Description</label>
               <textarea id="new-item-description" rows={3} value={newItemForm.description} onChange={(event) => setNewItemForm((prev) => ({ ...prev, description: event.target.value }))} />
@@ -1348,7 +1628,16 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
           open={isItemDetailsModalOpen}
           loading={itemDetailsLoading}
           itemDetails={itemDetails}
-          onClose={() => setIsItemDetailsModalOpen(false)}
+          onClose={() => {
+            setIsItemDetailsModalOpen(false)
+            setItemDetailsInventoryLineId(null)
+          }}
+          onEdit={() => {
+            if (!itemDetails?.id || !itemDetailsInventoryLineId) return
+            setIsItemDetailsModalOpen(false)
+            void openEditItemModal({ itemId: itemDetails.id, inventoryLineId: itemDetailsInventoryLineId })
+          }}
+          editDisabled={!itemDetails?.id || !itemDetailsInventoryLineId}
         />
       )}
 

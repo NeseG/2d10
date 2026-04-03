@@ -10,6 +10,43 @@ type CharacterSpellSlot = {
   slotsMax: number
 }
 
+type AbilityName = 'STRENGTH' | 'DEXTERITY' | 'CONSTITUTION' | 'INTELLIGENCE' | 'WISDOM' | 'CHARISMA'
+
+const SPELLCASTING_ABILITY_OPTIONS: Array<{ value: AbilityName; label: string }> = [
+  { value: 'STRENGTH', label: 'FOR' },
+  { value: 'DEXTERITY', label: 'DEX' },
+  { value: 'CONSTITUTION', label: 'CON' },
+  { value: 'INTELLIGENCE', label: 'INT' },
+  { value: 'WISDOM', label: 'SAG' },
+  { value: 'CHARISMA', label: 'CHA' },
+]
+
+function abilityScoreKeyFromName(ability: AbilityName): 'strength' | 'dexterity' | 'constitution' | 'intelligence' | 'wisdom' | 'charisma' {
+  switch (ability) {
+    case 'STRENGTH':
+      return 'strength'
+    case 'DEXTERITY':
+      return 'dexterity'
+    case 'CONSTITUTION':
+      return 'constitution'
+    case 'INTELLIGENCE':
+      return 'intelligence'
+    case 'WISDOM':
+      return 'wisdom'
+    case 'CHARISMA':
+      return 'charisma'
+  }
+}
+
+function getModifier(score: number): number {
+  return Math.floor((score - 10) / 2)
+}
+
+function getProficiencyBonus(level: number): number {
+  if (!Number.isFinite(level) || level < 1) return 0
+  return 2 + Math.floor((level - 1) / 4)
+}
+
 type GrimoireEntry = {
   id: number
   character_id: number
@@ -105,6 +142,10 @@ export function CharacterGrimoireTab(props: {
 }) {
   const { characterId, token, user, sessionView = false, sessionId } = props
   const { showSnackbar } = useSnackbar()
+
+  const [spellcastingAbility, setSpellcastingAbility] = useState<AbilityName | ''>('')
+  const [characterLevel, setCharacterLevel] = useState<number | null>(null)
+  const [abilityScores, setAbilityScores] = useState<Partial<Record<'strength' | 'dexterity' | 'constitution' | 'intelligence' | 'wisdom' | 'charisma', number>>>({})
 
   const [spellSlotsDraft, setSpellSlotsDraft] = useState<Record<number, { slotsMax: string }>>(() =>
     Array.from({ length: 10 }, (_, level) => level).reduce<Record<number, { slotsMax: string }>>((acc, lvl) => {
@@ -203,7 +244,21 @@ export function CharacterGrimoireTab(props: {
     async function loadSlots() {
       if (!characterId) return
       try {
-        const response = await apiGet<{ success: boolean; character: { spellSlots?: Array<{ level: number; slotsMax: number }> } }>(
+        const response = await apiGet<{
+          success: boolean
+          character: {
+            spellSlots?: Array<{ level: number; slotsMax: number }>
+            level?: number | null
+            strength?: number | null
+            dexterity?: number | null
+            constitution?: number | null
+            intelligence?: number | null
+            wisdom?: number | null
+            charisma?: number | null
+            spellcastingAbility?: AbilityName | null
+            spellcasting_ability?: AbilityName | null
+          }
+        }>(
           `/api/characters/${characterId}`,
           token,
         )
@@ -216,12 +271,50 @@ export function CharacterGrimoireTab(props: {
         spellSlotsLoadedRef.current = false
         setSpellSlotsDraft(slotsMap)
         spellSlotsLoadedRef.current = true
+
+        const ability = (response.character?.spellcastingAbility ?? response.character?.spellcasting_ability) ?? null
+        setSpellcastingAbility(ability ? ability : '')
+        setCharacterLevel(response.character?.level != null ? Number(response.character.level) : null)
+        setAbilityScores({
+          strength: response.character?.strength ?? undefined,
+          dexterity: response.character?.dexterity ?? undefined,
+          constitution: response.character?.constitution ?? undefined,
+          intelligence: response.character?.intelligence ?? undefined,
+          wisdom: response.character?.wisdom ?? undefined,
+          charisma: response.character?.charisma ?? undefined,
+        })
       } catch {
         // ignore
       }
     }
     void loadSlots()
   }, [characterId, token])
+
+  const spellcastingStats = useMemo(() => {
+    if (!spellcastingAbility) return null
+    const level = characterLevel
+    const pb = level != null ? getProficiencyBonus(level) : null
+    const scoreKey = abilityScoreKeyFromName(spellcastingAbility)
+    const score = abilityScores[scoreKey]
+    const mod = typeof score === 'number' && Number.isFinite(score) ? getModifier(score) : null
+    if (pb == null || mod == null) {
+      return { pb, mod, dc: null as number | null, attackBonus: null as number | null }
+    }
+    return { pb, mod, dc: 8 + pb + mod, attackBonus: pb + mod }
+  }, [spellcastingAbility, abilityScores, characterLevel])
+
+  async function handleSpellcastingAbilityChange(next: AbilityName | '') {
+    setSpellcastingAbility(next)
+    if (sessionView || !characterId) return
+    try {
+      await apiPut(`/api/characters/${characterId}`, { spellcasting_ability: next || null }, token)
+    } catch (err) {
+      showSnackbar({
+        message: err instanceof Error ? err.message : "Erreur lors de la mise à jour de la caractéristique d'incantation",
+        severity: 'error',
+      })
+    }
+  }
 
   useEffect(() => {
     return () => {
@@ -700,6 +793,49 @@ export function CharacterGrimoireTab(props: {
         </div>
       ) : (
         <>
+          <div className="grimoire-spellcasting-panel" style={{ marginBottom: '0.75rem' }}>
+            <label className="item-edit-form-row" htmlFor="spellcasting-ability-select">
+              <span>Caractéristique d&apos;incantation</span>
+              <select
+                id="spellcasting-ability-select"
+                value={spellcastingAbility}
+                onChange={(event) => void handleSpellcastingAbilityChange((event.target.value as AbilityName) || '')}
+                disabled={!characterId}
+                className="grimoire-spellcasting-select"
+              >
+                <option value="">—</option>
+                {SPELLCASTING_ABILITY_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="grimoire-spellcasting-stats">
+              <p className="grimoire-spellcasting-stat">
+                <strong>DD de sauvegarde</strong>{' '}
+                {spellcastingStats?.dc != null ? spellcastingStats.dc : '—'}{' '}
+                <span className="grimoire-spellcasting-formula">
+                  (= 8 + maîtrise {spellcastingStats?.pb != null ? spellcastingStats.pb : '—'} + modif{' '}
+                  {spellcastingStats?.mod != null ? (spellcastingStats.mod >= 0 ? `+${spellcastingStats.mod}` : String(spellcastingStats.mod)) : '—'})
+                </span>
+              </p>
+              <p className="grimoire-spellcasting-stat">
+                <strong>Bonus d&apos;attaque</strong>{' '}
+                {spellcastingStats?.attackBonus != null
+                  ? spellcastingStats.attackBonus >= 0
+                    ? `+${spellcastingStats.attackBonus}`
+                    : String(spellcastingStats.attackBonus)
+                  : '—'}{' '}
+                <span className="grimoire-spellcasting-formula">
+                  (= maîtrise {spellcastingStats?.pb != null ? spellcastingStats.pb : '—'} + modif{' '}
+                  {spellcastingStats?.mod != null ? (spellcastingStats.mod >= 0 ? `+${spellcastingStats.mod}` : String(spellcastingStats.mod)) : '—'})
+                </span>
+              </p>
+            </div>
+          </div>
+
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
             <button className="btn" type="button" onClick={() => setIsCreateSpellModalOpen(true)}>
               Créer un sort

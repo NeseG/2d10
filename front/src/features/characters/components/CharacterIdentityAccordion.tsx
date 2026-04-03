@@ -3,7 +3,9 @@ type CharacterIdentityAccordionProps = {
     name: string
     race: string
     class: string
+    archetype: string
     level: string
+    experiencePoints: string
     background: string
     description: string
     alignment: string
@@ -94,6 +96,16 @@ export function CharacterIdentityAccordion(props: CharacterIdentityAccordionProp
           </div>
 
           <div>
+            <label htmlFor="char-archetype">Archétype</label>
+            <input
+              id="char-archetype"
+              type="text"
+              value={form.archetype}
+              onChange={(e) => setForm((p) => ({ ...p, archetype: e.target.value }))}
+            />
+          </div>
+
+          <div>
             <label htmlFor="char-level">Niveau</label>
             <input
               id="char-level"
@@ -101,6 +113,17 @@ export function CharacterIdentityAccordion(props: CharacterIdentityAccordionProp
               min={1}
               value={form.level}
               onChange={(e) => setForm((p) => ({ ...p, level: e.target.value }))}
+            />
+          </div>
+
+          <div>
+            <label htmlFor="char-experience-points">Expérience</label>
+            <input
+              id="char-experience-points"
+              type="number"
+              min={0}
+              value={form.experiencePoints}
+              onChange={(e) => setForm((p) => ({ ...p, experiencePoints: e.target.value }))}
             />
           </div>
 

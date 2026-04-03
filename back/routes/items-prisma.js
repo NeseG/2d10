@@ -19,6 +19,18 @@ function makeUniqueIndexFromName(name) {
   return `${base}__manual__${suffix}`;
 }
 
+/** Accepte `0,5` ou `0.5` (virgule = séparateur décimal). */
+function parseOptionalItemWeight(value) {
+  if (value === undefined) return { skip: true };
+  if (value === null || value === '') return { value: null };
+  const s = String(value).trim();
+  if (!s) return { value: null };
+  const normalized = s.includes(',') ? s.replace(',', '.') : s;
+  const n = Number.parseFloat(normalized);
+  if (Number.isNaN(n) || n < 0) return { error: 'Poids invalide' };
+  return { value: n };
+}
+
 function buildListWhere(query) {
   const { type, category, search } = query;
   const and = [];
@@ -125,6 +137,12 @@ router.post('/', authenticateToken, requireRole(['admin', 'gm']), async (req, re
     // on génère un index unique pour permettre plusieurs items avec le même nom.
     const indexSeed = index ? slugify(index) : makeUniqueIndexFromName(name);
 
+    const parsedWeight = parseOptionalItemWeight(weight);
+    if (parsedWeight.error) {
+      return res.status(400).json({ error: parsedWeight.error });
+    }
+    const weightValue = parsedWeight.skip ? null : parsedWeight.value;
+
     let created = null;
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const nextIndex = attempt === 0 ? indexSeed : makeUniqueIndexFromName(name);
@@ -138,7 +156,7 @@ router.post('/', authenticateToken, requireRole(['admin', 'gm']), async (req, re
             category: category ?? null,
             subcategory: subcategory ?? null,
             cost: cost ?? null,
-            weight: weight != null ? Number.parseInt(String(weight), 10) : null,
+            weight: weightValue,
             damage: damage ?? null,
             damageType: damageType ?? null,
             range: range ?? null,
@@ -206,7 +224,11 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'gm']), async (req, 
     if (category !== undefined) data.category = category;
     if (subcategory !== undefined) data.subcategory = subcategory;
     if (cost !== undefined) data.cost = cost;
-    if (weight !== undefined) data.weight = weight != null ? Number.parseInt(String(weight), 10) : null;
+    if (weight !== undefined) {
+      const pw = parseOptionalItemWeight(weight);
+      if (pw.error) return res.status(400).json({ error: pw.error });
+      if (!pw.skip) data.weight = pw.value;
+    }
     if (damage !== undefined) data.damage = damage;
     if (damageType !== undefined) data.damageType = damageType;
     if (range !== undefined) data.range = range;

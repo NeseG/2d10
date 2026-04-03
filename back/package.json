@@ -11,6 +11,7 @@
     "import-dnd5e-equipment": "node scripts/import-dnd5e-equipment.js",
     "import-dnd5e-magic-items": "node scripts/import-dnd5e-magic-items.js",
     "import-dnd5e-spells": "node scripts/import-dnd5e-spells.js",
+    "import:test-character": "node prisma/import.js",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
     "prisma:push:docker": "prisma db push --accept-data-loss",

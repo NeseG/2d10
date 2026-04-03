@@ -91,6 +91,14 @@ function normalizeSpellSlots(input) {
     }));
 }
 
+function normalizeSpellcastingAbility(input) {
+  if (input === null) return null;
+  if (input === undefined) return undefined;
+  const v = typeof input === 'string' ? input.trim().toUpperCase() : '';
+  if (!v) return null;
+  return ABILITIES.includes(v) ? v : undefined;
+}
+
 // Obtenir tous les personnages
 router.get('/', authenticateToken, async (req, res) => {
   try {
@@ -165,7 +173,7 @@ router.post('/', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
     const {
-      name, race, class: characterClass, level, background, alignment,
+      name, race, class: characterClass, archetype, level, background, alignment,
       experiencePoints, hitPoints, hitPointsMax, hit_points_max, currentHitPoints, current_hit_points, hitDice, hit_dice, hitDiceRemaining, hit_dice_remaining, armorClass, speed,
       strength, dexterity, constitution, intelligence, wisdom, charisma,
       description, notes
@@ -182,6 +190,7 @@ router.post('/', authenticateToken, async (req, res) => {
         name: name.trim(),
         race: race || undefined,
         class: characterClass || undefined,
+        archetype: typeof archetype === 'string' && archetype.trim() ? archetype.trim() : undefined,
         level: level ?? undefined,
         background,
         alignment,
@@ -521,6 +530,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
       name,
       race,
       class: characterClass,
+      archetype,
       level,
       background,
       alignment,
@@ -544,6 +554,8 @@ router.put('/:id', authenticateToken, async (req, res) => {
       charisma,
       description,
       notes,
+      spellcastingAbility,
+      spellcasting_ability,
     } = req.body;
 
     let ownerPatch = {};
@@ -568,6 +580,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
     const normalizedSkills = normalizeSkills(skills);
     const normalizedSavingThrows = normalizeSavingThrows(savingThrows);
     const normalizedSpellSlots = normalizeSpellSlots(spellSlots);
+    const normalizedSpellcastingAbility = normalizeSpellcastingAbility(spellcastingAbility ?? spellcasting_ability);
     const updatedCharacter = await prisma.$transaction(async (tx) => {
       const nextCharacter = await tx.character.update({
         where: { id: parseInt(id) },
@@ -576,6 +589,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
           ...(name !== undefined ? { name } : {}),
           ...(race !== undefined ? { race } : {}),
           ...(characterClass !== undefined ? { class: characterClass } : {}),
+          ...(archetype !== undefined ? { archetype: typeof archetype === 'string' && archetype.trim() ? archetype.trim() : null } : {}),
           ...(level !== undefined ? { level } : {}),
           ...(background !== undefined ? { background } : {}),
           ...(alignment !== undefined ? { alignment } : {}),
@@ -602,6 +616,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
           ...(charisma !== undefined ? { charisma } : {}),
           ...(description !== undefined ? { description } : {}),
           ...(notes !== undefined ? { notes } : {}),
+          ...(normalizedSpellcastingAbility !== undefined ? { spellcastingAbility: normalizedSpellcastingAbility } : {}),
           updatedAt: new Date(),
         },
       });

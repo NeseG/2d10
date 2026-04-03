@@ -1,9 +1,28 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Car, Cog, Dog, FlaskRound, Pickaxe, RotateCcw, Shapes, Shield, Sword } from 'lucide-react'
 import { useSnackbar } from '../../../app/hooks/useSnackbar'
 import { apiGet, apiPut, apiPutFormData, getApiBaseUrl } from '../../../shared/api/client'
 import { ItemDetailsModal, type ItemDetail } from '../../inventory/components/ItemDetailsModal'
 import type { AuthUser } from '../../../shared/types'
 import { CharacterIdentityAccordion } from './CharacterIdentityAccordion'
+
+function getItemTypeIcon(typeValue?: string | null): { icon: React.ReactNode; label: string } {
+  const t = String(typeValue ?? '')
+    .trim()
+    .toLowerCase()
+  if (!t) return { icon: <Shapes size={18} aria-hidden="true" />, label: 'other' }
+
+  if (t === 'armor') return { icon: <Shield size={18} aria-hidden="true" />, label: 'armor' }
+  if (t === 'weapon') return { icon: <Sword size={18} aria-hidden="true" />, label: 'weapon' }
+  if (t === 'gear') return { icon: <Cog size={18} aria-hidden="true" />, label: 'gear' }
+  if (t === 'tool') return { icon: <Pickaxe size={18} aria-hidden="true" />, label: 'tool' }
+  if (t === 'mount') return { icon: <Dog size={18} aria-hidden="true" />, label: 'mount' }
+  if (t === 'vehicle') return { icon: <Car size={18} aria-hidden="true" />, label: 'vehicle' }
+  if (t === 'ammunition') return { icon: <RotateCcw size={18} aria-hidden="true" />, label: 'ammunition' }
+  if (t === 'consumable') return { icon: <FlaskRound size={18} aria-hidden="true" />, label: 'consumable' }
+
+  return { icon: <Shapes size={18} aria-hidden="true" />, label: t }
+}
 
 const DND_5E_RACES = [
   'Humain',
@@ -94,6 +113,7 @@ type CharacterDetail = {
   name: string
   race?: string | null
   class?: string | null
+  archetype?: string | null
   level?: number | null
   background?: string | null
   alignment?: string | null
@@ -134,6 +154,7 @@ type CharacteristicsFormFields = {
   name: string
   race: string
   class: string
+  archetype: string
   level: string
   background: string
   alignment: string
@@ -198,6 +219,7 @@ function buildCharacteristicsPersistSnapshot(
     name: form.name,
     race: form.race,
     class: form.class,
+    archetype: form.archetype,
     level: form.level,
     background: form.background,
     alignment: form.alignment,
@@ -374,6 +396,7 @@ export function CharacterCharacteristicsTab(props: {
     name: '',
     race: '',
     class: '',
+    archetype: '',
     level: '',
     background: '',
     alignment: '',
@@ -506,6 +529,7 @@ export function CharacterCharacteristicsTab(props: {
           name: f.name.trim(),
           race: f.race.trim() || undefined,
           class: f.class.trim() || undefined,
+          archetype: f.archetype.trim() || undefined,
           level: numberOrUndefined(f.level),
           background: f.background.trim() || undefined,
           alignment: f.alignment.trim() || undefined,
@@ -564,6 +588,7 @@ export function CharacterCharacteristicsTab(props: {
           name: c.name ?? '',
           race: c.race ?? '',
           class: c.class ?? '',
+          archetype: c.archetype ?? '',
           level: c.level != null ? String(c.level) : '',
           background: c.background ?? '',
           alignment: c.alignment ?? '',
@@ -1029,7 +1054,9 @@ export function CharacterCharacteristicsTab(props: {
             name: form.name,
             race: form.race,
             class: form.class,
+            archetype: form.archetype,
             level: form.level,
+            experiencePoints: form.experiencePoints,
             background: form.background,
             description: form.description,
             alignment: form.alignment,
@@ -1041,7 +1068,9 @@ export function CharacterCharacteristicsTab(props: {
                 name: prev.name,
                 race: prev.race,
                 class: prev.class,
+                archetype: prev.archetype,
                 level: prev.level,
+                experiencePoints: prev.experiencePoints,
                 background: prev.background,
                 description: prev.description,
                 alignment: prev.alignment,
@@ -1226,7 +1255,14 @@ export function CharacterCharacteristicsTab(props: {
                               if (w.item_id != null) void openSessionItemDetailsModal(w.item_id)
                             }}
                           >
-                            <td data-label="Nom">{w.name}</td>
+                            <td data-label="Nom">
+                              <span className="inventory-item-name">
+                                <span className="inventory-item-type-icon" title="weapon" aria-label="weapon">
+                                  {getItemTypeIcon('weapon').icon}
+                                </span>
+                                <span>{w.name}</span>
+                              </span>
+                            </td>
                             <td data-label="Dégâts">{w.damage}</td>
                             <td data-label="Propriétés">{w.propertiesLabel}</td>
                           </tr>
@@ -1268,7 +1304,14 @@ export function CharacterCharacteristicsTab(props: {
                               if (c.item_id != null) void openSessionItemDetailsModal(c.item_id)
                             }}
                           >
-                            <td data-label="Nom">{c.name}</td>
+                            <td data-label="Nom">
+                              <span className="inventory-item-name">
+                                <span className="inventory-item-type-icon" title="consumable" aria-label="consumable">
+                                  {getItemTypeIcon('consumable').icon}
+                                </span>
+                                <span>{c.name}</span>
+                              </span>
+                            </td>
                             <td data-label="Qté" onClick={(e) => e.stopPropagation()}>
                               <div className="inventory-qty-control">
                                 <button
@@ -1348,7 +1391,14 @@ export function CharacterCharacteristicsTab(props: {
                               if (it.item_id != null) void openSessionItemDetailsModal(it.item_id)
                             }}
                           >
-                            <td data-label="Nom">{it.name}</td>
+                            <td data-label="Nom">
+                              <span className="inventory-item-name">
+                                <span className="inventory-item-type-icon" title={it.typeLabel ?? 'other'} aria-label={it.typeLabel ?? 'other'}>
+                                  {getItemTypeIcon(it.typeLabel).icon}
+                                </span>
+                                <span>{it.name}</span>
+                              </span>
+                            </td>
                             <td data-label="Type">{it.typeLabel}</td>
                             <td data-label="Catégorie">{it.categoryLabel}</td>
                           </tr>

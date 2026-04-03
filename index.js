@@ -23,25 +23,6 @@ const pool = new Pool({
 app.use(cors());
 app.use(express.json());
 
-// Initialiser la base de données
-async function initializeDatabase() {
-  try {
-    const client = await pool.connect();
-    
-    // Lire et exécuter le fichier SQL d'initialisation
-    const fs = require('fs');
-    const path = require('path');
-    const initSQL = fs.readFileSync(path.join(__dirname, 'init.sql'), 'utf8');
-    
-    await client.query(initSQL);
-    console.log('Base de données initialisée avec succès');
-    
-    client.release();
-  } catch (error) {
-    console.error('Erreur lors de l\'initialisation de la base de données:', error);
-  }
-}
-
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
@@ -90,5 +71,4 @@ app.get('/health', async (req, res) => {
 // Démarrer le serveur
 app.listen(port, '0.0.0.0', async () => {
   console.log(`Server is running on port ${port}`);
-  await initializeDatabase();
 });

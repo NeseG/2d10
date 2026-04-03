@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Activity, Backpack, BookMarked, Clover, Map, MessageCircle, ScrollText, Swords, User } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Card } from '../../../shared/components/Card'
 import { useAuth } from '../../../app/hooks/useAuth'
@@ -281,29 +282,37 @@ export function LiveSessionPage() {
                   className={`tab-btn ${mainTab === 'character' ? 'active' : ''}`}
                   type="button"
                   onClick={() => setMainTab('character')}
+                  title="Character"
+                  aria-label="Character"
                 >
-                  Character
+                  <User size={22} aria-hidden="true" />
                 </button>
                 <button
                   className={`tab-btn ${mainTab === 'chat' ? 'active' : ''}`}
                   type="button"
                   onClick={() => setMainTab('chat')}
+                  title="Chat"
+                  aria-label="Chat"
                 >
-                  Chat
+                  <MessageCircle size={22} aria-hidden="true" />
                 </button>
                 <button
                   className={`tab-btn ${mainTab === 'initiative' ? 'active' : ''}`}
                   type="button"
                   onClick={() => setMainTab('initiative')}
+                  title="Initiative"
+                  aria-label="Initiative"
                 >
-                  Initiative
+                  <Swords size={22} aria-hidden="true" />
                 </button>
                 <button
                   className={`tab-btn ${mainTab === 'map' ? 'active' : ''}`}
                   type="button"
                   onClick={() => setMainTab('map')}
+                  title="Carte"
+                  aria-label="Carte"
                 >
-                  Map
+                  <Map size={22} aria-hidden="true" />
                 </button>
               </div>
 
@@ -493,8 +502,10 @@ export function LiveSessionPage() {
                     onClick={() => {
                       setCharacterSubTab('characteristic')
                     }}
+                    title="Characteristic"
+                    aria-label="Characteristic"
                   >
-                    Characteristic
+                    <Activity size={22} aria-hidden="true" />
                   </button>
                   <button
                     className={`tab-btn ${characterSubTab === 'inventory' ? 'active' : ''}`}
@@ -502,8 +513,10 @@ export function LiveSessionPage() {
                     onClick={() => {
                       setCharacterSubTab('inventory')
                     }}
+                    title="Inventory"
+                    aria-label="Inventory"
                   >
-                    Inventory
+                    <Backpack size={22} aria-hidden="true" />
                   </button>
                   <button
                     className={`tab-btn ${characterSubTab === 'grimoire' ? 'active' : ''}`}
@@ -511,8 +524,10 @@ export function LiveSessionPage() {
                     onClick={() => {
                       setCharacterSubTab('grimoire')
                     }}
+                    title="Grimoire"
+                    aria-label="Grimoire"
                   >
-                    Grimoire
+                    <BookMarked size={22} aria-hidden="true" />
                   </button>
                   <button
                     className={`tab-btn ${characterSubTab === 'traits' ? 'active' : ''}`}
@@ -520,8 +535,10 @@ export function LiveSessionPage() {
                     onClick={() => {
                       setCharacterSubTab('traits')
                     }}
+                    title="Traits"
+                    aria-label="Traits"
                   >
-                    Traits
+                    <Clover size={22} aria-hidden="true" />
                   </button>
                   <button
                     className={`tab-btn ${characterSubTab === 'notes' ? 'active' : ''}`}
@@ -529,8 +546,10 @@ export function LiveSessionPage() {
                     onClick={() => {
                       setCharacterSubTab('notes')
                     }}
+                    title="Notes"
+                    aria-label="Notes"
                   >
-                    Notes
+                    <ScrollText size={22} aria-hidden="true" />
                   </button>
                 </div>
               ) : null}

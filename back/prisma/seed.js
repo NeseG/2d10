@@ -3,7 +3,7 @@ const { PrismaClient } = require('@prisma/client');
 
 const prisma = new PrismaClient();
 
-/** Aligné sur l'enum Prisma `ItemTypeName` (noms en base = libellés D&D / init.sql). */
+/** Aligné sur l'enum Prisma `ItemTypeName`. */
 const ITEM_TYPES_FROM_ENUM = [
   { name: 'Arme', description: 'Armes de mêlée et à distance' },
   { name: 'Armure', description: 'Protection corporelle' },
@@ -38,9 +38,9 @@ async function main() {
     create: { name: 'admin' },
   });
 
-  // 2) Admin par défaut (comme dans init.sql)
+  // 2) Admin par défaut
   const adminPasswordHash = await bcrypt.hash('admin123', 10);
-  await prisma.user.upsert({
+  const adminUser = await prisma.user.upsert({
     where: { email: 'admin@2d10.com' },
     update: {
       username: 'admin',
@@ -76,7 +76,7 @@ async function main() {
     },
   });
 
-  // 4) Types d'objets (enum ItemTypeName / init.sql)
+  // 4) Types d'objets (enum ItemTypeName)
   for (const t of ITEM_TYPES_FROM_ENUM) {
     await prisma.itemType.upsert({
       where: { name: t.name },
@@ -85,7 +85,7 @@ async function main() {
     });
   }
 
-  // 5) Slots d'équipement (alignés sur init.sql — requis pour équipement / inventaire)
+  // 5) Slots d'équipement (requis pour équipement / inventaire)
   const EQUIPMENT_SLOTS = [
     { name: 'Main droite', description: 'Arme principale tenue en main droite' },
     { name: 'Main gauche', description: 'Arme secondaire ou bouclier en main gauche' },
