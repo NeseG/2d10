@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Activity, Backpack, BookMarked, Clover, ScrollText } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Card } from '../../../shared/components/Card'
