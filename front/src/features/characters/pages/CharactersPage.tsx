@@ -126,25 +126,21 @@ export function CharactersPage() {
           </thead>
           <tbody>
             {characters.map((character) => (
-              <tr key={character.id}>
+              <tr
+                key={character.id}
+                className="clickable-row"
+                onClick={() => {
+                  setSelectedCharacter(character)
+                  setIsDetailsModalOpen(true)
+                }}
+              >
                 <td data-label="Nom">{character.name}</td>
                 <td data-label="Joueur">{character.ownerUsername ?? '—'}</td>
                 <td data-label="Classe">{character.className}</td>
                 <td data-label="Race">{character.race}</td>
                 <td data-label="Niveau">{character.level}</td>
                 <td data-label="Campagnes">{character.campaigns.length}</td>
-                <td data-label="Actions">
-                  <button
-                    className="btn btn-small btn-secondary"
-                    type="button"
-                    onClick={() => {
-                      setSelectedCharacter(character)
-                      setIsDetailsModalOpen(true)
-                    }}
-                    style={{ marginRight: '0.5rem' }}
-                  >
-                    Détails
-                  </button>
+                <td data-label="Actions" onClick={(event) => event.stopPropagation()}>
                   <button
                     className="btn btn-small"
                     type="button"

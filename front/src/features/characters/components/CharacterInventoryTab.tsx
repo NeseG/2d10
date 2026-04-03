@@ -358,10 +358,9 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
   const [savingQuantityId, setSavingQuantityId] = useState<number | null>(null)
   const [inventorySearch, setInventorySearch] = useState('')
   const [inventoryFiltersOpen, setInventoryFiltersOpen] = useState(false)
-  const [selectedCategories, setSelectedCategories] = useState<string[]>([])
+  const [selectedTypes, setSelectedTypes] = useState<string[]>([])
   const [draggingInventoryId, setDraggingInventoryId] = useState<number | null>(null)
   const [dragOverInventoryId, setDragOverInventoryId] = useState<number | null>(null)
-  const [inventoryReorderSaving, setInventoryReorderSaving] = useState(false)
   const reorderPointerRef = useRef<{
     pointerId: number
     sourceId: number
@@ -549,28 +548,33 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
     })
   }, [inventoryItems])
 
-  const availableCategories = useMemo(
-    () =>
-      Array.from(new Set(inventoryItems.map((item) => item.category?.trim() || 'Sans catégorie'))).sort((a, b) =>
-        a.localeCompare(b, 'fr', { sensitivity: 'base' }),
-      ),
-    [inventoryItems],
-  )
+  const availableTypes = useMemo(() => {
+    const present = new Set(
+      inventoryItems.map((item) => (getItemTypeIcon(item.type)?.label || 'other').trim().toLowerCase()),
+    )
+
+    const knownInOrder = DND5E_ITEM_TYPES.map((t) => t.value).filter((value) => present.has(value))
+    const unknown = Array.from(present)
+      .filter((value) => !DND5E_ITEM_TYPES.some((t) => t.value === value))
+      .sort((a, b) => a.localeCompare(b, 'fr', { sensitivity: 'base' }))
+
+    return [...knownInOrder, ...unknown]
+  }, [inventoryItems])
 
   const filteredInventoryItems = useMemo(() => {
     const normalizedSearch = inventorySearch.trim().toLowerCase()
     return inventoryItems.filter((item) => {
-      const itemCategory = item.category?.trim() || 'Sans catégorie'
       const matchesSearch = !normalizedSearch || String(item.name || '').toLowerCase().includes(normalizedSearch)
-      const matchesCategory = selectedCategories.length === 0 || selectedCategories.includes(itemCategory)
-      return matchesSearch && matchesCategory
+      const itemType = (getItemTypeIcon(item.type)?.label || 'other').trim().toLowerCase()
+      const matchesType = selectedTypes.length === 0 || selectedTypes.includes(itemType)
+      return matchesSearch && matchesType
     })
-  }, [inventoryItems, inventorySearch, selectedCategories])
+  }, [inventoryItems, inventorySearch, selectedTypes])
 
   const canReorderInventory = useMemo(
     () =>
-      inventoryItems.length > 1 && !inventorySearch.trim() && selectedCategories.length === 0,
-    [inventoryItems.length, inventorySearch, selectedCategories.length],
+      inventoryItems.length > 1 && !inventorySearch.trim() && selectedTypes.length === 0,
+    [inventoryItems.length, inventorySearch, selectedTypes.length],
   )
 
   async function applyInventoryReorder(draggedId: number, targetId: number) {
@@ -584,7 +588,6 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
     next.splice(to, 0, moved)
     const orderedIds = next.map((i) => i.id)
     setInventoryItems(next)
-    setInventoryReorderSaving(true)
     try {
       await apiPut(`/api/inventory/${characterId}/reorder`, { ordered_inventory_ids: orderedIds }, token)
     } catch (err) {
@@ -593,8 +596,6 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
         message: err instanceof Error ? err.message : 'Erreur lors de l’enregistrement de l’ordre',
         severity: 'error',
       })
-    } finally {
-      setInventoryReorderSaving(false)
     }
   }
 
@@ -1134,9 +1135,11 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
     }
   }
 
-  function toggleCategoryFilter(category: string) {
-    setSelectedCategories((prev) =>
-      prev.includes(category) ? prev.filter((entry) => entry !== category) : [...prev, category],
+  function toggleTypeFilter(typeValue: string) {
+    const normalized = typeValue.trim().toLowerCase()
+    if (!normalized) return
+    setSelectedTypes((prev) =>
+      prev.includes(normalized) ? prev.filter((entry) => entry !== normalized) : [...prev, normalized],
     )
   }
 
@@ -1284,44 +1287,42 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
           {inventoryFiltersOpen ? (
             <div className="inventory-filters-panel">
               <div className="inventory-filters-head">
-                <strong>Catégories</strong>
-                {selectedCategories.length > 0 ? (
+                <span className="inventory-filters-title">Type</span>
+                {selectedTypes.length > 0 ? (
                   <button
                     className="btn btn-secondary btn-small"
                     type="button"
-                    onClick={() => setSelectedCategories([])}
+                    onClick={() => setSelectedTypes([])}
                   >
                     Réinitialiser
                   </button>
                 ) : null}
               </div>
               <div className="inventory-filter-tags">
-                {availableCategories.length === 0 ? (
-                  <span className="inventory-filter-empty">Aucune catégorie</span>
+                {availableTypes.length === 0 ? (
+                  <span className="inventory-filter-empty">Aucun type</span>
                 ) : (
-                  availableCategories.map((category) => (
-                    <label key={category} className="inventory-filter-tag">
-                      <input
-                        type="checkbox"
-                        checked={selectedCategories.includes(category)}
-                        onChange={() => toggleCategoryFilter(category)}
-                      />
-                      <span>{category}</span>
-                    </label>
-                  ))
+                  availableTypes.map((typeValue) => {
+                    const icon = getItemTypeIcon(typeValue)
+                    const selected = selectedTypes.includes(typeValue)
+                    return (
+                      <button
+                        key={typeValue}
+                        type="button"
+                        className={`inventory-type-filter ${selected ? 'active' : ''}`}
+                        aria-pressed={selected}
+                        title={icon?.label || typeValue}
+                        onClick={() => toggleTypeFilter(typeValue)}
+                      >
+                        <span className={`inventory-type-filter-icon ${selected ? 'active' : ''}`}>
+                          {icon?.icon ?? <Shapes size={18} aria-hidden="true" />}
+                        </span>
+                      </button>
+                    )
+                  })
                 )}
               </div>
             </div>
-          ) : null}
-
-          {inventoryItems.length > 1 ? (
-            <p className="inventory-reorder-hint">
-              {canReorderInventory
-                ? inventoryReorderSaving
-                  ? 'Enregistrement de l’ordre…'
-                  : 'Maintenez ⋮⋮ et faites glisser (souris ou doigt) pour réordonner.'
-                : 'Pour réordonner, retirez la recherche et les filtres de catégorie.'}
-            </p>
           ) : null}
 
           {inventoryItems.length === 0 ? (
@@ -1333,9 +1334,9 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
               <table className="table inventory-items-table">
                 <thead>
                   <tr>
-                    <th>Nom</th>
-                    <th>Qty</th>
-                    <th>Équipé</th>
+                    <th className="inventory-name-col">Nom</th>
+                    <th className="inventory-qty-col">Qty</th>
+                    <th className="inventory-equipped-col">Équipé</th>
                     <th className="inventory-drag-handle-th" aria-label="Réordonner" title="Réordonner">
                       <GripVertical size={16} aria-hidden="true" className="inventory-drag-header-icon" />
                     </th>
@@ -1374,7 +1375,7 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
                         void openItemDetailsModal(item)
                       }}
                     >
-                      <td data-label="Nom">
+                      <td className="inventory-name-col" data-label="Nom">
                         <span className="inventory-item-name">
                           {(() => {
                             const icon = getItemTypeIcon(item.type)
@@ -1387,7 +1388,7 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
                           <span>{item.name ?? '—'}</span>
                         </span>
                       </td>
-                      <td data-label="Qty">
+                      <td className="inventory-qty-col" data-label="Qty">
                         <div className="inventory-qty-control" onClick={(event) => event.stopPropagation()}>
                           <button
                             type="button"
@@ -1428,7 +1429,7 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
                           </button>
                         </div>
                       </td>
-                      <td data-label="Équipé">
+                      <td className="inventory-equipped-col" data-label="Équipé">
                         <input
                           type="checkbox"
                           checked={Boolean(item.is_equipped)}
