@@ -191,6 +191,52 @@ router.get('/campaign/:campaignId', authenticateToken, async (req, res) => {
   }
 });
 
+// Statistiques des sessions (avant les routes /:sessionId/... pour ne pas capturer "stats")
+router.get('/stats/overview', authenticateToken, requireRole(['gm', 'admin']), async (req, res) => {
+  try {
+    const where = {
+      isActive: true,
+      ...(req.user.role_name === 'gm' ? { campaign: { gmId: req.user.id } } : {}),
+    };
+
+    const sessions = await prisma.gameSession.findMany({
+      where,
+      select: {
+        sessionDate: true,
+        xpAwarded: true,
+        goldAwarded: true,
+      },
+    });
+
+    const totalSessions = sessions.length;
+    const totalXpAwarded = sessions.reduce((sum, s) => sum + (s.xpAwarded || 0), 0);
+    const totalGoldAwarded = sessions.reduce((sum, s) => sum + Number(s.goldAwarded || 0), 0);
+
+    const byMonthMap = new Map();
+    sessions.forEach((s) => {
+      const month = s.sessionDate?.slice(0, 7) || 'unknown';
+      byMonthMap.set(month, (byMonthMap.get(month) || 0) + 1);
+    });
+    const sessionsByMonth = Array.from(byMonthMap.entries())
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .slice(0, 12)
+      .map(([month, count]) => ({ month, count }));
+
+    res.json({
+      success: true,
+      stats: {
+        total_sessions: totalSessions,
+        total_xp_awarded: totalXpAwarded,
+        total_gold_awarded: totalGoldAwarded,
+        sessions_by_month: sessionsByMonth,
+      },
+    });
+  } catch (error) {
+    console.error('Erreur lors de la récupération des statistiques des sessions:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 // ——— Chat session live (historique HTTP + push WebSocket) ———
 
 router.get('/:sessionId/chat/attachments/:filename', authenticateToken, async (req, res) => {
@@ -980,52 +1026,6 @@ router.put('/:sessionId/characters/:characterId/state', authenticateToken, async
     });
   } catch (error) {
     console.error("Erreur lors de la mise à jour de l'état de personnage en session:", error);
-    res.status(500).json({ error: 'Erreur serveur' });
-  }
-});
-
-// Obtenir les statistiques des sessions (GM/Admin)
-router.get('/stats/overview', authenticateToken, requireRole(['gm', 'admin']), async (req, res) => {
-  try {
-    const where = {
-      isActive: true,
-      ...(req.user.role_name === 'gm' ? { campaign: { gmId: req.user.id } } : {}),
-    };
-
-    const sessions = await prisma.gameSession.findMany({
-      where,
-      select: {
-        sessionDate: true,
-        xpAwarded: true,
-        goldAwarded: true,
-      },
-    });
-
-    const totalSessions = sessions.length;
-    const totalXpAwarded = sessions.reduce((sum, s) => sum + (s.xpAwarded || 0), 0);
-    const totalGoldAwarded = sessions.reduce((sum, s) => sum + Number(s.goldAwarded || 0), 0);
-
-    const byMonthMap = new Map();
-    sessions.forEach((s) => {
-      const month = s.sessionDate?.slice(0, 7) || 'unknown';
-      byMonthMap.set(month, (byMonthMap.get(month) || 0) + 1);
-    });
-    const sessionsByMonth = Array.from(byMonthMap.entries())
-      .sort((a, b) => b[0].localeCompare(a[0]))
-      .slice(0, 12)
-      .map(([month, count]) => ({ month, count }));
-
-    res.json({
-      success: true,
-      stats: {
-        total_sessions: totalSessions,
-        total_xp_awarded: totalXpAwarded,
-        total_gold_awarded: totalGoldAwarded,
-        sessions_by_month: sessionsByMonth,
-      },
-    });
-  } catch (error) {
-    console.error('Erreur lors de la récupération des statistiques des sessions:', error);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });

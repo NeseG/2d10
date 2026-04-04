@@ -199,6 +199,79 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
+// Statistiques des campagnes (avant GET /:campaignId pour ne pas capturer "stats")
+router.get('/stats/overview', authenticateToken, requireRole(['gm', 'admin']), async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userRole = req.user.role_name;
+
+    const whereClause = {
+      isActive: true,
+      ...(userRole === 'gm' ? { gmId: userId } : {}),
+    };
+
+    const [totalCampaigns, campaignsByStatus, campaignsBySetting, totalPlayers] = await Promise.all([
+      prisma.campaign.count({
+        where: whereClause,
+      }),
+      prisma.campaign.groupBy({
+        by: ['status'],
+        where: whereClause,
+        _count: {
+          status: true,
+        },
+        orderBy: {
+          _count: {
+            status: 'desc',
+          },
+        },
+      }),
+      prisma.campaign.groupBy({
+        by: ['setting'],
+        where: {
+          ...whereClause,
+          setting: {
+            not: null,
+          },
+        },
+        _count: {
+          setting: true,
+        },
+        orderBy: {
+          _count: {
+            setting: 'desc',
+          },
+        },
+      }),
+      prisma.campaign.aggregate({
+        where: whereClause,
+        _sum: {
+          currentPlayers: true,
+        },
+      }),
+    ]);
+
+    res.json({
+      success: true,
+      stats: {
+        total_campaigns: totalCampaigns,
+        total_players: totalPlayers._sum.currentPlayers || 0,
+        by_status: campaignsByStatus.map((record) => ({
+          status: record.status,
+          count: record._count.status,
+        })),
+        by_setting: campaignsBySetting.map((record) => ({
+          setting: record.setting,
+          count: record._count.setting,
+        })),
+      },
+    });
+  } catch (error) {
+    console.error('Erreur lors de la récupération des statistiques des campagnes:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 // Obtenir une campagne par ID
 router.get('/:campaignId', authenticateToken, async (req, res) => {
   try {
@@ -784,79 +857,6 @@ router.delete('/:campaignId/characters/:characterId', authenticateToken, checkCa
     });
   } catch (error) {
     console.error('Erreur lors du retrait du personnage de la campagne:', error);
-    res.status(500).json({ error: 'Erreur serveur' });
-  }
-});
-
-// Obtenir les statistiques des campagnes (GM et Admin seulement)
-router.get('/stats/overview', authenticateToken, requireRole(['gm', 'admin']), async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const userRole = req.user.role_name;
-
-    const whereClause = {
-      isActive: true,
-      ...(userRole === 'gm' ? { gmId: userId } : {}),
-    };
-
-    const [totalCampaigns, campaignsByStatus, campaignsBySetting, totalPlayers] = await Promise.all([
-      prisma.campaign.count({
-        where: whereClause,
-      }),
-      prisma.campaign.groupBy({
-        by: ['status'],
-        where: whereClause,
-        _count: {
-          status: true,
-        },
-        orderBy: {
-          _count: {
-            status: 'desc',
-          },
-        },
-      }),
-      prisma.campaign.groupBy({
-        by: ['setting'],
-        where: {
-          ...whereClause,
-          setting: {
-            not: null,
-          },
-        },
-        _count: {
-          setting: true,
-        },
-        orderBy: {
-          _count: {
-            setting: 'desc',
-          },
-        },
-      }),
-      prisma.campaign.aggregate({
-        where: whereClause,
-        _sum: {
-          currentPlayers: true,
-        },
-      }),
-    ]);
-
-    res.json({
-      success: true,
-      stats: {
-        total_campaigns: totalCampaigns,
-        total_players: totalPlayers._sum.currentPlayers || 0,
-        by_status: campaignsByStatus.map((record) => ({
-          status: record.status,
-          count: record._count.status,
-        })),
-        by_setting: campaignsBySetting.map((record) => ({
-          setting: record.setting,
-          count: record._count.setting,
-        })),
-      },
-    });
-  } catch (error) {
-    console.error('Erreur lors de la récupération des statistiques des campagnes:', error);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });

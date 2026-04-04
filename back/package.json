@@ -10,6 +10,7 @@
     "dev:prisma": "nodemon index-prisma.js",
     "import-dnd5e-equipment": "node scripts/import-dnd5e-equipment.js",
     "import-dnd5e-magic-items": "node scripts/import-dnd5e-magic-items.js",
+    "import:character-json": "node scripts/import-excel-character.js",
     "import-dnd5e-spells": "node scripts/import-dnd5e-spells.js",
     "import:test-character": "node prisma/import.js",
     "prisma:generate": "prisma generate",

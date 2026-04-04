@@ -272,6 +272,55 @@ router.post('/', authenticateToken, async (req, res) => {
   }
 });
 
+// Statistiques des personnages (doit être déclaré avant GET /:id pour ne pas capturer "stats")
+router.get('/stats/overview', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userRole = req.user.role_name;
+
+    let whereClause = {};
+    if (userRole !== 'admin' && userRole !== 'gm') {
+      whereClause.userId = userId;
+    }
+
+    const [
+      totalCharacters,
+      charactersByClass,
+      charactersByRace,
+      averageLevel
+    ] = await Promise.all([
+      prisma.character.count({ where: whereClause }),
+      prisma.character.groupBy({
+        by: ['class'],
+        where: whereClause,
+        _count: { class: true }
+      }),
+      prisma.character.groupBy({
+        by: ['race'],
+        where: whereClause,
+        _count: { race: true }
+      }),
+      prisma.character.aggregate({
+        where: whereClause,
+        _avg: { level: true }
+      })
+    ]);
+
+    res.json({
+      success: true,
+      stats: {
+        totalCharacters,
+        charactersByClass,
+        charactersByRace,
+        averageLevel: averageLevel._avg.level || 0
+      }
+    });
+  } catch (error) {
+    console.error('Erreur lors de la récupération des statistiques:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 // Obtenir un personnage par ID
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
@@ -810,55 +859,6 @@ router.delete('/:id', authenticateToken, async (req, res) => {
     });
   } catch (error) {
     console.error('Erreur lors de la suppression du personnage:', error);
-    res.status(500).json({ error: 'Erreur serveur' });
-  }
-});
-
-// Statistiques des personnages
-router.get('/stats/overview', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const userRole = req.user.role_name;
-
-    let whereClause = {};
-    if (userRole !== 'admin' && userRole !== 'gm') {
-      whereClause.userId = userId;
-    }
-
-    const [
-      totalCharacters,
-      charactersByClass,
-      charactersByRace,
-      averageLevel
-    ] = await Promise.all([
-      prisma.character.count({ where: whereClause }),
-      prisma.character.groupBy({
-        by: ['class'],
-        where: whereClause,
-        _count: { class: true }
-      }),
-      prisma.character.groupBy({
-        by: ['race'],
-        where: whereClause,
-        _count: { race: true }
-      }),
-      prisma.character.aggregate({
-        where: whereClause,
-        _avg: { level: true }
-      })
-    ]);
-
-    res.json({
-      success: true,
-      stats: {
-        totalCharacters,
-        charactersByClass,
-        charactersByRace,
-        averageLevel: averageLevel._avg.level || 0
-      }
-    });
-  } catch (error) {
-    console.error('Erreur lors de la récupération des statistiques:', error);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });

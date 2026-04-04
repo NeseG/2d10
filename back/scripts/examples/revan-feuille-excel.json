@@ -1,0 +1,82 @@
+{
+  "_comment": "Données issues du collage Excel « Revan ». Modifiez ou dupliquez ce fichier pour d’autres persos. Lancez : CHARACTER_USER_ID=1 node scripts/import-excel-character.js scripts/examples/revan-feuille-excel.json",
+  "name": "Revan",
+  "race": "Tieffelin",
+  "class": "Guerrier",
+  "archetype": "Sorcelame",
+  "level": 6,
+  "background": "Assassin",
+  "alignment": null,
+  "experiencePoints": 0,
+  "hitPoints": 60,
+  "currentHitPoints": 60,
+  "hitDice": "6d10",
+  "hitDiceRemaining": 6,
+  "armorClass": 16,
+  "speed": 9,
+  "description": null,
+  "notes": "Feuille importée (Excel). Destin : 3. Vitesse notée 9 sur la feuille — vérifier (souvent 9 m ou 30 ft selon table).",
+  "strength": 18,
+  "dexterity": 14,
+  "constitution": 14,
+  "intelligence": 10,
+  "wisdom": 10,
+  "charisma": 14,
+  "spellcastingAbility": "INTELLIGENCE",
+  "savingThrows": {
+    "STRENGTH": true,
+    "CONSTITUTION": true
+  },
+  "skills": {
+    "STEALTH": "PROFICIENT",
+    "INTIMIDATION": "PROFICIENT",
+    "PERCEPTION": "PROFICIENT",
+    "INSIGHT": "PROFICIENT",
+    "SLEIGHT_OF_HAND": "PROFICIENT"
+  },
+  "spellSlots": [{ "level": 1, "slotsMax": 3, "slotsUsed": 0 }],
+  "purse": {
+    "copper": 0,
+    "silver": 0,
+    "electrum": 0,
+    "gold": 20,
+    "platinum": 0
+  },
+  "features": [
+    {
+      "category": "RACIAL_TRAIT",
+      "name": "Vision dans le noir",
+      "description": "18 m (tieffelin)."
+    },
+    {
+      "category": "RACIAL_TRAIT",
+      "name": "Ascendance infernale",
+      "description": ""
+    },
+    {
+      "category": "CLASS_FEATURE",
+      "name": "Second souffle",
+      "description": "Récupère 1d10 + niveau de guerrier en PV ; 1/repos court."
+    },
+    {
+      "category": "CLASS_FEATURE",
+      "name": "Sursaut d'activité",
+      "description": "Une action supplémentaire ; 1/repos court."
+    },
+    {
+      "category": "CLASS_FEATURE",
+      "name": "Initié (Sorcelame)",
+      "description": "Points de sorcellerie = niveau / repos long (voir règles Sorcelame)."
+    }
+  ],
+  "inventory": [
+    {
+      "name": "Épée en onirum",
+      "type": "weapon",
+      "category": "Arme",
+      "damage": "2d6+4 (×2)",
+      "description": "Propriétés : Lourd, tranchant.",
+      "quantity": 1
+    }
+  ]
+}

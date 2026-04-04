@@ -1,8 +1,15 @@
 # 📚 Documentation Complète API 2d10 - D&D Character Management System
 
-**Note :** le préfixe `/api/dnd` (proxy Open5e) n’existe plus. Référence à jour : **`/api/dnd-local`**, **`/api/dnd5e`**, **`/api/spells`**. Les données SRD importées sont chargées via les scripts `import-dnd5e-*` (voir [`README_DND_INTEGRATION.md`](./README_DND_INTEGRATION.md)).
+**Note :** le préfixe `/api/dnd` (proxy Open5e) n’existe plus. Référence à jour : **`/api/dnd-local`**, **`/api/dnd5e`**, **`/api/spells`**. Les données SRD importées sont chargées via les scripts `npm run import-dnd5e-*` (voir aussi [`README_DND_INTEGRATION.md`](./README_DND_INTEGRATION.md) si présent).
+
+**Code source des routes :** répertoire `back/routes/*-prisma.js`, montage dans `back/index-prisma.js`. WebSockets : `back/ws/session-chat.js`, `session-initiative.js`, `session-map.js`.
 
 ## 📋 Table des matières
+
+### 🖥️ Serveur & outillage
+- [Racine, santé, fichiers statiques](#racine-du-serveur-et-santé)
+- [Scripts Prisma et import D&D](#scripts-et-maintenance-backend)
+- [WebSockets session live](#websockets-session-live)
 
 ### 🔐 Authentification
 - [Inscription](#inscription)
@@ -14,6 +21,9 @@
 - [Gestion des utilisateurs](#gestion-des-utilisateurs)
 - [Statistiques](#statistiques)
 
+### 👤 Utilisateurs (GM / Admin)
+- [Liste des utilisateurs actifs](#liste-des-utilisateurs-gm--admin)
+
 ### 🧙‍♂️ Gestion des Personnages
 - [CRUD Personnages](#gestion-des-personnages)
 - [Statistiques des personnages](#statistiques-des-personnages)
@@ -21,6 +31,7 @@
 
 ### 🎒 Gestion de l'Inventaire et de la Bourse
 - [Inventaire des personnages](#gestion-de-linventaire-et-de-la-bourse)
+- [Réordonnancement inventaire](#réordonnancement-de-linventaire)
 - [Catalogue d'objets](#catalogue-dobjets)
 - [Bourse des personnages](#bourse-des-personnages)
 
@@ -40,8 +51,11 @@
 
 ### 🏰 Gestion des Campagnes
 - [CRUD Campagnes](#gestion-des-campagnes)
+- [Cartes de campagne (upload)](#cartes-de-campagne)
 - [Personnages de campagne](#personnages-de-campagne)
+- [Notes WYSIWYG joueur / campagne](#notes-wysiwyg-campagne-personnage)
 - [Sessions de jeu](#sessions-de-jeu)
+- [Initiative & carte tactique (HTTP)](#initiative-et-carte-tactique-session)
 - [Chat de session live](#chat-de-session-live)
 - [Statistiques des campagnes](#statistiques-des-campagnes)
 
@@ -70,6 +84,37 @@
 - [Format des données](#format-des-données)
 
 ---
+
+## Racine du serveur et santé
+
+Entrée processus : **`back/index-prisma.js`** (`npm start`, `npm run dev` dans `back/`).
+
+| Méthode | Chemin | Auth | Description |
+|--------|--------|------|-------------|
+| `GET` | `/` | non | JSON : message, version, raccourci des préfixes `/api/*` |
+| `GET` | `/health` | non | Santé Prisma (`$queryRaw`), compteurs `users` / `roles` |
+| *static* | `/uploads/...` | non | Avatars personnages, images de cartes campagne, fichiers chat session |
+
+### Table de routage REST (montage Express)
+
+| Préfixe | Module |
+|---------|--------|
+| `/api/auth` | `routes/auth-prisma.js` |
+| `/api/admin` | `routes/admin-prisma.js` |
+| `/api/characters` | `routes/characters-prisma.js` |
+| `/api/inventory` | `routes/inventory-prisma.js` |
+| `/api/items` | `routes/items-prisma.js` |
+| `/api/equipment` | `routes/equipment-prisma.js` |
+| `/api/dnd-local` | `routes/dnd-local-prisma.js` |
+| `/api/purse` | `routes/purse-prisma.js` |
+| `/api/campaigns` | `routes/campaigns-prisma.js` |
+| `/api/grimoire` | `routes/grimoire-prisma.js` |
+| `/api/sessions` | `routes/sessions-prisma.js` |
+| `/api/users` | `routes/users-prisma.js` |
+| `/api/dnd5e` | `routes/dnd5e-equipment-prisma.js`, `dnd5e-magic-items-prisma.js`, `dnd5e-spells-prisma.js` (trois routeurs sur le même préfixe) |
+| `/api/spells` | `routes/spells-prisma.js` |
+
+> **Ordre des routes :** les chemins statiques (`…/stats/overview`, etc.) sont enregistrés *avant* les routes paramétrées (`:id`, `:campaignId`) pour éviter qu’un segment littéral soit capturé comme identifiant.
 
 ## 🔐 Authentification
 
@@ -110,6 +155,8 @@ Authorization: Bearer <token>
 ```
 
 ## 👑 Administration (Admin seulement)
+
+Sur le routeur `admin-prisma.js`, **chaque** route applique `authenticateToken` puis **`requireAdmin`** (rôle `admin` uniquement, pas les GM).
 
 ### Gestion des utilisateurs
 
@@ -165,6 +212,17 @@ GET /api/admin/stats
 Authorization: Bearer <admin_token>
 ```
 
+## Liste des utilisateurs (GM / Admin)
+
+Utilisateurs **actifs** (`is_active`), tri par `username`, pour affectation de propriétaire de personnage (UI édition).
+
+```
+GET /api/users
+Authorization: Bearer <gm_or_admin_token>
+```
+
+Réponse : `{ "success": true, "users": [ { "id", "username", "email", "role_name", "is_active", "created_at", "updated_at" } ], "count" }`.
+
 ## 🧙‍♂️ Gestion des Personnages
 
 ### Obtenir tous les personnages
@@ -212,13 +270,28 @@ Content-Type: application/json
 PUT /api/characters/:id
 Authorization: Bearer <token>
 Content-Type: application/json
-
-{
-  "level": 6,
-  "hit_points": 50,
-  "experience_points": 8000
-}
 ```
+
+Champs courants (tous optionnels sauf besoin) : `name`, `race`, `class`, `archetype`, `level`, `background`, `alignment`, `experiencePoints`, `hitPoints` / `hit_points_max`, `currentHitPoints` / `current_hit_points`, `hitDice` / `hit_dice`, `hitDiceRemaining` / `hit_dice_remaining`, `armorClass`, `speed`, caractéristiques `strength` … `charisma`, `description`, `notes`.
+
+**Maîtrises & sorts :**
+
+- `spellcasting_ability` ou `spellcastingAbility` : une des valeurs `STRENGTH`, `DEXTERITY`, `CONSTITUTION`, `INTELLIGENCE`, `WISDOM`, `CHARISMA`, ou `null`.
+- `spellSlots` : tableau `{ "level": 0..9, "slotsMax"?: number, "slotsUsed"?: number }[]` — upsert par `(characterId, level)`.
+- `skills` : `{ "skill": "ACROBATICS"|…, "mastery": "NOT_PROFICIENT"|"PROFICIENT"|"EXPERTISE" }[]`.
+- `savingThrows` : `{ "ability": "STRENGTH"|…, "proficient": boolean }[]`.
+
+**Transfert de propriété (admin / gm uniquement) :** `userId` (nombre) vers un utilisateur actif.
+
+**Avatar :**
+
+```
+PUT /api/characters/:id/avatar
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+```
+
+Champ fichier : **`image`**. Réponse : `success`, `avatar_url` (chemin sous `/uploads/...`).
 
 ### Supprimer un personnage
 ```
@@ -226,11 +299,13 @@ DELETE /api/characters/:id
 Authorization: Bearer <token>
 ```
 
-### Statistiques des personnages (Admin/GM seulement)
+### Statistiques des personnages
 ```
 GET /api/characters/stats/overview
-Authorization: Bearer <admin_or_gm_token>
+Authorization: Bearer <token>
 ```
+
+Tout utilisateur authentifié : périmètre **restreint à ses personnages** ; **admin** et **gm** voient les stats sur **tous** les personnages. Réponse : `stats.totalCharacters`, `charactersByClass`, `charactersByRace`, `averageLevel`.
 
 ### Traits et capacités
 
@@ -311,6 +386,20 @@ Content-Type: application/json
 ```
 DELETE /api/inventory/:characterId/items/:inventoryId
 Authorization: Bearer <token>
+```
+
+### Réordonnancement de l'inventaire
+
+Persiste l’ordre d’affichage (`sortOrder`) pour toutes les lignes du personnage. Le tableau doit contenir **exactement** les ids d’inventaire du personnage, **sans doublon**.
+
+```
+PUT /api/inventory/:characterId/reorder
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "ordered_inventory_ids": [12, 5, 8, 3]
+}
 ```
 
 ### Obtenir la bourse d'un personnage
@@ -415,10 +504,10 @@ GET /api/items/types
 Authorization: Bearer <token>
 ```
 
-### Créer un type d'objet (Admin)
+### Créer un type d'objet (Admin / GM)
 ```
 POST /api/items/types
-Authorization: Bearer <admin_token>
+Authorization: Bearer <admin_or_gm_token>
 Content-Type: application/json
 
 {
@@ -464,7 +553,25 @@ GET /api/equipment/slots/available
 Authorization: Bearer <token>
 ```
 
+### Référence : propriétés d’armes / armures (données)
+
+#### Armes
+- **damage_dice** : dés de dégâts (ex. `1d8`, `2d6`)
+- **damage_type** : type de dégâts
+- **weapon_range** : portée
+- **weapon_type** : mêlée, distance, etc.
+
+#### Armures
+- **armor_class_bonus** : bonus à la CA
+- **armor_type** : légère, intermédiaire, lourde
+- **stealth_disadvantage** : désavantage en discrétion
+
+### Slots d’équipement (métier)
+Main droite, main gauche, armure, casque, bottes, gants, anneaux, amulette, cape, sac, etc. (selon données `EquipmentSlot` en base).
+
 ## 📖 Gestion du Grimoire
+
+Accès : **propriétaire** du personnage, **gm**, ou **admin** (`checkCharacterAccess`).
 
 ### Obtenir le grimoire d'un personnage
 ```
@@ -626,6 +733,22 @@ DELETE /api/campaigns/:campaignId
 Authorization: Bearer <gm_or_admin_token>
 ```
 
+## Cartes de campagne
+
+Réservé au **MJ de la campagne** ou **admin**. Upload **multipart** : champ fichier **`map`** (image). Métadonnées optionnelles en champs texte du formulaire.
+
+```
+GET    /api/campaigns/:campaignId/maps
+GET    /api/campaigns/:campaignId/maps/:mapId
+GET    /api/campaigns/:campaignId/maps/:mapId/image   → flux binaire image (accès campagne)
+POST   /api/campaigns/:campaignId/maps
+PUT    /api/campaigns/:campaignId/maps/:mapId
+DELETE /api/campaigns/:campaignId/maps/:mapId
+Authorization: Bearer <token>  (+ ownership campagne sauf admin)
+```
+
+Les listes / détails exposent `image_url` pointant vers la route `.../image`. Les champs JSON `fog_state`, `tokens_state`, `is_active` sont mis à jour via `PUT` (voir aussi synchronisation session live `/api/sessions/.../map`).
+
 ## Personnages de campagne
 
 ### Ajouter un personnage à une campagne
@@ -645,6 +768,19 @@ Content-Type: application/json
 DELETE /api/campaigns/:campaignId/characters/:characterId
 Authorization: Bearer <gm_or_admin_token>
 ```
+
+## Notes WYSIWYG (campagne / personnage)
+
+HTML libre stocké sur le lien **CampaignCharacter**. Accès : **propriétaire du personnage**, **MJ de la campagne**, ou **admin**.
+
+```
+GET /api/campaigns/:campaignId/characters/:characterId/notes-wysiwyg
+PUT /api/campaigns/:campaignId/characters/:characterId/notes-wysiwyg
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+Corps `PUT` : `{ "notes_wysiwyg": "<p>…</p>" }`. Réponse `GET` : `notes_wysiwyg`, `updated_at`.
 
 ## Sessions de jeu
 
@@ -727,6 +863,44 @@ Content-Type: application/json
 ```
 
 Le personnage doit déjà être rattaché à la campagne de la session.
+
+### Retirer une ligne de présence (MJ / admin)
+```
+DELETE /api/sessions/:sessionId/attendance/:attendanceId
+Authorization: Bearer <gm_or_admin_token>
+```
+
+Supprime l’entrée `SessionAttendance` (retirer un personnage de la feuille de session).
+
+## Initiative et carte tactique (session)
+
+Même périmètre d’accès session que le chat pour la lecture ; **mise à jour** réservée au **MJ** (ou admin), sauf mention.
+
+### Initiative
+
+État JSON libre (`initiativeState` en base). Les **joueurs** reçoivent une version **filtrée** (combattants `hidden` exclus).
+
+```
+GET /api/sessions/:sessionId/initiative
+PUT /api/sessions/:sessionId/initiative
+Authorization: Bearer <token>
+Content-Type: application/json   (PUT)
+
+{ "state": { "combatants": [ … ] } }
+```
+
+`PUT` : `state` peut être `null` pour effacer. Diffusion **WebSocket** : voir [WebSockets session live](#websockets-session-live).
+
+### Carte tactique (session)
+
+```
+GET  /api/sessions/:sessionId/map
+PUT  /api/sessions/:sessionId/map/active     (MJ)  → corps : { "map_id": <id|null> }
+PUT  /api/sessions/:sessionId/map/state      (MJ)  → { "tokens_state"?, "fog_state"?, "view_state"? }
+Authorization: Bearer <token>
+```
+
+`GET` renvoie notamment la carte active, `image_url`, états brouillard / jetons / vue. `PUT .../map/state` exige une **map active** sur la session.
 
 ### Chat de session live
 
@@ -843,29 +1017,38 @@ GET /api/dnd5e/spells/:index
 
 ### Copie vers personnage (admin / gm)
 
-Duplique une entrée importée vers les tables applicatives (`Item` / `Spell`) et inventaire ou grimoire.
+Toutes les routes ci-dessous : **`Authorization: Bearer`** + rôle **admin** ou **gm**.
+
+- **`equipment_id`** : identifiant numérique **PK** de la ligne `Dnd5eEquipment` (liste `GET /api/dnd5e/equipment`, champ `id` en JSON).
+- **`magic_item_id`** : PK de `Dnd5eMagicItem`.
+- **`spell_index`** : chaîne `index` du sort importé (`GET /api/dnd5e/spells`, même clé qu’en base `Dnd5eSpellImport`).
 
 ```
 POST /api/dnd5e/characters/:characterId/inventory
 Content-Type: application/json
 { "equipment_id": 123, "quantity": 1 }
 ```
+→ crée un **`Item`** miroir + ligne **`Inventory`** (inventaire « classique » du personnage).
 
 ```
 POST /api/dnd5e/characters/:characterId/inventory/magic-item
 Content-Type: application/json
 { "magic_item_id": 45, "quantity": 1 }
 ```
+→ idem avec duplication depuis l’objet magique importé.
 
 ```
 POST /api/dnd5e/characters/:characterId/grimoire
 Content-Type: application/json
 { "spell_index": "fireball", "is_known": true, "is_prepared": false, "notes": null }
 ```
+→ crée une ligne **`Spell`** (source `dnd5e`) + entrée **`Grimoire`**.
 
 ```
 GET /api/dnd5e/characters/:characterId/inventory
+Authorization: Bearer <token>
 ```
+→ inventaire **lien import** (`CharacterDnd5eInventory` + détail `equipment`) — distinct de `GET /api/inventory/:characterId`.
 
 ---
 
@@ -1132,32 +1315,34 @@ GET /api/dnd-local/stats
 }
 ```
 
-## 🛡️ Gestion de l'Équipement
+## WebSockets session live
 
-### Propriétés des Armes et Armures
+Upgrade HTTP sur le **même port** que l’API. Query string obligatoire : **`token`** (JWT) et **`sessionId`** (nombre).
 
-#### Armes
-- **damage_dice** : Dés de dégâts (ex: "1d8", "2d6")
-- **damage_type** : Type de dégâts (Tranchant, Perforant, Contondant, Feu, etc.)
-- **weapon_range** : Portée en mètres
-- **weapon_type** : Type d'arme (Mêlée, Distance, Lancé)
+| Chemin | Usage | Notes |
+|--------|--------|--------|
+| `/api/ws/session-chat` | Événements chat après `POST .../chat/messages` | Payload typique `{ "type": "chat_message", "message": { ... } }` |
+| `/api/ws/session-initiative` | Synchro initiative | MJ reçoit l’état complet ; joueur reçoit état filtré (sans combattants cachés) |
+| `/api/ws/session-map` | Synchro carte (tokens, brouillard, vue) | Après `PUT .../map/state` ou changement map active |
 
-#### Armures
-- **armor_class_bonus** : Bonus à la classe d'armure
-- **armor_type** : Type d'armure (Légère, Intermédiaire, Lourde)
-- **stealth_disadvantage** : Désavantage en discrétion
+Exemple d’URL : `wss://<host>/api/ws/session-chat?token=<JWT>&sessionId=42`
 
-### Slots d'équipement
-- **Main droite** : Arme principale
-- **Main gauche** : Arme secondaire ou bouclier
-- **Armure** : Protection corporelle
-- **Casque** : Protection de la tête
-- **Bottes** : Chaussures
-- **Gants** : Gants et mitaines
-- **Anneau 1/2** : Anneaux magiques
-- **Amulette** : Collier et amulette
-- **Cape** : Cape et manteau
-- **Sac** : Sac à dos et contenants
+## Scripts et maintenance (backend)
+
+| Script / commande | Fichier | Rôle |
+|-------------------|---------|------|
+| `npm run prisma:seed` / `prisma:seed` | `prisma/seed.js` | Rôles, types d’objets, utilisateur admin par défaut (`admin@2d10.com` / `admin123`), données de base |
+| `npm run import:test-character` | `prisma/import.js` | Jeu de données de test (personnage, équipement importé, etc.) |
+| `npm run import-dnd5e-spells` | `scripts/import-dnd5e-spells.js` | Import sorts SRD depuis `dnd5eapi.co` → tables D&D 5e |
+| `npm run import-dnd5e-equipment` | `scripts/import-dnd5e-equipment.js` | Import équipement |
+| `npm run import-dnd5e-magic-items` | `scripts/import-dnd5e-magic-items.js` | Import objets magiques |
+| `node update_admin_password.js` | `update_admin_password.js` | Utilitaire ponctuel de réinitialisation mot de passe admin (voir fichier) |
+| `node test-prisma-routes.js` | `test-prisma-routes.js` | Tests manuels / smoke routes |
+| `node postman/generate-*.js` | `postman/` | Génération collections Postman |
+
+Variables d’environnement utiles pour imports : `DND5E_IMPORT_DELAY_MS`, `DND5E_IMPORT_LIMIT` (voir commentaires dans chaque script `scripts/import-dnd5e-*.js`).
+
+**Auth JWT :** `middleware/auth.js` — `authenticateToken`, `requireRole([...])`, `requireAdmin` (utilisé sur tout le routeur `/api/admin`).
 
 ## 📊 Codes de statut
 

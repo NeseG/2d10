@@ -107,20 +107,7 @@ router.get('/equipment', authenticateToken, async (req, res) => {
   }
 });
 
-// GET /api/dnd5e/equipment/:index
-router.get('/equipment/:index', authenticateToken, async (req, res) => {
-  try {
-    const { index } = req.params;
-    const item = await prisma.dnd5eEquipment.findUnique({ where: { index } });
-    if (!item) return res.status(404).json({ error: 'Objet non trouvé' });
-    res.json({ item });
-  } catch (error) {
-    console.error('Erreur lors du détail equipment dnd5e:', error);
-    res.status(500).json({ error: 'Erreur serveur' });
-  }
-});
-
-// GET /api/dnd5e/equipment/search?q=
+// GET /api/dnd5e/equipment/search?q=  (avant /equipment/:index pour ne pas capturer index = "search")
 router.get('/equipment/search', authenticateToken, async (req, res) => {
   try {
     const q = String(req.query.q || '').trim();
@@ -148,6 +135,19 @@ router.get('/equipment/search', authenticateToken, async (req, res) => {
     res.json({ items });
   } catch (error) {
     console.error('Erreur lors de la recherche equipment dnd5e:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// GET /api/dnd5e/equipment/:index
+router.get('/equipment/:index', authenticateToken, async (req, res) => {
+  try {
+    const { index } = req.params;
+    const item = await prisma.dnd5eEquipment.findUnique({ where: { index } });
+    if (!item) return res.status(404).json({ error: 'Objet non trouvé' });
+    res.json({ item });
+  } catch (error) {
+    console.error('Erreur lors du détail equipment dnd5e:', error);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });

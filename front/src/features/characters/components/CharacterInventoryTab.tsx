@@ -116,12 +116,6 @@ function formatJsonOrDash(value: unknown): string {
   }
 }
 
-function isDnd5eMagicItemProperties(value: unknown): boolean {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
-  const v = value as Record<string, unknown>
-  return v.dnd5e_magic_item === true
-}
-
 function findInventoryRowElementFromPoint(clientX: number, clientY: number): HTMLElement | null {
   if (typeof document.elementsFromPoint === 'function') {
     for (const el of document.elementsFromPoint(clientX, clientY)) {
@@ -1362,16 +1356,8 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
                       onClick={() => {
                         if (skipNextInventoryRowClickRef.current) return
                         if (!item.item_id) return
-                        const idx = typeof item.index === 'string' ? item.index.trim() : ''
-                        // `Item.index` est utilisé aussi pour les items custom (ex: `__manual__...`) :
-                        // on n'ouvre la fiche SRD que pour les vrais index SRD.
-                        const looksLikeSrdIndex =
-                          Boolean(idx) && !idx.includes('__manual__') && !idx.includes('__copy__')
-                        if (looksLikeSrdIndex) {
-                          if (isDnd5eMagicItemProperties(item.properties)) void openDndCatalogMagicDetail(idx)
-                          else void openDndCatalogEquipmentDetail(idx)
-                          return
-                        }
+                        // Toujours la fiche `Item` (custom, équipement ou objet magique dupliqué depuis le SRD).
+                        // Les fiches catalogue D&D restent dans la modale d’import (listes équipement / objets magiques).
                         void openItemDetailsModal(item)
                       }}
                     >

@@ -51,6 +51,16 @@ function checkSlotCompatibility(itemType, slotName) {
   return allowedSlots.includes(slotName);
 }
 
+router.get('/slots/available', authenticateToken, async (req, res) => {
+  try {
+    const equipmentSlots = await prisma.equipmentSlot.findMany({ orderBy: { id: 'asc' } });
+    res.json({ equipment_slots: equipmentSlots });
+  } catch (error) {
+    console.error('Erreur lors de la récupération des slots:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 router.get('/:characterId', authenticateToken, checkCharacterOwnership, async (req, res) => {
   try {
     const characterId = parseInt(req.params.characterId, 10);
@@ -183,16 +193,6 @@ router.post('/:characterId/unequip', authenticateToken, checkCharacterOwnership,
     });
   } catch (error) {
     console.error('Erreur lors du déséquipement:', error);
-    res.status(500).json({ error: 'Erreur serveur' });
-  }
-});
-
-router.get('/slots/available', authenticateToken, async (req, res) => {
-  try {
-    const equipmentSlots = await prisma.equipmentSlot.findMany({ orderBy: { id: 'asc' } });
-    res.json({ equipment_slots: equipmentSlots });
-  } catch (error) {
-    console.error('Erreur lors de la récupération des slots:', error);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });

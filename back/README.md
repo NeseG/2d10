@@ -33,6 +33,22 @@ npm run import-dnd5e-magic-items
 
 Variables utiles : `DND5E_IMPORT_DELAY_MS` (défaut `120`), `DND5E_IMPORT_LIMIT` (limite d’entrées pour un essai).
 
+### Import personnage (feuille Excel → JSON)
+
+- **Sur la machine qui voit la base** : `CHARACTER_USER_ID=<id> npm run import:character-json` ou `node scripts/import-excel-character.js chemin/vers/fiche.json` (voir `scripts/examples/revan-feuille-excel.json`).
+- **À distance** : `POST /api/admin/characters/import` avec un JWT **admin** et un corps JSON identique au fichier (inclure `userId` du joueur propriétaire).
+
+Exemple :
+
+```bash
+curl -sS -X POST "https://ton-serveur/api/admin/characters/import" \
+  -H "Authorization: Bearer <token_admin>" \
+  -H "Content-Type: application/json" \
+  -d @scripts/examples/revan-feuille-excel.json
+```
+
+(Ajoutez `"userId": 2` dans le JSON si ce champ n’y est pas déjà.)
+
 ## Technologies
 
 - Node.js, Express 4
@@ -56,6 +72,7 @@ Toutes les routes métier sont sous **`/api/...`** et nécessitent en général 
 
 ### Administration (admin)
 - `GET|POST /api/admin/users`, `GET|PUT|DELETE /api/admin/users/:id`, `GET /api/admin/stats`
+- `POST /api/admin/characters/import` — import personnage depuis JSON (feuille Excel), voir section ci-dessus
 
 ### Personnages
 - `GET|POST /api/characters`, `GET|PUT|DELETE /api/characters/:id`

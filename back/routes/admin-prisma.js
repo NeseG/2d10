@@ -1,6 +1,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const prisma = require('../lib/prisma');
+const { importCharacterFromJson } = require('../lib/import-character-from-json');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
@@ -264,6 +265,36 @@ router.delete('/users/:id', async (req, res) => {
   } catch (error) {
     console.error('Erreur lors de la désactivation de l\'utilisateur:', error);
     res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+/** Import personnage (même JSON que `scripts/import-excel-character.js`) — utile depuis une machine distante. */
+router.post('/characters/import', async (req, res) => {
+  try {
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const userId = Number.parseInt(String(body.userId), 10);
+    if (!Number.isFinite(userId) || userId < 1) {
+      return res.status(400).json({ error: 'userId requis (nombre, utilisateur propriétaire du personnage)' });
+    }
+
+    const owner = await prisma.user.findFirst({ where: { id: userId, isActive: true }, select: { id: true } });
+    if (!owner) {
+      return res.status(404).json({ error: 'Utilisateur propriétaire introuvable ou inactif' });
+    }
+
+    const character = await importCharacterFromJson(prisma, userId, body);
+    return res.status(201).json({
+      success: true,
+      character: { id: character.id, name: character.name, user_id: userId },
+    });
+  } catch (error) {
+    const code = error.statusCode === 400 ? 400 : 500;
+    if (code === 500) {
+      console.error('Erreur import personnage (admin):', error);
+    }
+    return res.status(code).json({
+      error: error instanceof Error ? error.message : 'Erreur serveur',
+    });
   }
 });
 
