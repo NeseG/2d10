@@ -51,6 +51,7 @@ const DND_5E_CLASSES = [
   'Roublard',
 ]
 
+/** Libellés FR ; tableau trié alphabétiquement pour l’affichage (session + édition). */
 const DND_5E_SKILLS_FR: Array<{ key: string; label: string }> = [
   { key: 'ACROBATICS', label: 'Acrobaties' },
   { key: 'ANIMAL_HANDLING', label: 'Dressage' },
@@ -70,7 +71,7 @@ const DND_5E_SKILLS_FR: Array<{ key: string; label: string }> = [
   { key: 'SLEIGHT_OF_HAND', label: 'Escamotage' },
   { key: 'STEALTH', label: 'Discretion' },
   { key: 'SURVIVAL', label: 'Survie' },
-]
+].sort((a, b) => a.label.localeCompare(b.label, 'fr', { sensitivity: 'base' }))
 
 type AbilityScoreFormKey = 'strength' | 'dexterity' | 'constitution' | 'intelligence' | 'wisdom' | 'charisma'
 
@@ -862,27 +863,35 @@ export function CharacterCharacteristicsTab(props: {
     return Math.ceil(levelNumber / 4) + 1
   }, [form.level])
 
-  const proficientSkillsSummary = useMemo(() => {
+  /** Liste session « Mes compétences » : toutes les compétences D&D, y compris sans maîtrise (bonus = modificateur de carac. seul). */
+  const sessionSkillsSummaryRows = useMemo(() => {
     const rows: Array<{
       key: string
       label: string
-      kind: 'proficient' | 'expertise'
+      kind: 'none' | 'proficient' | 'expertise'
       total: number
       abilityAbbr: string
       abilityColorClass: string
     }> = []
     for (const item of DND_5E_SKILLS_FR) {
       const st = skillsState[item.key] ?? { proficient: false, expertise: false }
-      if (!st.proficient && !st.expertise) continue
       const abilityKey = SKILL_ABILITY_KEY[item.key]
       const display = abilityKey ? ABILITY_SKILL_DISPLAY[abilityKey] : null
       const mod = abilityKey ? getModifier(form[abilityKey]) : 0
-      const pbAdd = st.expertise ? 2 * proficiencyBonus : proficiencyBonus
+      let kind: 'none' | 'proficient' | 'expertise' = 'none'
+      let total = mod
+      if (st.expertise) {
+        kind = 'expertise'
+        total = mod + 2 * proficiencyBonus
+      } else if (st.proficient) {
+        kind = 'proficient'
+        total = mod + proficiencyBonus
+      }
       rows.push({
         key: item.key,
         label: item.label,
-        kind: st.expertise ? 'expertise' : 'proficient',
-        total: mod + pbAdd,
+        kind,
+        total,
         abilityAbbr: display?.abbr ?? '—',
         abilityColorClass: display?.colorClass ?? '',
       })
@@ -990,26 +999,24 @@ export function CharacterCharacteristicsTab(props: {
 
   const skillsAccordionPanel = (
     <div className="character-skills-accordion-panel">
-      {proficientSkillsSummary.length === 0 ? (
-        <p className="character-skills-summary-empty">Aucune compétence maîtrisée ou en expertise.</p>
-      ) : (
-        <ul className="character-skills-summary-list">
-          {proficientSkillsSummary.map((row) => (
-            <li key={row.key} className="character-skills-summary-row">
-              <div className="character-skills-summary-name-block">
-                <span className={`character-skills-summary-name ${row.abilityColorClass}`.trim()}>{row.label}</span>
-                <span className="character-skills-summary-ability-abbr">{row.abilityAbbr}</span>
-              </div>
-              <span
-                className={`character-skills-summary-badge ${row.kind === 'expertise' ? 'is-expertise' : 'is-proficient'}`}
-              >
-                {row.kind === 'expertise' ? 'Expertise' : 'Maîtrise'}
-              </span>
-              <span className="character-skills-summary-total">{formatModifier(row.total)}</span>
-            </li>
-          ))}
-        </ul>
-      )}
+      <ul className="character-skills-summary-list">
+        {sessionSkillsSummaryRows.map((row) => (
+          <li key={row.key} className="character-skills-summary-row">
+            <div className="character-skills-summary-name-block">
+              <span className={`character-skills-summary-name ${row.abilityColorClass}`.trim()}>{row.label}</span>
+              <span className="character-skills-summary-ability-abbr">{row.abilityAbbr}</span>
+            </div>
+            <span
+              className={`character-skills-summary-badge ${
+                row.kind === 'expertise' ? 'is-expertise' : row.kind === 'proficient' ? 'is-proficient' : 'is-not-proficient'
+              }`}
+            >
+              {row.kind === 'expertise' ? 'Expertise' : row.kind === 'proficient' ? 'Maîtrise' : 'Non maîtrisé'}
+            </span>
+            <span className="character-skills-summary-total">{formatModifier(row.total)}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   )
 

@@ -303,6 +303,11 @@ export function CharacterGrimoireTab(props: {
     return { pb, mod, dc: 8 + pb + mod, attackBonus: pb + mod }
   }, [spellcastingAbility, abilityScores, characterLevel])
 
+  const spellcastingAbilityShortLabel = useMemo(() => {
+    if (!spellcastingAbility) return null
+    return SPELLCASTING_ABILITY_OPTIONS.find((o) => o.value === spellcastingAbility)?.label ?? spellcastingAbility
+  }, [spellcastingAbility])
+
   async function handleSpellcastingAbilityChange(next: AbilityName | '') {
     setSpellcastingAbility(next)
     if (sessionView || !characterId) return
@@ -707,6 +712,37 @@ export function CharacterGrimoireTab(props: {
     <div>
       {sessionView ? (
         <div className="grimoire-session-live">
+          <p
+            className="grimoire-session-incantation-compact"
+            aria-label={`Incantation : caractéristique ${spellcastingAbilityShortLabel ?? 'non définie'}, DD sort ${spellcastingStats?.dc != null ? spellcastingStats.dc : '—'}, bonus d'attaque ${spellcastingStats?.attackBonus != null ? (spellcastingStats.attackBonus >= 0 ? `+${spellcastingStats.attackBonus}` : String(spellcastingStats.attackBonus)) : '—'}`}
+          >
+            <span className="grimoire-session-incantation-bit" title="Caractéristique d'incantation">
+              <abbr className="grimoire-session-incantation-abbr">Carac.</abbr>{' '}
+              <span className="grimoire-session-incantation-val">{spellcastingAbilityShortLabel ?? '—'}</span>
+            </span>
+            <span className="grimoire-session-incantation-sep" aria-hidden="true">
+              ·
+            </span>
+            <span className="grimoire-session-incantation-bit" title="DD des sorts (jet de sauvegarde)">
+              <abbr className="grimoire-session-incantation-abbr">DD</abbr>{' '}
+              <span className="grimoire-session-incantation-val">
+                {spellcastingStats?.dc != null ? spellcastingStats.dc : '—'}
+              </span>
+            </span>
+            <span className="grimoire-session-incantation-sep" aria-hidden="true">
+              ·
+            </span>
+            <span className="grimoire-session-incantation-bit" title="Bonus d'attaque avec sort">
+              <abbr className="grimoire-session-incantation-abbr">Atk</abbr>{' '}
+              <span className="grimoire-session-incantation-val">
+                {spellcastingStats?.attackBonus != null
+                  ? spellcastingStats.attackBonus >= 0
+                    ? `+${spellcastingStats.attackBonus}`
+                    : String(spellcastingStats.attackBonus)
+                  : '—'}
+              </span>
+            </span>
+          </p>
           {grimoireLoading ? <p>Chargement…</p> : null}
           {!grimoireLoading ? (
             <div className="grimoire-session-levels">
@@ -834,6 +870,36 @@ export function CharacterGrimoireTab(props: {
                 </span>
               </p>
             </div>
+
+            <details className="character-skills-accordion">
+              <summary className="character-skills-accordion-summary">Emplacements de sort</summary>
+              <div className="character-skills-accordion-panel">
+                <div className="grimoire-spell-slots-editor" role="group" aria-label="Emplacements de sort par niveau">
+                  <div className="grimoire-spell-slots-grid">
+                    {Array.from({ length: 9 }, (_, i) => i + 1).map((level) => {
+                      const maxSlots = spellSlotsDraft[level]?.slotsMax ?? '0'
+                      return (
+                        <label key={level} className="grimoire-spell-slot-field" htmlFor={`grimoire-slot-max-panel-${level}`}>
+                          <span>Niv. {level}</span>
+                          <input
+                            id={`grimoire-slot-max-panel-${level}`}
+                            type="number"
+                            min={0}
+                            max={99}
+                            className="inventory-qty-input grimoire-spell-slot-input"
+                            value={maxSlots}
+                            onChange={(event) =>
+                              setSpellSlotsDraft((prev) => ({ ...prev, [level]: { slotsMax: event.target.value } }))
+                            }
+                            disabled={!characterId}
+                          />
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+            </details>
           </div>
 
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
@@ -865,29 +931,6 @@ export function CharacterGrimoireTab(props: {
                   <details key={level} className="grimoire-session-level" open={spellsAtLevel.length > 0}>
                     <summary className="grimoire-session-level-summary">
                       <span className="grimoire-session-level-title">{grimoireLevelTitle(level)}</span>
-                      {level > 0 ? (
-                        <span
-                          className="grimoire-session-slot-boxes grimoire-edit-slot-boxes"
-                          onClick={(event) => event.preventDefault()}
-                          role="group"
-                          aria-label={`Emplacements max niveau ${level}`}
-                        >
-                          <label className="grimoire-edit-slot-label" htmlFor={`grimoire-slot-max-${level}`}>
-                            Emplacement
-                          </label>
-                          <input
-                            id={`grimoire-slot-max-${level}`}
-                            type="number"
-                            min={0}
-                            className="inventory-qty-input"
-                            value={maxSlots}
-                            onChange={(event) =>
-                              setSpellSlotsDraft((prev) => ({ ...prev, [level]: { slotsMax: event.target.value } }))
-                            }
-                            onClick={(event) => event.stopPropagation()}
-                          />
-                        </span>
-                      ) : null}
                     </summary>
                     <div className="grimoire-session-level-body">
                       {spellsAtLevel.length === 0 ? (
