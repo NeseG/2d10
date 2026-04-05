@@ -1,6 +1,21 @@
 const express = require('express');
 const prisma = require('../lib/prisma');
-const { authenticateToken, requireRole } = require('../middleware/auth');
+const { authenticateToken, requireAdmin, requireRole } = require('../middleware/auth');
+
+function isItemPrivilegedUser(user) {
+  return user?.role_name === 'admin' || user?.role_name === 'gm';
+}
+
+/** Joueur : l’objet est référencé par au moins une ligne d’inventaire d’un de ses personnages. */
+async function userHasItemInInventory(userId, itemId) {
+  const n = await prisma.inventory.count({
+    where: {
+      itemId,
+      character: { userId },
+    },
+  });
+  return n > 0;
+}
 
 const router = express.Router();
 
@@ -108,9 +123,110 @@ router.get('/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Créer un nouvel objet (Admin/GM seulement)
-router.post('/', authenticateToken, requireRole(['admin', 'gm']), async (req, res) => {
+/** Index stable dans `dnd5e_equipment` pour un objet validé depuis une fiche custom. */
+function validatedEquipmentCatalogIndex(itemId) {
+  return `validated-item-${itemId}`;
+}
+
+function isLegacyCustomItem(item) {
+  return item.source == null && String(item.index || '').includes('__manual__');
+}
+
+function itemIsMagicItemMirror(properties) {
+  if (!properties || typeof properties !== 'object') return false;
+  return Boolean(properties.dnd5e_magic_item);
+}
+
+// POST /api/items/:id/validate-catalog — admin : copie l’objet dans la base « équipements importés » (Dnd5eEquipment)
+router.post('/:id/validate-catalog', authenticateToken, requireAdmin, async (req, res) => {
   try {
+    const id = Number.parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) return res.status(400).json({ error: 'ID invalide' });
+
+    const item = await prisma.item.findFirst({ where: { id, isActive: true } });
+    if (!item) return res.status(404).json({ error: 'Objet non trouvé' });
+
+    if (itemIsMagicItemMirror(item.properties)) {
+      return res.status(400).json({
+        error:
+          'Les objets magiques issus du catalogue SRD ne peuvent pas être publiés dans le catalogue équipement.',
+      });
+    }
+
+    const isCustom = item.source === 'custom' || isLegacyCustomItem(item);
+    if (!isCustom) {
+      return res.status(400).json({
+        error: 'Seuls les objets personnalisés (source custom) peuvent être validés pour le catalogue importé.',
+      });
+    }
+
+    const importIndex = validatedEquipmentCatalogIndex(id);
+
+    const weightInt =
+      item.weight != null && Number.isFinite(Number(item.weight)) ? Math.round(Number(item.weight)) : null;
+
+    const importRow = await prisma.dnd5eEquipment.upsert({
+      where: { index: importIndex },
+      create: {
+        index: importIndex,
+        name: item.name,
+        type: item.type,
+        category: item.category,
+        subcategory: item.subcategory,
+        cost: item.cost,
+        weight: weightInt,
+        description: item.description,
+        damage: item.damage,
+        damageType: item.damageType,
+        range: item.range,
+        armorClass: item.armorClass,
+        stealthDisadvantage: item.stealthDisadvantage,
+        properties: item.properties,
+        raw: item.raw,
+      },
+      update: {
+        name: item.name,
+        type: item.type,
+        category: item.category,
+        subcategory: item.subcategory,
+        cost: item.cost,
+        weight: weightInt,
+        description: item.description,
+        damage: item.damage,
+        damageType: item.damageType,
+        range: item.range,
+        armorClass: item.armorClass,
+        stealthDisadvantage: item.stealthDisadvantage,
+        properties: item.properties,
+        raw: item.raw,
+      },
+    });
+
+    const updatedItem = await prisma.item.update({
+      where: { id },
+      data: { source: 'dnd5e' },
+    });
+
+    res.json({
+      message: 'Objet validé et ajouté à la base des équipements importés.',
+      item: updatedItem,
+      dnd5e_import: {
+        id: importRow.id,
+        index: importRow.index,
+        name: importRow.name,
+        type: importRow.type,
+      },
+    });
+  } catch (error) {
+    console.error('Erreur validation item catalogue:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Créer un nouvel objet — tout utilisateur authentifié (index toujours auto-généré hors admin/gm)
+router.post('/', authenticateToken, async (req, res) => {
+  try {
+    const privileged = isItemPrivilegedUser(req.user);
     const {
       index,
       name,
@@ -133,9 +249,11 @@ router.post('/', authenticateToken, requireRole(['admin', 'gm']), async (req, re
       return res.status(400).json({ error: 'Nom requis' });
     }
 
-    // `index` est unique globalement. Si l'appelant ne le fournit pas,
-    // on génère un index unique pour permettre plusieurs items avec le même nom.
-    const indexSeed = index ? slugify(index) : makeUniqueIndexFromName(name);
+    // `index` est unique globalement. Admin/GM peuvent proposer un index ; les joueurs : toujours auto.
+    const indexSeed =
+      privileged && index && String(index).trim()
+        ? slugify(index)
+        : makeUniqueIndexFromName(name);
 
     const parsedWeight = parseOptionalItemWeight(weight);
     if (parsedWeight.error) {
@@ -163,7 +281,8 @@ router.post('/', authenticateToken, requireRole(['admin', 'gm']), async (req, re
             armorClass: armorClass != null ? Number.parseInt(String(armorClass), 10) : null,
             stealthDisadvantage: stealthDisadvantage != null ? Boolean(stealthDisadvantage) : null,
             properties: properties ?? null,
-            raw: raw ?? null,
+            raw: privileged && raw !== undefined ? raw : null,
+            source: 'custom',
           },
         });
         break;
@@ -184,13 +303,15 @@ router.post('/', authenticateToken, requireRole(['admin', 'gm']), async (req, re
   }
 });
 
-// Mettre à jour un objet (Admin/GM seulement)
-router.put('/:id', authenticateToken, requireRole(['admin', 'gm']), async (req, res) => {
+// Mettre à jour un objet — admin/gm ou joueur si l’objet est dans l’inventaire d’un de ses persos
+router.put('/:id', authenticateToken, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (Number.isNaN(id)) {
       return res.status(400).json({ error: 'ID invalide' });
     }
+
+    const privileged = isItemPrivilegedUser(req.user);
 
     const {
       index,
@@ -215,9 +336,19 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'gm']), async (req, 
       return res.status(404).json({ error: 'Objet non trouvé' });
     }
 
+    if (!privileged) {
+      const allowed = await userHasItemInInventory(req.user.id, id);
+      if (!allowed) {
+        return res.status(403).json({
+          error:
+            'Vous ne pouvez modifier que les objets présents dans l’inventaire de vos personnages.',
+        });
+      }
+    }
+
     const data = {};
 
-    if (index !== undefined) data.index = index;
+    if (index !== undefined && privileged) data.index = index;
     if (name !== undefined) data.name = name;
     if (description !== undefined) data.description = description;
     if (type !== undefined) data.type = type;
@@ -235,7 +366,7 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'gm']), async (req, 
     if (armorClass !== undefined) data.armorClass = armorClass != null ? Number.parseInt(String(armorClass), 10) : null;
     if (stealthDisadvantage !== undefined) data.stealthDisadvantage = stealthDisadvantage != null ? Boolean(stealthDisadvantage) : null;
     if (properties !== undefined) data.properties = properties;
-    if (raw !== undefined) data.raw = raw;
+    if (raw !== undefined && privileged) data.raw = raw;
 
     if (Object.keys(data).length === 0) {
       return res.status(400).json({ error: 'Aucune donnée à mettre à jour' });

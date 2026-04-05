@@ -175,6 +175,7 @@ router.post(
             image: magicItem.image,
           },
           raw: magicItem.raw,
+          source: 'dnd5e',
         },
       });
 

@@ -1,5 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Activity, Backpack, BookMarked, Clover, Map, MessageCircle, ScrollText, Swords, User } from 'lucide-react'
+import {
+  Activity,
+  Backpack,
+  BookMarked,
+  Clover,
+  Dices,
+  Map,
+  MessageCircle,
+  ScrollText,
+  Swords,
+  User,
+} from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Card } from '../../../shared/components/Card'
 import { useAuth } from '../../../app/hooks/useAuth'
@@ -10,7 +21,10 @@ import {
   DEFAULT_SESSION_LIVE_ACCORDIONS,
   type SessionLiveAccordionState,
 } from '../../characters/components/CharacterCharacteristicsTab'
-import { CharacterInventoryTab } from '../../characters/components/CharacterInventoryTab'
+import {
+  CharacterInventoryTab,
+  type SessionLiveInventoryTransferTarget,
+} from '../../characters/components/CharacterInventoryTab'
 import { CharacterGrimoireTab } from '../../characters/components/CharacterGrimoireTab'
 import {
   CharacterFeaturesTab,
@@ -22,6 +36,7 @@ import { SessionLiveChat } from '../components/SessionLiveChat'
 import { SessionCampaignNotesTab } from '../components/SessionCampaignNotesTab'
 import { SessionInitiativeTrackerTab } from '../components/SessionInitiativeTrackerTab'
 import { SessionMapTab } from '../components/SessionMapTab'
+import { SessionDiceTab } from '../components/SessionDiceTab'
 import { useHeader } from '../../../app/hooks/useHeader'
 
 type JoinedSession = {
@@ -36,6 +51,9 @@ type SessionAttendance = {
   character_id: number
   character_name?: string | null
   character_user_id?: number | null
+  /** Présent uniquement pour les fiches familier injectées (pas de ligne attendance en base). */
+  is_companion?: boolean
+  master_character_id?: number | null
 }
 
 type SessionDetail = {
@@ -97,10 +115,8 @@ export function LiveSessionPage() {
   const [selectedCharacterName, setSelectedCharacterName] = useState<string>('')
   const [mainTab, setMainTab] = useState<'character' | 'chat' | 'initiative' | 'map'>('character')
   const [characterSubTab, setCharacterSubTab] = useState<
-    'characteristic' | 'inventory' | 'grimoire' | 'traits' | 'notes'
-  >(
-    'characteristic',
-  )
+    'characteristic' | 'inventory' | 'grimoire' | 'traits' | 'notes' | 'dice'
+  >('characteristic')
 
   const raw = localStorage.getItem('joined_session')
   let session: JoinedSession | null = null
@@ -130,7 +146,10 @@ export function LiveSessionPage() {
       setLoading(true)
       try {
         setSessionLoadFailed(false)
-        const response = await apiGet<{ success: boolean; session: SessionDetail }>(`/api/sessions/${session.id}`, token)
+        const response = await apiGet<{ success: boolean; session: SessionDetail }>(
+          `/api/sessions/${session.id}?expand_pets=1`,
+          token,
+        )
         const detail = response.session
         setSessionDetail(detail)
         setSessionInfo({
@@ -183,6 +202,29 @@ export function LiveSessionPage() {
     if (!user || !sessionDetail || accessibleCharacters.length < 2) return false
     return user.role === 'admin' || sessionDetail.gm_id === user.id
   }, [user, sessionDetail, accessibleCharacters.length])
+
+  const diceRollingCharacterId = useMemo(() => {
+    if (!selectedCharacterId) return null
+    const n = Number.parseInt(selectedCharacterId, 10)
+    return Number.isFinite(n) ? n : null
+  }, [selectedCharacterId])
+
+  const buildInventoryTransferTargets = useCallback(
+    (excludeCharacterId: string): SessionLiveInventoryTransferTarget[] => {
+      if (!sessionDetail?.attendance || !user) return []
+      const currentId = Number(excludeCharacterId)
+      if (!Number.isFinite(currentId)) return []
+      return sessionDetail.attendance
+        .filter((e) => e.character_id !== currentId)
+        .filter((e) => isSessionOwner || e.character_user_id === user.id)
+        .map((e) => ({
+          characterId: String(e.character_id),
+          label: `${e.is_companion ? '· ' : ''}${(e.character_name ?? '').trim() || `Personnage #${e.character_id}`}`,
+        }))
+        .filter((t, i, arr) => arr.findIndex((x) => x.characterId === t.characterId) === i)
+    },
+    [sessionDetail?.attendance, user, isSessionOwner],
+  )
 
   const [characterDisplayNames, setCharacterDisplayNames] = useState<Record<string, string>>({})
   const [characterAvatarUrls, setCharacterAvatarUrls] = useState<Record<string, string>>({})
@@ -352,7 +394,7 @@ export function LiveSessionPage() {
 
               {mainTab === 'character' && accessibleCharacters.length > 0 ? (
                 <>
-              {!useGmCharacterStrip && accessibleCharacters.length > 1 ? (
+              {!useGmCharacterStrip && accessibleCharacters.length > 1 && characterSubTab !== 'dice' ? (
                 <div className="login-form" style={{ marginTop: '0.75rem' }}>
                   <label htmlFor="session-character-select">Personnage</label>
                   <select
@@ -366,7 +408,8 @@ export function LiveSessionPage() {
                     }}
                   >
                     {accessibleCharacters.map((entry) => (
-                      <option key={entry.id} value={entry.character_id}>
+                      <option key={`${entry.id}-${entry.character_id}`} value={entry.character_id}>
+                        {entry.is_companion ? '· ' : ''}
                         {entry.character_name ?? `Personnage #${entry.character_id}`}
                       </option>
                     ))}
@@ -374,7 +417,23 @@ export function LiveSessionPage() {
                 </div>
               ) : null}
 
-              {useGmCharacterStrip ? (
+              {characterSubTab === 'dice' && user ? (
+                <div className="session-live-content" style={{ marginTop: '0.75rem' }}>
+                  <SessionDiceTab
+                    sessionId={session.id}
+                    token={token}
+                    currentUserId={user.id}
+                    isSessionOwner={isSessionOwner}
+                    rollingCharacterId={diceRollingCharacterId}
+                    diceCharacters={accessibleCharacters}
+                    onRollingCharacterIdChange={(characterId) => {
+                      setSelectedCharacterId(String(characterId))
+                      const found = accessibleCharacters.find((e) => e.character_id === characterId)
+                      setSelectedCharacterName(found?.character_name ?? '')
+                    }}
+                  />
+                </div>
+              ) : useGmCharacterStrip ? (
                 <div className="session-live-characters-strip">
                   {accessibleCharacters.map((entry) => {
                     const cid = String(entry.character_id)
@@ -383,7 +442,7 @@ export function LiveSessionPage() {
                       entry.character_name?.trim() ||
                       `Personnage #${entry.character_id}`
                     return (
-                      <div key={entry.id} className="session-live-character-panel">
+                      <div key={`${entry.id}-${entry.character_id}`} className="session-live-character-panel">
                         <div className="session-live-content session-live-character-panel-inner">
                           <SessionLiveCharacterHeading
                             characterId={cid}
@@ -408,7 +467,12 @@ export function LiveSessionPage() {
                             />
                           ) : null}
                           {characterSubTab === 'inventory' ? (
-                            <CharacterInventoryTab characterId={cid} token={token} />
+                            <CharacterInventoryTab
+                              characterId={cid}
+                              token={token}
+                              sessionLiveSessionId={session ? String(session.id) : undefined}
+                              sessionLiveTransferTargets={buildInventoryTransferTargets(cid)}
+                            />
                           ) : null}
                           {characterSubTab === 'grimoire' ? (
                             <CharacterGrimoireTab
@@ -465,7 +529,14 @@ export function LiveSessionPage() {
                       }
                     />
                   ) : null}
-                  {characterSubTab === 'inventory' ? <CharacterInventoryTab characterId={selectedCharacterId} token={token} /> : null}
+                  {characterSubTab === 'inventory' ? (
+                    <CharacterInventoryTab
+                      characterId={selectedCharacterId}
+                      token={token}
+                      sessionLiveSessionId={session ? String(session.id) : undefined}
+                      sessionLiveTransferTargets={buildInventoryTransferTargets(selectedCharacterId)}
+                    />
+                  ) : null}
                   {characterSubTab === 'grimoire' ? (
                     <CharacterGrimoireTab
                       characterId={selectedCharacterId}
@@ -550,6 +621,17 @@ export function LiveSessionPage() {
                     aria-label="Notes"
                   >
                     <ScrollText size={22} aria-hidden="true" />
+                  </button>
+                  <button
+                    className={`tab-btn ${characterSubTab === 'dice' ? 'active' : ''}`}
+                    type="button"
+                    onClick={() => {
+                      setCharacterSubTab('dice')
+                    }}
+                    title="Dés"
+                    aria-label="Dés"
+                  >
+                    <Dices size={22} aria-hidden="true" />
                   </button>
                 </div>
               ) : null}

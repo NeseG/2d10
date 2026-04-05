@@ -248,6 +248,7 @@ Content-Type: application/json
   "race": "Humain",
   "class": "Rôdeur",
   "level": 5,
+  "destiny": 3,
   "background": "Ranger du Nord",
   "alignment": "Loyal Bon",
   "experience_points": 6500,
@@ -272,7 +273,7 @@ Authorization: Bearer <token>
 Content-Type: application/json
 ```
 
-Champs courants (tous optionnels sauf besoin) : `name`, `race`, `class`, `archetype`, `level`, `background`, `alignment`, `experiencePoints`, `hitPoints` / `hit_points_max`, `currentHitPoints` / `current_hit_points`, `hitDice` / `hit_dice`, `hitDiceRemaining` / `hit_dice_remaining`, `armorClass`, `speed`, caractéristiques `strength` … `charisma`, `description`, `notes`.
+Champs courants (tous optionnels sauf besoin) : `name`, `race`, `class`, `archetype`, `level`, `destiny` (entier ≥ 0, défaut à la création **3**), `background`, `alignment`, `experiencePoints`, `hitPoints` / `hit_points_max`, `currentHitPoints` / `current_hit_points`, `hitDice` / `hit_dice`, `hitDiceRemaining` / `hit_dice_remaining`, `armorClass`, `speed`, caractéristiques `strength` … `charisma`, `description`, `notes`.
 
 **Maîtrises & sorts :**
 
@@ -448,7 +449,13 @@ GET /api/inventory/items/catalog?type=Arme&rarity=common&search=épée
 Authorization: Bearer <token>
 ```
 
-## ⚔️ Gestion des Objets (Admin/GM)
+## ⚔️ Gestion des Objets (`/api/items`)
+
+**Création** : tout utilisateur authentifié (`POST /api/items`). L’`index` unique est toujours généré automatiquement pour les joueurs ; admin/gm peuvent en proposer un. Le champ `raw` n’est accepté à la création que pour admin/gm.
+
+**Modification** : admin/gm pour tout objet ; **joueur** uniquement si l’objet apparaît dans l’inventaire d’**au moins un** de ses personnages. Les joueurs ne peuvent pas modifier `index` ni `raw`.
+
+**Suppression** : admin uniquement (`DELETE`), si l’objet n’est référencé par aucun inventaire.
 
 ### Obtenir tous les objets
 ```
@@ -462,35 +469,33 @@ GET /api/items/:id
 Authorization: Bearer <token>
 ```
 
-### Créer un nouvel objet (Admin/GM)
+### Créer un nouvel objet
 ```
 POST /api/items
-Authorization: Bearer <admin_or_gm_token>
+Authorization: Bearer <token>
 Content-Type: application/json
-
-{
-  "name": "Épée flamboyante",
-  "description": "Une épée qui brille d'une flamme magique",
-  "item_type_id": 1,
-  "weight": 3.5,
-  "value_gold": 500,
-  "rarity": "rare",
-  "is_magical": true,
-  "properties": {"damage": "1d8+1 feu", "bonus": "+1"}
-}
 ```
 
-### Modifier un objet (Admin/GM)
+Corps aligné sur le modèle Prisma `Item` : `name` (requis), `type`, `category`, `subcategory`, `cost`, `weight`, `description`, `damage`, `damageType`, `range`, `armorClass`, `stealthDisadvantage`, `properties`, etc.  
+À la création, le champ interne **`source`** est fixé à **`custom`** (non modifiable par le client sur ce `POST`).
+
+### Valider un objet custom pour le catalogue « importé » équipement (admin)
+
+Publie l’objet (`source: custom`, hors miroir d’objet magique SRD) dans la table **`dnd5e_equipment`** (même base que `GET /api/dnd5e/equipment`), avec un index stable `validated-item-<id>`, puis passe l’`Item` en `source: dnd5e`. Idempotent (ré-appel = mise à jour de la ligne import).
+
+```
+POST /api/items/:id/validate-catalog
+Authorization: Bearer <token_admin>
+```
+
+### Modifier un objet
 ```
 PUT /api/items/:id
-Authorization: Bearer <admin_or_gm_token>
+Authorization: Bearer <token>
 Content-Type: application/json
-
-{
-  "value_gold": 600,
-  "properties": {"damage": "1d8+2 feu", "bonus": "+2"}
-}
 ```
+
+Voir les règles d’accès ci-dessus (inventaire du joueur ou admin/gm).
 
 ### Supprimer un objet (Admin)
 ```
@@ -1013,7 +1018,10 @@ GET /api/dnd5e/magic-items/:index
 ```
 GET /api/dnd5e/spells?limit=20&page=1&q=&level=&school=
 GET /api/dnd5e/spells/:index
+DELETE /api/dnd5e/spells/:index
 ```
+
+`DELETE` : supprime une entrée du catalogue **`dnd5e_spells_import`** (rôles **admin** ou **gm**). Les sorts applicatifs (`Spell`) et entrées de grimoire déjà créés à partir de cet import ne sont pas supprimés.
 
 ### Copie vers personnage (admin / gm)
 
@@ -1079,6 +1087,18 @@ Authorization: Bearer <token>
 
 - **admin** / **gm** : tout sort.
 - **user** : uniquement un sort lié au grimoire d’un de ses personnages.
+- **`source`** : seuls **admin** et **gm** peuvent le modifier via ce `PUT` (ex. usage interne).
+
+### Valider un sort custom pour le catalogue « importé » (admin)
+
+Publie le sort (`source: custom`) dans la table **`dnd5e_spells_import`** (même base que la liste `GET /api/dnd5e/spells`), avec un index stable `validated-spell-<id>`, puis passe le sort applicatif en `source: dnd5e`. Idempotent (ré-appel = mise à jour de la ligne import).
+
+```
+POST /api/spells/:id/validate-catalog
+Authorization: Bearer <token_admin>
+```
+
+**Admin uniquement.** Réponse : `item` (sort mis à jour), `dnd5e_import` (aperçu de la ligne catalogue).
 
 ---
 

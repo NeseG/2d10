@@ -171,6 +171,27 @@ docker compose exec back sh
 docker compose exec db psql -U 2d10 -d 2d10
 ```
 
+#### Prisma : `db push` dans Docker
+
+Le service **back** applique déjà le schéma au démarrage (`prisma db push --accept-data-loss`). Pour rejouer un push après une modification de `back/prisma/schema.prisma` (sans redémarrer tout le conteneur) :
+
+```bash
+# Même profil que celui utilisé pour `up` (back, full ou prod)
+docker compose --profile back exec back npx prisma db push
+```
+
+Équivalent au script de démarrage Docker (avec `--accept-data-loss`) :
+
+```bash
+docker compose --profile back exec back npm run prisma:push:docker
+```
+
+Régénérer le client Prisma dans le conteneur si besoin :
+
+```bash
+docker compose --profile back exec back npx prisma generate
+```
+
 #### Nettoyer
 ```bash
 # Supprimer les conteneurs et volumes

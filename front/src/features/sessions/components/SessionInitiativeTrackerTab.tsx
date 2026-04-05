@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Eye, EyeOff } from 'lucide-react'
 import { apiGet, apiPut, getWsApiBaseUrl } from '../../../shared/api/client'
 
 type Combatant = {
@@ -86,7 +87,6 @@ export function SessionInitiativeTrackerTab(props: {
 
   const [draftName, setDraftName] = useState('')
   const [draftInit, setDraftInit] = useState('10')
-  const [draftAc, setDraftAc] = useState('')
   const [draftHp, setDraftHp] = useState('')
   const [draftMaxHp, setDraftMaxHp] = useState('')
   const [draftIsPc, setDraftIsPc] = useState(false)
@@ -254,18 +254,16 @@ export function SessionInitiativeTrackerTab(props: {
     if (!name) return
     const id = makeId()
     const initiative = clampNumber(safeParseInt(draftInit), -50, 50)
-    const ac = draftAc.trim() ? clampNumber(safeParseInt(draftAc), 0, 60) : null
     const hp = draftHp.trim() ? clampNumber(safeParseInt(draftHp), -999, 9999) : null
     const maxHp = draftMaxHp.trim() ? clampNumber(safeParseInt(draftMaxHp), 0, 9999) : null
 
     const nextCombatants: Combatant[] = [
       ...combatants,
-      { id, name, initiative, ac, hp, maxHp, isPc: draftIsPc, notes: null, conditions: null, hidden: false },
+      { id, name, initiative, ac: null, hp, maxHp, isPc: draftIsPc, notes: null, conditions: null, hidden: true },
     ]
     setCombatants(nextCombatants)
     schedulePersist({ version: 1, round, activeId, combatants: nextCombatants })
     setDraftName('')
-    setDraftAc('')
     setDraftHp('')
     setDraftMaxHp('')
   }
@@ -371,7 +369,7 @@ export function SessionInitiativeTrackerTab(props: {
         isPc: true,
         notes: null,
         conditions: null,
-        hidden: false,
+        hidden: true,
       })
     }
     if (toAdd.length === 0) return
@@ -384,7 +382,7 @@ export function SessionInitiativeTrackerTab(props: {
   const activeName = activeIndex >= 0 ? orderedVisible[activeIndex]?.name : null
 
   return (
-    <div className="initiative-tracker">
+    <div className={`initiative-tracker${isOwner ? ' initiative-tracker--owner' : ''}`}>
       {loading ? <p>Chargement…</p> : null}
       {syncError ? <p style={{ margin: 0, color: 'var(--muted)' }}>Sync: {syncError}</p> : null}
 
@@ -441,13 +439,6 @@ export function SessionInitiativeTrackerTab(props: {
               placeholder="Init"
               value={draftInit}
               onChange={(e) => setDraftInit(e.target.value)}
-              disabled={!canEdit}
-            />
-            <input
-              type="number"
-              placeholder="CA"
-              value={draftAc}
-              onChange={(e) => setDraftAc(e.target.value)}
               disabled={!canEdit}
             />
             <input
@@ -524,7 +515,6 @@ export function SessionInitiativeTrackerTab(props: {
                 <th className="initiative-col-active">Actif</th>
                 <th className="initiative-col-name">Nom</th>
                 <th className="initiative-col-init">Init</th>
-                {canEdit ? <th className="initiative-col-ac">CA</th> : null}
                 {canEdit ? <th className="initiative-col-hp">PV</th> : null}
                 <th className="initiative-col-conditions">États</th>
                 <th className="initiative-col-notes">Notes</th>
@@ -577,21 +567,6 @@ export function SessionInitiativeTrackerTab(props: {
                         disabled={!canEdit}
                       />
                     </td>
-                    {canEdit ? (
-                      <td className="initiative-col-ac" data-label="CA">
-                        <input
-                          type="number"
-                          value={c.ac ?? ''}
-                          onChange={(e) =>
-                            patchCombatant(c.id, {
-                              ac: e.target.value.trim() ? clampNumber(safeParseInt(e.target.value), 0, 60) : null,
-                            })
-                          }
-                          className="initiative-cell-input initiative-cell-number"
-                          disabled={!canEdit}
-                        />
-                      </td>
-                    ) : null}
                     {canEdit ? (
                       <td className="initiative-col-hp" data-label="PV">
                         <div className="initiative-hp-cell">
@@ -651,8 +626,16 @@ export function SessionInitiativeTrackerTab(props: {
                           <button className="btn btn-secondary btn-small" type="button" onClick={() => patchCombatant(c.id, { isPc: !c.isPc })} disabled={!canEdit}>
                             {c.isPc ? '→ PNJ' : '→ PJ'}
                           </button>
-                          <button className="btn btn-secondary btn-small" type="button" onClick={() => patchCombatant(c.id, { hidden: !c.hidden })} disabled={!canEdit}>
-                            {c.hidden ? 'Afficher' : 'Masquer'}
+                          <button
+                            className="btn btn-secondary btn-small initiative-visibility-toggle"
+                            type="button"
+                            onClick={() => patchCombatant(c.id, { hidden: !c.hidden })}
+                            disabled={!canEdit}
+                            title={c.hidden ? 'Afficher pour les joueurs' : 'Masquer pour les joueurs'}
+                            aria-label={c.hidden ? 'Afficher pour les joueurs' : 'Masquer pour les joueurs'}
+                            aria-pressed={c.hidden}
+                          >
+                            {c.hidden ? <EyeOff size={18} strokeWidth={2} aria-hidden="true" /> : <Eye size={18} strokeWidth={2} aria-hidden="true" />}
                           </button>
                           <button className="btn btn-secondary btn-small" type="button" onClick={() => removeCombatant(c.id)} disabled={!canEdit}>
                             Supprimer

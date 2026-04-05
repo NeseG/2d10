@@ -1,4 +1,5 @@
 import { MarkdownContent } from '../../../shared/components/MarkdownContent'
+import { translateItemCategory, translateItemSubcategory, translateItemType } from '../../../shared/inventory/itemDisplayLabels'
 
 export type ItemDetail = {
   id: number
@@ -17,6 +18,8 @@ export type ItemDetail = {
   stealthDisadvantage?: boolean | null
   properties?: unknown
   raw?: unknown
+  /** `custom` | `dnd5e` — aligné sur le modèle Prisma `Item`. */
+  source?: string | null
   isActive?: boolean
   createdAt?: string | null
   updatedAt?: string | null
@@ -118,8 +121,11 @@ export function ItemDetailsModal(props: {
   onClose: () => void
   onEdit?: () => void
   editDisabled?: boolean
+  /** Session live : ouvre le flux de transfert vers un autre personnage (inventaire). */
+  onTransfer?: () => void
+  transferDisabled?: boolean
 }) {
-  const { open, loading, itemDetails, onClose, onEdit, editDisabled } = props
+  const { open, loading, itemDetails, onClose, onEdit, editDisabled, onTransfer, transferDisabled } = props
 
   if (!open) return null
 
@@ -139,9 +145,12 @@ export function ItemDetailsModal(props: {
                 </div>
               </div>
               <div className="item-details-header-meta">
-                <span className="item-details-header-type">{itemDetails.category ?? '—'}</span>
+                <span className="item-details-header-type" title="Type">
+                  {translateItemType(itemDetails.type)}
+                </span>
+                <span className="item-details-header-type">{translateItemCategory(itemDetails.category)}</span>
                 <span className="item-details-header-type" style={{ fontSize: '0.78rem', opacity: 0.92 }}>
-                  {itemDetails.subcategory?.trim() ? itemDetails.subcategory : '—'}
+                  {itemDetails.subcategory?.trim() ? translateItemSubcategory(itemDetails.subcategory) : '—'}
                 </span>
               </div>
             </div>
@@ -184,7 +193,7 @@ export function ItemDetailsModal(props: {
                       <>
                         <span style={{ color: 'var(--muted)' }}> · </span>
                         <span style={{ fontSize: '0.85rem', color: 'var(--muted)', fontWeight: 500 }}>
-                          {itemDetails.subcategory}
+                          {translateItemSubcategory(itemDetails.subcategory)}
                         </span>
                       </>
                     ) : null}
@@ -240,10 +249,20 @@ export function ItemDetailsModal(props: {
           </>
         ) : null}
 
-        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.75rem' }}>
           {onEdit ? (
             <button className="btn" type="button" disabled={loading || editDisabled} onClick={onEdit}>
               Éditer
+            </button>
+          ) : null}
+          {onTransfer ? (
+            <button
+              className="btn btn-secondary"
+              type="button"
+              disabled={loading || transferDisabled}
+              onClick={onTransfer}
+            >
+              Transférer
             </button>
           ) : null}
           <button className="btn btn-secondary" type="button" disabled={loading} onClick={onClose}>

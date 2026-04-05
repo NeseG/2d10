@@ -84,6 +84,25 @@ router.get('/spells/:index', authenticateToken, async (req, res) => {
   }
 });
 
+// DELETE /api/dnd5e/spells/:index — retire une entrée du catalogue importé (admin / gm)
+router.delete(
+  '/spells/:index',
+  authenticateToken,
+  requireRole(['admin', 'gm']),
+  async (req, res) => {
+    try {
+      const { index } = req.params;
+      const existing = await prisma.dnd5eSpellImport.findUnique({ where: { index } });
+      if (!existing) return res.status(404).json({ error: 'Sort non trouvé' });
+      await prisma.dnd5eSpellImport.delete({ where: { index } });
+      res.status(204).send();
+    } catch (error) {
+      console.error('Erreur suppression spell dnd5e import:', error);
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  },
+);
+
 // POST /api/dnd5e/characters/:characterId/grimoire
 // body: { spell_index: string, is_known?: boolean, is_prepared?: boolean, notes?: string }
 router.post(

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Activity, Backpack, BookMarked, Clover, ScrollText } from 'lucide-react'
+import { Activity, Backpack, BookMarked, Cat, Clover, ScrollText } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Card } from '../../../shared/components/Card'
 import { useAuth } from '../../../app/hooks/useAuth'
@@ -10,8 +10,9 @@ import { CharacterInventoryTab } from '../components/CharacterInventoryTab'
 import { CharacterGrimoireTab } from '../components/CharacterGrimoireTab'
 import { CharacterFeaturesTab } from '../components/CharacterFeaturesTab'
 import { CharacterNotesTab } from '../components/CharacterNotesTab'
+import { CharacterPetsTab } from '../components/CharacterPetsTab'
 
-type CharacterTab = 'characteristics' | 'inventory' | 'grimoire' | 'features' | 'notes'
+type CharacterTab = 'characteristics' | 'inventory' | 'grimoire' | 'features' | 'notes' | 'pets'
 
 export function CharacterEditPage() {
   const { id } = useParams()
@@ -124,6 +125,15 @@ export function CharacterEditPage() {
           >
             <ScrollText size={22} aria-hidden="true" />
           </button>
+          <button
+            className={`tab-btn ${activeTab === 'pets' ? 'active' : ''}`}
+            type="button"
+            onClick={() => setActiveTab('pets')}
+            title="Familier"
+            aria-label="Familier"
+          >
+            <Cat size={22} aria-hidden="true" />
+          </button>
         </div>
 
         <div className="tab-panel">
@@ -145,6 +155,7 @@ export function CharacterEditPage() {
           {id && activeTab === 'grimoire' ? <CharacterGrimoireTab characterId={id} token={token} user={user} /> : null}
           {id && activeTab === 'features' ? <CharacterFeaturesTab characterId={id} token={token} /> : null}
           {id && activeTab === 'notes' ? <CharacterNotesTab characterId={id} token={token} /> : null}
+          {id && activeTab === 'pets' ? <CharacterPetsTab characterId={id} token={token} /> : null}
         </div>
 
         <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>

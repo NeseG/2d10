@@ -3,7 +3,15 @@ import { useSnackbar } from '../../../app/hooks/useSnackbar'
 import { apiDelete, apiGet, apiPost, apiPut } from '../../../shared/api/client'
 import type { AuthUser } from '../../../shared/types'
 import { SpellDetailsModal, type SpellDetail } from '../../spells/components/SpellDetailsModal'
-import { RemoveFromGrimoireConfirmModal, SpellEditModal, type EditGrimoireFormState } from '../../spells/components/SpellEditModal'
+import {
+  RemoveFromGrimoireConfirmModal,
+  RemoveImportedCatalogSpellConfirmModal,
+  SpellClassMultiSelect,
+  SpellEditModal,
+  mergeSpellClassesIntoRaw,
+  parseSpellClassesFromRaw,
+  type EditGrimoireFormState,
+} from '../../spells/components/SpellEditModal'
 
 type CharacterSpellSlot = {
   level: number
@@ -81,6 +89,43 @@ type Dnd5eSpellListItem = {
   school: string | null
 }
 
+type DndImportSpellApiItem = {
+  id: number
+  index: string
+  name: string
+  level: number | null
+  school: string | null
+  castingTime: string | null
+  range: string | null
+  components: string | null
+  duration: string | null
+  description: string | null
+  higherLevel: string | null
+  ritual: boolean | null
+  concentration: boolean | null
+  raw: unknown
+}
+
+function mapDndImportToSpellDetail(item: DndImportSpellApiItem): SpellDetail {
+  return {
+    id: item.id,
+    index: item.index,
+    name: item.name,
+    level: item.level,
+    school: item.school,
+    castingTime: item.castingTime,
+    range: item.range,
+    components: item.components,
+    duration: item.duration,
+    description: item.description,
+    higherLevel: item.higherLevel,
+    ritual: item.ritual,
+    concentration: item.concentration,
+    source: 'dnd5e',
+    raw: item.raw,
+  }
+}
+
 const SPELL_SCHOOL_SUGGESTIONS = [
   'Abjuration',
   'Conjuration',
@@ -133,6 +178,22 @@ function grimoireLevelTitle(level: number): string {
   return `Niveau ${level}`
 }
 
+function entryMatchesGrimoireSearch(entry: GrimoireEntry, rawQuery: string): boolean {
+  const q = rawQuery.trim().toLowerCase()
+  if (!q) return true
+  const fields = [
+    entry.spell_name,
+    entry.spell_school,
+    entry.notes,
+    entry.casting_time,
+    entry.range,
+    entry.duration,
+    entry.components,
+    entry.description,
+  ]
+  return fields.some((f) => typeof f === 'string' && f.toLowerCase().includes(q))
+}
+
 export function CharacterGrimoireTab(props: {
   characterId: string
   token: string
@@ -159,16 +220,17 @@ export function CharacterGrimoireTab(props: {
   const [grimoireLoaded, setGrimoireLoaded] = useState(false)
   const [grimoireLoading, setGrimoireLoading] = useState(false)
   const [grimoireItems, setGrimoireItems] = useState<GrimoireEntry[]>([])
+  const [grimoireSearchQuery, setGrimoireSearchQuery] = useState('')
 
   const [isCreateSpellModalOpen, setIsCreateSpellModalOpen] = useState(false)
   const [createSpellSaving, setCreateSpellSaving] = useState(false)
   const [newSpellForm, setNewSpellForm] = useState({
     is_known: true,
     is_prepared: false,
-    notes: '',
     name: '',
     level: '0',
     school: '',
+    spellClasses: [] as string[],
     castingTime: '',
     range: '',
     components: '',
@@ -186,11 +248,19 @@ export function CharacterGrimoireTab(props: {
   const [dndSpellPage, setDndSpellPage] = useState(1)
   const [dndSpellTotalPages, setDndSpellTotalPages] = useState(1)
   const [dndSpellAddingIndex, setDndSpellAddingIndex] = useState<string | null>(null)
+  const [dndImportSpellDetailOpen, setDndImportSpellDetailOpen] = useState(false)
+  const [dndImportSpellDetailLoading, setDndImportSpellDetailLoading] = useState(false)
+  const [dndImportSpellDetail, setDndImportSpellDetail] = useState<SpellDetail | null>(null)
+  const [dndImportSpellDetailIndex, setDndImportSpellDetailIndex] = useState<string | null>(null)
+  const [dndImportSpellDeleteSaving, setDndImportSpellDeleteSaving] = useState(false)
+  const [dndImportCatalogDeleteConfirmOpen, setDndImportCatalogDeleteConfirmOpen] = useState(false)
 
   const [isEditGrimoireModalOpen, setIsEditGrimoireModalOpen] = useState(false)
   const [editGrimoireSaving, setEditGrimoireSaving] = useState(false)
   const [editGrimoireEntryId, setEditGrimoireEntryId] = useState<number | null>(null)
   const [editGrimoireSpellId, setEditGrimoireSpellId] = useState<number | null>(null)
+  const [editGrimoireSpellSource, setEditGrimoireSpellSource] = useState<string | null>(null)
+  const [validateCatalogSaving, setValidateCatalogSaving] = useState(false)
   const [editGrimoireForm, setEditGrimoireForm] = useState<EditGrimoireFormState>({
     is_known: true,
     is_prepared: false,
@@ -198,6 +268,7 @@ export function CharacterGrimoireTab(props: {
     name: '',
     level: '0',
     school: '',
+    spellClasses: [],
     castingTime: '',
     range: '',
     components: '',
@@ -219,6 +290,16 @@ export function CharacterGrimoireTab(props: {
     setGrimoireLoaded(false)
     setGrimoireItems([])
   }, [characterId])
+
+  useEffect(() => {
+    if (!isImportSpellModalOpen) {
+      setDndImportSpellDetailOpen(false)
+      setDndImportSpellDetail(null)
+      setDndImportSpellDetailIndex(null)
+      setDndImportSpellDeleteSaving(false)
+      setDndImportCatalogDeleteConfirmOpen(false)
+    }
+  }, [isImportSpellModalOpen])
 
   useEffect(() => {
     async function loadGrimoire() {
@@ -340,10 +421,17 @@ export function CharacterGrimoireTab(props: {
     return m
   }, [spellSlotsDraft])
 
+  const filteredGrimoireItems = useMemo(() => {
+    if (!grimoireSearchQuery.trim()) return grimoireItems
+    return grimoireItems.filter((e) => entryMatchesGrimoireSearch(e, grimoireSearchQuery))
+  }, [grimoireItems, grimoireSearchQuery])
+
+  const grimoireSearchActive = Boolean(grimoireSearchQuery.trim())
+
   const spellsGroupedByLevel = useMemo(() => {
     const map = new Map<number, GrimoireEntry[]>()
     for (let i = 0; i <= 9; i += 1) map.set(i, [])
-    for (const e of grimoireItems) {
+    for (const e of filteredGrimoireItems) {
       const raw = e.spell_level
       const L = raw != null ? Math.min(9, Math.max(0, raw)) : 0
       map.get(L)!.push(e)
@@ -354,7 +442,7 @@ export function CharacterGrimoireTab(props: {
       )
     }
     return map
-  }, [grimoireItems])
+  }, [filteredGrimoireItems])
 
   const preparedSpellsCount = useMemo(
     () => grimoireItems.filter((entry) => Boolean(entry.is_prepared)).length,
@@ -430,6 +518,11 @@ export function CharacterGrimoireTab(props: {
         return
       }
 
+      const rawPayload =
+        newSpellForm.spellClasses.length > 0
+          ? mergeSpellClassesIntoRaw(null, newSpellForm.spellClasses)
+          : null
+
       const created = await apiPost<{ item: { id: number } }>(
         `/api/spells`,
         {
@@ -444,6 +537,7 @@ export function CharacterGrimoireTab(props: {
           higherLevel: newSpellForm.higherLevel.trim() || undefined,
           ritual: Boolean(newSpellForm.ritual),
           concentration: Boolean(newSpellForm.concentration),
+          raw: rawPayload,
         },
         token,
       )
@@ -453,7 +547,6 @@ export function CharacterGrimoireTab(props: {
           spell_id: created.item.id,
           is_known: Boolean(newSpellForm.is_known),
           is_prepared: Boolean(newSpellForm.is_prepared),
-          notes: newSpellForm.notes.trim() || undefined,
         },
         token,
       )
@@ -462,10 +555,10 @@ export function CharacterGrimoireTab(props: {
       setNewSpellForm({
         is_known: true,
         is_prepared: false,
-        notes: '',
         name: '',
         level: '0',
         school: '',
+        spellClasses: [],
         castingTime: '',
         range: '',
         components: '',
@@ -532,6 +625,47 @@ export function CharacterGrimoireTab(props: {
     }
   }
 
+  async function openDndImportSpellDetail(index: string) {
+    setDndImportSpellDetailOpen(true)
+    setDndImportSpellDetailIndex(index)
+    setDndImportSpellDetail(null)
+    setDndImportSpellDetailLoading(true)
+    try {
+      const res = await apiGet<{ item: DndImportSpellApiItem }>(`/api/dnd5e/spells/${encodeURIComponent(index)}`, token)
+      setDndImportSpellDetail(mapDndImportToSpellDetail(res.item))
+    } catch (err) {
+      showSnackbar({
+        message: err instanceof Error ? err.message : 'Erreur chargement sort importé',
+        severity: 'error',
+      })
+      setDndImportSpellDetailOpen(false)
+      setDndImportSpellDetailIndex(null)
+    } finally {
+      setDndImportSpellDetailLoading(false)
+    }
+  }
+
+  async function handleConfirmDeleteImportedCatalogSpell() {
+    if (!dndImportSpellDetailIndex) return
+    setDndImportSpellDeleteSaving(true)
+    try {
+      await apiDelete(`/api/dnd5e/spells/${encodeURIComponent(dndImportSpellDetailIndex)}`, token)
+      showSnackbar({ message: 'Sort retiré du catalogue importé.', severity: 'success' })
+      setDndImportCatalogDeleteConfirmOpen(false)
+      setDndImportSpellDetailOpen(false)
+      setDndImportSpellDetail(null)
+      setDndImportSpellDetailIndex(null)
+      await loadDndSpells({ q: dndSpellQuery, page: dndSpellPage })
+    } catch (err) {
+      showSnackbar({
+        message: err instanceof Error ? err.message : 'Erreur suppression sort importé',
+        severity: 'error',
+      })
+    } finally {
+      setDndImportSpellDeleteSaving(false)
+    }
+  }
+
   // L'endpoint back est protégé admin/gm; on masque aussi le bouton côté UI.
   const canImport = user?.role === 'admin' || user?.role === 'gm'
 
@@ -555,6 +689,7 @@ export function CharacterGrimoireTab(props: {
   async function openEditGrimoireEntry(entry: GrimoireEntry) {
     setEditGrimoireEntryId(entry.id)
     setEditGrimoireSpellId(entry.spell_id)
+    setEditGrimoireSpellSource(null)
     setEditGrimoireForm({
       is_known: Boolean(entry.is_known),
       is_prepared: Boolean(entry.is_prepared),
@@ -562,6 +697,7 @@ export function CharacterGrimoireTab(props: {
       name: entry.spell_name ?? '',
       level: entry.spell_level != null ? String(entry.spell_level) : '0',
       school: entry.spell_school ?? '',
+      spellClasses: [],
       castingTime: entry.casting_time ?? '',
       range: entry.range ?? '',
       components: entry.components ?? '',
@@ -577,11 +713,13 @@ export function CharacterGrimoireTab(props: {
     try {
       const res = await apiGet<{ item: SpellDetail }>(`/api/spells/${entry.spell_id}`, token)
       const s = res.item
+      setEditGrimoireSpellSource(s.source != null && String(s.source).trim() ? String(s.source).trim() : null)
       setEditGrimoireForm((prev) => ({
         ...prev,
         name: s.name ?? prev.name,
         level: s.level != null ? String(s.level) : prev.level,
         school: s.school ?? prev.school,
+        spellClasses: parseSpellClassesFromRaw(s.raw),
         castingTime: s.castingTime ?? prev.castingTime,
         range: s.range ?? prev.range,
         components: s.components ?? prev.components,
@@ -611,13 +749,14 @@ export function CharacterGrimoireTab(props: {
       let raw: unknown | undefined = undefined
       if (editGrimoireForm.rawJson.trim()) {
         try {
-          raw = JSON.parse(editGrimoireForm.rawJson)
+          const parsed = JSON.parse(editGrimoireForm.rawJson)
+          raw = mergeSpellClassesIntoRaw(parsed, editGrimoireForm.spellClasses)
         } catch {
           showSnackbar({ message: 'raw doit être un JSON valide.', severity: 'error' })
           return
         }
       } else {
-        raw = null
+        raw = mergeSpellClassesIntoRaw(null, editGrimoireForm.spellClasses)
       }
 
       await apiPut(
@@ -652,6 +791,7 @@ export function CharacterGrimoireTab(props: {
       setIsEditGrimoireModalOpen(false)
       setEditGrimoireEntryId(null)
       setEditGrimoireSpellId(null)
+      setEditGrimoireSpellSource(null)
       setGrimoireLoaded(false)
       showSnackbar({ message: 'Sort et entrée grimoire enregistrés.', severity: 'success' })
     } catch (err) {
@@ -664,6 +804,27 @@ export function CharacterGrimoireTab(props: {
     }
   }
 
+  async function handleValidateCatalogSpell() {
+    if (editGrimoireSpellId == null || user?.role !== 'admin') return
+    setValidateCatalogSaving(true)
+    try {
+      await apiPost(`/api/spells/${editGrimoireSpellId}/validate-catalog`, {}, token)
+      setEditGrimoireSpellSource('dnd5e')
+      setGrimoireLoaded(false)
+      showSnackbar({
+        message: 'Sort validé : il est disponible dans la liste des sorts importés.',
+        severity: 'success',
+      })
+    } catch (err) {
+      showSnackbar({
+        message: err instanceof Error ? err.message : 'Erreur lors de la validation du sort',
+        severity: 'error',
+      })
+    } finally {
+      setValidateCatalogSaving(false)
+    }
+  }
+
   async function handleRemoveFromGrimoire() {
     if (editGrimoireEntryId == null) return
     setRemovingFromGrimoire(true)
@@ -673,6 +834,7 @@ export function CharacterGrimoireTab(props: {
       setIsEditGrimoireModalOpen(false)
       setEditGrimoireEntryId(null)
       setEditGrimoireSpellId(null)
+      setEditGrimoireSpellSource(null)
       setGrimoireLoaded(false)
       showSnackbar({ message: 'Sort retiré du grimoire.', severity: 'success' })
     } catch (err) {
@@ -714,11 +876,35 @@ export function CharacterGrimoireTab(props: {
         <div className="grimoire-session-live">
           <p
             className="grimoire-session-incantation-compact"
-            aria-label={`Incantation : caractéristique ${spellcastingAbilityShortLabel ?? 'non définie'}, DD sort ${spellcastingStats?.dc != null ? spellcastingStats.dc : '—'}, bonus d'attaque ${spellcastingStats?.attackBonus != null ? (spellcastingStats.attackBonus >= 0 ? `+${spellcastingStats.attackBonus}` : String(spellcastingStats.attackBonus)) : '—'}`}
+            aria-label={`Incantation : caractéristique ${spellcastingAbilityShortLabel ?? 'non définie'}${spellcastingStats?.mod != null ? `, modificateur ${spellcastingStats.mod >= 0 ? '+' : ''}${spellcastingStats.mod}` : ''}, DD sort ${spellcastingStats?.dc != null ? spellcastingStats.dc : '—'}, bonus d'attaque ${spellcastingStats?.attackBonus != null ? (spellcastingStats.attackBonus >= 0 ? `+${spellcastingStats.attackBonus}` : String(spellcastingStats.attackBonus)) : '—'}`}
           >
-            <span className="grimoire-session-incantation-bit" title="Caractéristique d'incantation">
+            <span
+              className="grimoire-session-incantation-bit"
+              title="Caractéristique d'incantation et modificateur de caractéristique"
+            >
               <abbr className="grimoire-session-incantation-abbr">Carac.</abbr>{' '}
-              <span className="grimoire-session-incantation-val">{spellcastingAbilityShortLabel ?? '—'}</span>
+              <span className="grimoire-session-incantation-val">
+                {spellcastingAbilityShortLabel != null ? (
+                  <>
+                    {spellcastingAbilityShortLabel}
+                    {spellcastingStats?.mod != null ? (
+                      <>
+                        {' '}
+                        <span className="grimoire-session-incantation-ability-mod">
+                          {spellcastingStats.mod >= 0 ? `+${spellcastingStats.mod}` : String(spellcastingStats.mod)}
+                        </span>
+                      </>
+                    ) : spellcastingAbility ? (
+                      <>
+                        {' '}
+                        <span className="grimoire-session-incantation-ability-mod">—</span>
+                      </>
+                    ) : null}
+                  </>
+                ) : (
+                  '—'
+                )}
+              </span>
             </span>
             <span className="grimoire-session-incantation-sep" aria-hidden="true">
               ·
@@ -743,6 +929,16 @@ export function CharacterGrimoireTab(props: {
               </span>
             </span>
           </p>
+          <div className="inventory-search-row">
+            <input
+              className="inventory-search-input"
+              type="search"
+              placeholder="Rechercher un sort..."
+              value={grimoireSearchQuery}
+              onChange={(e) => setGrimoireSearchQuery(e.target.value)}
+              aria-label="Rechercher dans le grimoire"
+            />
+          </div>
           {grimoireLoading ? <p>Chargement…</p> : null}
           {!grimoireLoading ? (
             <div className="grimoire-session-levels">
@@ -778,7 +974,9 @@ export function CharacterGrimoireTab(props: {
                     </summary>
                     <div className="grimoire-session-level-body">
                       {spellsAtLevel.length === 0 ? (
-                        <p className="grimoire-session-empty">Aucun sort à ce niveau.</p>
+                        <p className="grimoire-session-empty">
+                          {grimoireSearchActive ? 'Aucune correspondance.' : 'Aucun sort à ce niveau.'}
+                        </p>
                       ) : (
                         <ul className="grimoire-session-spell-list">
                           {spellsAtLevel.map((entry) => {
@@ -913,9 +1111,30 @@ export function CharacterGrimoireTab(props: {
             )}
           </div>
 
+          <div className="inventory-search-row">
+            <input
+              className="inventory-search-input"
+              type="search"
+              placeholder="Rechercher un sort..."
+              value={grimoireSearchQuery}
+              onChange={(e) => setGrimoireSearchQuery(e.target.value)}
+              aria-label="Rechercher dans le grimoire"
+            />
+          </div>
+
           <p className="grimoire-summary-caption">
-            {grimoireItems.length} sort{grimoireItems.length > 1 ? 's' : ''} dans le grimoire · {preparedSpellsCount} préparé
-            {preparedSpellsCount > 1 ? 's' : ''}
+            {grimoireSearchActive ? (
+              <>
+                {filteredGrimoireItems.length} correspondance{filteredGrimoireItems.length !== 1 ? 's' : ''} sur{' '}
+                {grimoireItems.length} sort{grimoireItems.length !== 1 ? 's' : ''} · {preparedSpellsCount} préparé
+                {preparedSpellsCount > 1 ? 's' : ''}
+              </>
+            ) : (
+              <>
+                {grimoireItems.length} sort{grimoireItems.length > 1 ? 's' : ''} dans le grimoire · {preparedSpellsCount}{' '}
+                préparé{preparedSpellsCount > 1 ? 's' : ''}
+              </>
+            )}
           </p>
 
           {grimoireLoading ? <p>Chargement…</p> : null}
@@ -925,7 +1144,11 @@ export function CharacterGrimoireTab(props: {
               {Array.from({ length: 10 }, (_, level) => {
                 const spellsAtLevel = spellsGroupedByLevel.get(level) ?? []
                 const maxSlots = spellSlotsDraft[level]?.slotsMax ?? '0'
-                const show = level === 0 ? true : spellsAtLevel.length > 0 || Number.parseInt(maxSlots, 10) > 0
+                const show = grimoireSearchActive
+                  ? level === 0 || spellsAtLevel.length > 0
+                  : level === 0
+                    ? true
+                    : spellsAtLevel.length > 0 || Number.parseInt(maxSlots, 10) > 0
                 if (!show) return null
                 return (
                   <details key={level} className="grimoire-session-level" open={spellsAtLevel.length > 0}>
@@ -934,7 +1157,9 @@ export function CharacterGrimoireTab(props: {
                     </summary>
                     <div className="grimoire-session-level-body">
                       {spellsAtLevel.length === 0 ? (
-                        <p className="grimoire-session-empty">Aucun sort à ce niveau.</p>
+                        <p className="grimoire-session-empty">
+                          {grimoireSearchActive ? 'Aucune correspondance.' : 'Aucun sort à ce niveau.'}
+                        </p>
                       ) : (
                         <ul className="grimoire-session-spell-list">
                           {spellsAtLevel.map((entry) => (
@@ -1024,6 +1249,13 @@ export function CharacterGrimoireTab(props: {
                   ))}
                 </datalist>
               </div>
+
+              <SpellClassMultiSelect
+                id="new-spell-classes"
+                value={newSpellForm.spellClasses}
+                onChange={(next) => setNewSpellForm((prev) => ({ ...prev, spellClasses: next }))}
+                disabled={createSpellSaving}
+              />
 
               <div className="item-edit-form-inline-pair">
                 <label className="item-edit-form-row" htmlFor="new-spell-casting">
@@ -1127,16 +1359,6 @@ export function CharacterGrimoireTab(props: {
                 />
               </label>
 
-              <label className="item-edit-form-row item-edit-form-row-textarea" htmlFor="new-spell-notes">
-                <span>Notes</span>
-                <textarea
-                  id="new-spell-notes"
-                  rows={4}
-                  value={newSpellForm.notes}
-                  onChange={(event) => setNewSpellForm((prev) => ({ ...prev, notes: event.target.value }))}
-                />
-              </label>
-
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <button className="btn" type="submit" disabled={createSpellSaving}>
                   {createSpellSaving ? 'Création…' : 'Créer'}
@@ -1151,7 +1373,12 @@ export function CharacterGrimoireTab(props: {
       )}
 
       {!sessionView && isImportSpellModalOpen && (
-        <div className="modal-backdrop" onClick={() => (!dndSpellLoading && dndSpellAddingIndex == null ? setIsImportSpellModalOpen(false) : null)}>
+        <div
+          className="modal-backdrop"
+          onClick={() =>
+            !dndSpellLoading && dndSpellAddingIndex == null && !dndImportSpellDetailOpen ? setIsImportSpellModalOpen(false) : null
+          }
+        >
           <div className="modal-card" onClick={(event) => event.stopPropagation()}>
             <h3>Importer un sort (D&D)</h3>
             <form
@@ -1189,12 +1416,20 @@ export function CharacterGrimoireTab(props: {
                   </thead>
                   <tbody>
                     {dndSpellItems.map((s) => (
-                      <tr key={s.index}>
+                      <tr key={s.index} className="clickable-row" onClick={() => void openDndImportSpellDetail(s.index)}>
                         <td data-label="Nom">{s.name}</td>
                         <td data-label="Niveau">{s.level ?? '—'}</td>
                         <td data-label="École">{s.school ?? '—'}</td>
-                        <td>
-                          <button className="btn btn-secondary btn-small" type="button" disabled={dndSpellAddingIndex === s.index} onClick={() => void handleAddImportedSpell(s.index)}>
+                        <td data-label="" onClick={(event) => event.stopPropagation()}>
+                          <button
+                            className="btn btn-secondary btn-small"
+                            type="button"
+                            disabled={dndSpellAddingIndex === s.index}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              void handleAddImportedSpell(s.index)
+                            }}
+                          >
                             {dndSpellAddingIndex === s.index ? 'Ajout…' : 'Ajouter'}
                           </button>
                         </td>
@@ -1221,7 +1456,7 @@ export function CharacterGrimoireTab(props: {
               <button
                 className="btn btn-secondary"
                 type="button"
-                disabled={dndSpellLoading || dndSpellAddingIndex != null}
+                disabled={dndSpellLoading || dndSpellAddingIndex != null || dndImportSpellDetailOpen}
                 onClick={() => setIsImportSpellModalOpen(false)}
               >
                 Retour
@@ -1238,8 +1473,15 @@ export function CharacterGrimoireTab(props: {
           form={editGrimoireForm}
           setForm={setEditGrimoireForm}
           onSubmit={handleSaveGrimoireEntry}
-          onClose={() => (!editGrimoireSaving ? setIsEditGrimoireModalOpen(false) : null)}
+          onClose={() => {
+            if (editGrimoireSaving || validateCatalogSaving) return
+            setIsEditGrimoireModalOpen(false)
+            setEditGrimoireSpellSource(null)
+          }}
           onOpenRemoveConfirm={() => setRemoveFromGrimoireConfirmOpen(true)}
+          showValidateCatalogButton={user?.role === 'admin' && editGrimoireSpellSource === 'custom'}
+          onValidateCatalog={() => void handleValidateCatalogSpell()}
+          validateCatalogSaving={validateCatalogSaving}
         />
       )}
 
@@ -1258,6 +1500,36 @@ export function CharacterGrimoireTab(props: {
         spellDetails={spellDetails}
         onClose={() => (!spellDetailsLoading ? setIsSpellDetailsModalOpen(false) : null)}
       />
+
+      {!sessionView && (
+        <SpellDetailsModal
+          open={dndImportSpellDetailOpen}
+          loading={dndImportSpellDetailLoading}
+          spellDetails={dndImportSpellDetail}
+          stacked
+          showDeleteFromImportedCatalog={canImport}
+          onDeleteFromImportedCatalog={() => setDndImportCatalogDeleteConfirmOpen(true)}
+          deleteFromImportedCatalogSaving={dndImportSpellDeleteSaving}
+          onClose={() => {
+            if (dndImportSpellDetailLoading || dndImportSpellDeleteSaving) return
+            setDndImportCatalogDeleteConfirmOpen(false)
+            setDndImportSpellDetailOpen(false)
+            setDndImportSpellDetail(null)
+            setDndImportSpellDetailIndex(null)
+          }}
+        />
+      )}
+
+      {!sessionView && (
+        <RemoveImportedCatalogSpellConfirmModal
+          open={dndImportCatalogDeleteConfirmOpen}
+          removing={dndImportSpellDeleteSaving}
+          onClose={() => {
+            if (!dndImportSpellDeleteSaving) setDndImportCatalogDeleteConfirmOpen(false)
+          }}
+          onConfirm={() => void handleConfirmDeleteImportedCatalogSpell()}
+        />
+      )}
     </div>
   )
 }

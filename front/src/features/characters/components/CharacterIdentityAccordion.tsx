@@ -6,6 +6,7 @@ type CharacterIdentityAccordionProps = {
     archetype: string
     level: string
     experiencePoints: string
+    destiny: string
     background: string
     description: string
     alignment: string
@@ -124,6 +125,18 @@ export function CharacterIdentityAccordion(props: CharacterIdentityAccordionProp
               min={0}
               value={form.experiencePoints}
               onChange={(e) => setForm((p) => ({ ...p, experiencePoints: e.target.value }))}
+            />
+          </div>
+
+          <div>
+            <label htmlFor="char-destiny">Destin</label>
+            <input
+              id="char-destiny"
+              type="number"
+              min={0}
+              title="Valeur par défaut à la création : 3"
+              value={form.destiny}
+              onChange={(e) => setForm((p) => ({ ...p, destiny: e.target.value }))}
             />
           </div>
 

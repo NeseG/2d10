@@ -1,4 +1,5 @@
 const path = require('path');
+const crypto = require('crypto');
 const fs = require('fs/promises');
 const express = require('express');
 const prisma = require('../lib/prisma');
@@ -8,6 +9,7 @@ const { broadcastSessionInitiative } = require('../ws/session-initiative');
 const { broadcastSessionMap, buildSessionMapPayload } = require('../ws/session-map');
 const { findSessionForChat, getChatDisplayName, displayNamesForUserIds } = require('../lib/session-chat-access');
 const { CHAT_UPLOAD_ROOT, chatImageUploadMiddleware } = require('../lib/session-chat-upload');
+const { nextInventorySortOrder } = require('../lib/next-inventory-sort-order');
 
 const router = express.Router();
 
@@ -27,6 +29,97 @@ function formatChatMessage(row, sessionId, display_name) {
     o.image_url = chatAttachmentPath(sessionId, row.imageKey);
   }
   return o;
+}
+
+/**
+ * Présence session + fiches « familier » (Character.masterCharacterId) du même joueur,
+ * injectées après la ligne du personnage maître (sans ligne SessionAttendance en base).
+ */
+async function buildAttendancePayload(sessionId, attendanceRows) {
+  const masterIds = attendanceRows.map((a) => a.characterId);
+  const characterIdsInSession = new Set(masterIds);
+
+  const pets =
+    masterIds.length === 0
+      ? []
+      : await prisma.character.findMany({
+          where: {
+            masterCharacterId: { in: masterIds },
+            isActive: true,
+          },
+          include: {
+            user: { select: { id: true, username: true } },
+          },
+        });
+
+  const petsByMaster = new Map();
+  for (const pet of pets) {
+    const mid = pet.masterCharacterId;
+    if (mid == null) continue;
+    if (!petsByMaster.has(mid)) petsByMaster.set(mid, []);
+    petsByMaster.get(mid).push(pet);
+  }
+
+  const list = [];
+  for (const a of attendanceRows) {
+    list.push({
+      id: a.id,
+      session_id: a.sessionId,
+      character_id: a.characterId,
+      attended: a.attended,
+      xp_earned: a.xpEarned,
+      gold_earned: a.goldEarned,
+      notes: a.notes,
+      character_name: a.character?.name,
+      class: a.character?.class,
+      level: a.character?.level,
+      character_user_id: a.character?.user?.id ?? null,
+      player_username: a.character?.user?.username,
+    });
+
+    const masterUserId = a.character?.user?.id ?? null;
+    for (const pet of petsByMaster.get(a.characterId) || []) {
+      if (masterUserId != null && pet.userId !== masterUserId) continue;
+      if (characterIdsInSession.has(pet.id)) continue;
+      characterIdsInSession.add(pet.id);
+      list.push({
+        id: -pet.id,
+        session_id: sessionId,
+        character_id: pet.id,
+        attended: false,
+        xp_earned: 0,
+        gold_earned: 0,
+        notes: null,
+        character_name: pet.name,
+        class: pet.class,
+        level: pet.level,
+        character_user_id: pet.userId,
+        player_username: pet.user?.username ?? null,
+        is_companion: true,
+        master_character_id: a.characterId,
+      });
+    }
+  }
+  return list;
+}
+
+/** Présence réelle ou familier dont le maître est inscrit à la session. */
+async function characterParticipatesInSession(sessionId, characterId) {
+  const direct = await prisma.sessionAttendance.findFirst({
+    where: { sessionId, characterId },
+    select: { id: true },
+  });
+  if (direct) return true;
+  const companion = await prisma.character.findFirst({
+    where: { id: characterId, isActive: true, masterCharacterId: { not: null } },
+    select: { masterCharacterId: true },
+  });
+  if (!companion?.masterCharacterId) return false;
+  const masterAtt = await prisma.sessionAttendance.findFirst({
+    where: { sessionId, characterId: companion.masterCharacterId },
+    select: { id: true },
+  });
+  return Boolean(masterAtt);
 }
 
 function formatSession(session, extras = {}) {
@@ -573,6 +666,364 @@ router.put('/:sessionId/map/state', authenticateToken, checkSessionOwnership, as
   }
 });
 
+/**
+ * Transfert d’une ligne d’inventaire (Item) entre deux personnages présents à la session.
+ * Autorisé : MJ de la campagne, admin, ou deux personnages du même joueur.
+ */
+router.post('/:sessionId/inventory/transfer', authenticateToken, async (req, res) => {
+  try {
+    const sessionId = parseInt(req.params.sessionId, 10);
+    if (Number.isNaN(sessionId)) return res.status(400).json({ error: 'ID de session invalide' });
+
+    const fromCharacterId = parseInt(req.body?.from_character_id, 10);
+    const toCharacterId = parseInt(req.body?.to_character_id, 10);
+    const inventoryId = parseInt(req.body?.inventory_id, 10);
+    const rawQty = req.body?.quantity;
+    const quantityParsed =
+      rawQty === undefined || rawQty === null || rawQty === '' ? null : parseInt(String(rawQty), 10);
+
+    if (Number.isNaN(fromCharacterId) || Number.isNaN(toCharacterId) || Number.isNaN(inventoryId)) {
+      return res.status(400).json({ error: 'from_character_id, to_character_id et inventory_id requis' });
+    }
+    if (fromCharacterId === toCharacterId) {
+      return res.status(400).json({ error: 'Le destinataire doit être un autre personnage' });
+    }
+
+    const session = await prisma.gameSession.findFirst({
+      where: { id: sessionId, isActive: true },
+      include: { campaign: { select: { id: true, gmId: true, isActive: true } } },
+    });
+    if (!session?.campaign?.isActive) return res.status(404).json({ error: 'Session non trouvée' });
+
+    const role = req.user.role_name;
+    const userId = req.user.id;
+    const isCampaignGm = session.campaign.gmId === userId;
+    const isSessionGm = role === 'admin' || isCampaignGm;
+
+    const [fromChar, toChar] = await Promise.all([
+      prisma.character.findFirst({
+        where: { id: fromCharacterId, isActive: true },
+        select: { id: true, userId: true },
+      }),
+      prisma.character.findFirst({
+        where: { id: toCharacterId, isActive: true },
+        select: { id: true, userId: true },
+      }),
+    ]);
+    if (!fromChar || !toChar) return res.status(404).json({ error: 'Personnage non trouvé' });
+
+    const samePlayer = fromChar.userId === toChar.userId && fromChar.userId === userId;
+    if (!isSessionGm && !samePlayer) {
+      return res.status(403).json({ error: 'Accès refusé' });
+    }
+
+    const [okFrom, okTo] = await Promise.all([
+      characterParticipatesInSession(sessionId, fromCharacterId),
+      characterParticipatesInSession(sessionId, toCharacterId),
+    ]);
+    if (!okFrom || !okTo) {
+      return res.status(400).json({ error: 'Les deux personnages doivent participer à cette session' });
+    }
+
+    const rowPreview = await prisma.inventory.findFirst({
+      where: { id: inventoryId, characterId: fromCharacterId },
+      select: { id: true, itemId: true, quantity: true, notes: true },
+    });
+    if (!rowPreview) {
+      return res.status(404).json({ error: 'Ligne d’inventaire introuvable sur ce personnage' });
+    }
+
+    let q = quantityParsed;
+    if (q == null || Number.isNaN(q)) q = rowPreview.quantity;
+    if (!Number.isFinite(q) || q < 1 || q > rowPreview.quantity) {
+      return res.status(400).json({ error: 'Quantité invalide' });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      const row = await tx.inventory.findFirst({
+        where: { id: inventoryId, characterId: fromCharacterId },
+        select: { id: true, itemId: true, quantity: true, notes: true },
+      });
+      if (!row) {
+        const err = new Error('INV_STALE');
+        err.code = 'INV_STALE';
+        throw err;
+      }
+      const qty = Math.min(q, row.quantity);
+      if (qty < 1) return;
+
+      await tx.equipment.updateMany({
+        where: { characterId: fromCharacterId, itemId: row.itemId, isEquipped: true },
+        data: { isEquipped: false },
+      });
+
+      if (qty === row.quantity) {
+        await tx.inventory.delete({ where: { id: row.id } });
+      } else {
+        await tx.inventory.update({
+          where: { id: row.id },
+          data: { quantity: row.quantity - qty },
+        });
+      }
+
+      const existingDest = await tx.inventory.findFirst({
+        where: { characterId: toCharacterId, itemId: row.itemId },
+        select: { id: true, quantity: true },
+      });
+      if (existingDest) {
+        await tx.inventory.update({
+          where: { id: existingDest.id },
+          data: { quantity: existingDest.quantity + qty },
+        });
+      } else {
+        const sortOrder = await nextInventorySortOrder(tx, toCharacterId);
+        await tx.inventory.create({
+          data: {
+            characterId: toCharacterId,
+            itemId: row.itemId,
+            quantity: qty,
+            notes: row.notes,
+            sortOrder,
+          },
+        });
+      }
+    });
+
+    return res.json({ success: true, message: 'Objet transféré' });
+  } catch (error) {
+    if (error && error.code === 'INV_STALE') {
+      return res.status(409).json({ error: 'Inventaire modifié. Recharge et réessaie.' });
+    }
+    console.error('Erreur transfert inventaire session:', error);
+    return res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+function buildDiceNotationString(count, sides, modifier) {
+  const modPart =
+    modifier === 0 ? '' : modifier > 0 ? `+${modifier}` : `${modifier}`;
+  return `${count}d${sides}${modPart}`;
+}
+
+function parseDiceNotation(str) {
+  const s = String(str).replace(/\s+/g, '');
+  const m = /^(\d+)d(\d+)([+-]\d+)?$/i.exec(s);
+  if (!m) return null;
+  const count = parseInt(m[1], 10);
+  const sides = parseInt(m[2], 10);
+  const modifier = m[3] ? parseInt(m[3], 10) : 0;
+  if (!Number.isFinite(count) || !Number.isFinite(sides) || !Number.isFinite(modifier)) return null;
+  if (count < 1 || count > 100 || sides < 2 || sides > 1000) return null;
+  if (modifier < -999 || modifier > 999) return null;
+  return {
+    count,
+    sides,
+    modifier,
+    notationStr: buildDiceNotationString(count, sides, modifier),
+  };
+}
+
+function parseDiceRollRequestBody(body) {
+  if (body == null || typeof body !== 'object') return null;
+  const notationRaw = body.notation;
+  if (notationRaw != null && String(notationRaw).trim()) {
+    return parseDiceNotation(String(notationRaw).trim());
+  }
+  const count = parseInt(body.count, 10);
+  const sides = parseInt(body.sides, 10);
+  const modRaw = body.modifier;
+  const modifier =
+    modRaw === undefined || modRaw === null || modRaw === '' ? 0 : parseInt(String(modRaw), 10);
+  if (!Number.isFinite(count) || !Number.isFinite(sides) || !Number.isFinite(modifier)) return null;
+  if (count < 1 || count > 100 || sides < 2 || sides > 1000) return null;
+  if (modifier < -999 || modifier > 999) return null;
+  return {
+    count,
+    sides,
+    modifier,
+    notationStr: buildDiceNotationString(count, sides, modifier),
+  };
+}
+
+function rollDicePool(count, sides) {
+  const out = [];
+  for (let i = 0; i < count; i += 1) {
+    out.push(crypto.randomInt(1, sides + 1));
+  }
+  return out;
+}
+
+function formatSessionDiceRollRow(row) {
+  const rollsArr = Array.isArray(row.rolls) ? row.rolls : [];
+  return {
+    id: row.id,
+    user_id: row.userId,
+    username: row.user?.username ?? null,
+    character_id: row.characterId ?? null,
+    character_name: row.character?.name ?? null,
+    notation: row.notation,
+    rolls: rollsArr,
+    modifier: row.modifier,
+    total: row.total,
+    label: row.label,
+    created_at: row.createdAt.toISOString(),
+    /** Jet saisi à la main (dés physiques, autre outil) — pas de détail de dés enregistré. */
+    is_manual: rollsArr.length === 0,
+  };
+}
+
+/**
+ * Vérifie que le personnage est présent à la session et que l’utilisateur peut lancer pour lui
+ * (propriétaire du personnage ou MJ de la campagne).
+ */
+async function resolveDiceRollCharacterId(sessionId, reqUser, body) {
+  const raw = body?.character_id ?? body?.characterId;
+  const cid = parseInt(String(raw ?? ''), 10);
+  if (!Number.isFinite(cid)) {
+    return { error: 'Indique le personnage (character_id)' };
+  }
+
+  const sessionRow = await prisma.gameSession.findFirst({
+    where: { id: sessionId, isActive: true },
+    select: { campaign: { select: { gmId: true } } },
+  });
+  if (!sessionRow?.campaign) return { error: 'Session introuvable' };
+
+  const attendance = await prisma.sessionAttendance.findUnique({
+    where: { sessionId_characterId: { sessionId, characterId: cid } },
+    include: { character: { select: { userId: true } } },
+  });
+  if (!attendance) return { error: 'Personnage absent de cette session' };
+
+  const isGm = reqUser.role_name === 'admin' || sessionRow.campaign.gmId === reqUser.id;
+  const ownsCharacter = attendance.character.userId === reqUser.id;
+  if (!isGm && !ownsCharacter) return { error: 'Ce personnage n’est pas le tien' };
+
+  return { characterId: cid };
+}
+
+router.get('/:sessionId/dice-rolls', authenticateToken, async (req, res) => {
+  try {
+    const sessionId = parseInt(req.params.sessionId, 10);
+    if (Number.isNaN(sessionId)) return res.status(400).json({ error: 'ID de session invalide' });
+
+    const session = await findSessionForChat(sessionId, req.user);
+    if (!session) return res.status(404).json({ error: 'Session non trouvée' });
+
+    const limit = Math.min(200, Math.max(1, parseInt(String(req.query.limit ?? '100'), 10) || 100));
+
+    const rows = await prisma.sessionDiceRoll.findMany({
+      where: { sessionId },
+      orderBy: { id: 'desc' },
+      take: limit,
+      include: {
+        user: { select: { username: true } },
+        character: { select: { name: true } },
+      },
+    });
+
+    return res.json({ success: true, rolls: rows.map(formatSessionDiceRollRow) });
+  } catch (error) {
+    console.error('Erreur GET dice-rolls:', error);
+    return res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+function extractDiceRollLabel(body) {
+  if (typeof body?.label !== 'string') return null;
+  const t = body.label.trim();
+  return t ? t.slice(0, 200) : null;
+}
+
+router.post('/:sessionId/dice-rolls', authenticateToken, async (req, res) => {
+  try {
+    const sessionId = parseInt(req.params.sessionId, 10);
+    if (Number.isNaN(sessionId)) return res.status(400).json({ error: 'ID de session invalide' });
+
+    const session = await findSessionForChat(sessionId, req.user);
+    if (!session) return res.status(404).json({ error: 'Session non trouvée' });
+
+    const body = req.body;
+    const manualFlag = body?.manual === true || body?.manual === 'true';
+
+    const label = extractDiceRollLabel(body);
+
+    const resolvedChar = await resolveDiceRollCharacterId(sessionId, req.user, body);
+    if (resolvedChar.error) {
+      return res.status(400).json({ error: resolvedChar.error });
+    }
+    const characterId = resolvedChar.characterId;
+
+    if (manualFlag) {
+      const jetRaw =
+        typeof body?.jet === 'string' && body.jet.trim()
+          ? body.jet.trim()
+          : typeof body?.notation === 'string'
+            ? body.notation.trim()
+            : '';
+      if (!jetRaw) {
+        return res.status(400).json({ error: 'Indique le jet réalisé (champ jet ou notation)' });
+      }
+      const notation = jetRaw.slice(0, 64);
+      const total = parseInt(String(body?.total ?? body?.result ?? ''), 10);
+      if (!Number.isFinite(total) || total < -99999 || total > 99999) {
+        return res.status(400).json({ error: 'Résultat invalide (nombre entre -99999 et 99999)' });
+      }
+
+      const created = await prisma.sessionDiceRoll.create({
+        data: {
+          sessionId,
+          userId: req.user.id,
+          characterId,
+          notation,
+          rolls: [],
+          modifier: 0,
+          total,
+          label,
+        },
+        include: {
+          user: { select: { username: true } },
+          character: { select: { name: true } },
+        },
+      });
+
+      return res.status(201).json({ success: true, roll: formatSessionDiceRollRow(created) });
+    }
+
+    const parsed = parseDiceRollRequestBody(body);
+    if (!parsed) {
+      return res.status(400).json({
+        error: 'Notation invalide (ex. 2d6+3) ou champs count, sides et optionnellement modifier',
+      });
+    }
+
+    const rollsArr = rollDicePool(parsed.count, parsed.sides);
+    const total = rollsArr.reduce((a, b) => a + b, 0) + parsed.modifier;
+
+    const created = await prisma.sessionDiceRoll.create({
+      data: {
+        sessionId,
+        userId: req.user.id,
+        characterId,
+        notation: parsed.notationStr.slice(0, 64),
+        rolls: rollsArr,
+        modifier: parsed.modifier,
+        total,
+        label,
+      },
+      include: {
+        user: { select: { username: true } },
+        character: { select: { name: true } },
+      },
+    });
+
+    return res.status(201).json({ success: true, roll: formatSessionDiceRollRow(created) });
+  } catch (error) {
+    console.error('Erreur POST dice-rolls:', error);
+    return res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 // Obtenir une session par ID
 router.get('/:sessionId', authenticateToken, async (req, res) => {
   try {
@@ -636,20 +1087,28 @@ router.get('/:sessionId', authenticateToken, async (req, res) => {
 
     if (!session) return res.status(404).json({ error: 'Session non trouvée' });
 
-    const attendance = session.attendance.map((a) => ({
-      id: a.id,
-      session_id: a.sessionId,
-      character_id: a.characterId,
-      attended: a.attended,
-      xp_earned: a.xpEarned,
-      gold_earned: a.goldEarned,
-      notes: a.notes,
-      character_name: a.character?.name,
-      class: a.character?.class,
-      level: a.character?.level,
-      character_user_id: a.character?.user?.id ?? null,
-      player_username: a.character?.user?.username,
-    }));
+    const expandPets =
+      req.query.expand_pets === '1' ||
+      req.query.expand_pets === 'true' ||
+      req.query.expand_companions === '1' ||
+      req.query.expand_companions === 'true';
+
+    const attendance = expandPets
+      ? await buildAttendancePayload(sessionId, session.attendance)
+      : session.attendance.map((a) => ({
+          id: a.id,
+          session_id: a.sessionId,
+          character_id: a.characterId,
+          attended: a.attended,
+          xp_earned: a.xpEarned,
+          gold_earned: a.goldEarned,
+          notes: a.notes,
+          character_name: a.character?.name,
+          class: a.character?.class,
+          level: a.character?.level,
+          character_user_id: a.character?.user?.id ?? null,
+          player_username: a.character?.user?.username,
+        }));
 
     const campaignCharacters = (session.campaign.characters || []).map((link) => ({
       id: link.id,

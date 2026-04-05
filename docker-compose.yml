@@ -6,6 +6,11 @@
 #   dev    → db + pgadmin (outils)
 #
 # Exemple production : docker compose --profile prod up -d --build
+#
+# Schéma Prisma → PostgreSQL (conteneur back déjà démarré, profil back / full / prod) :
+#   docker compose --profile back exec back npx prisma db push
+# Avec acceptation des pertes (comme au démarrage du back) :
+#   docker compose --profile back exec back npm run prisma:push:docker
 
 services:
   db:

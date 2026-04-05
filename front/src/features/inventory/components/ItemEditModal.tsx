@@ -130,9 +130,49 @@ export function ItemEditModal(props: {
   itemTypes: Array<{ value: string; label: string }>
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void
   onClose: () => void
-  onOpenRemoveConfirm: () => void
+  /** Absent en mode création : le bouton retirer de l’inventaire est masqué. */
+  onOpenRemoveConfirm?: () => void
+  /** Mode édition : crée une copie de l’objet (même fiche) et l’ajoute à l’inventaire. */
+  onDuplicate?: () => void
+  duplicateSaving?: boolean
+  /** Admin : publier un objet custom dans la base utilisée par la liste « équipements importés » (D&D 5e). */
+  showValidateCatalogButton?: boolean
+  onValidateCatalog?: () => void
+  validateCatalogSaving?: boolean
+  variant?: 'edit' | 'create'
+  /** Ex. onglets Normal / Magique au-dessus du formulaire */
+  headerExtra?: React.ReactNode
+  /** Champs supplémentaires après sous-catégorie (ex. rareté magique) */
+  extraAfterSubcategory?: React.ReactNode
+  /** Quantité à l’ajout en inventaire (création uniquement) */
+  quantityDraft?: { value: string; onChange: (next: string) => void }
+  submitLabel?: string
 }) {
-  const { open, loading, saving, form, setForm, itemTypes, onSubmit, onClose, onOpenRemoveConfirm } = props
+  const {
+    open,
+    loading,
+    saving,
+    form,
+    setForm,
+    itemTypes,
+    onSubmit,
+    onClose,
+    onOpenRemoveConfirm,
+    onDuplicate,
+    duplicateSaving = false,
+    showValidateCatalogButton,
+    onValidateCatalog,
+    validateCatalogSaving = false,
+    variant = 'edit',
+    headerExtra,
+    extraAfterSubcategory,
+    quantityDraft,
+    submitLabel,
+  } = props
+  const isCreate = variant === 'create'
+  const title = isCreate ? 'Créer un objet' : 'Éditer l’objet'
+  const primaryLabel = submitLabel ?? (isCreate ? 'Créer et ajouter' : 'Enregistrer')
+  const busy = saving || duplicateSaving || validateCatalogSaving
   const selectedWeaponProperties = getSelectedWeaponProperties(form.propertiesJson)
   const [weaponPropertyDraft, setWeaponPropertyDraft] = React.useState('')
   const meleeWeapon = isMeleeWeapon(form.category, form.subcategory)
@@ -161,17 +201,18 @@ export function ItemEditModal(props: {
     <div
       className="modal-backdrop"
       onClick={() => {
-        if (!saving) onClose()
+        if (!busy) onClose()
       }}
     >
       <div className="modal-card" onClick={(event) => event.stopPropagation()}>
+        {headerExtra ? <div className="item-edit-modal-header-extra">{headerExtra}</div> : null}
         <label className="item-edit-title-field" htmlFor="edit-item-name">
-          <span>Éditer l’objet</span>
+          <span>{title}</span>
           <input
             id="edit-item-name"
             type="text"
             required
-            disabled={loading || saving}
+            disabled={loading || busy}
             value={form.name}
             onChange={(event) => setForm((p) => ({ ...p, name: event.target.value }))}
           />
@@ -183,7 +224,7 @@ export function ItemEditModal(props: {
             <span>Type</span>
           <select
             id="edit-item-type"
-            disabled={loading || saving}
+            disabled={loading || busy}
             value={form.type}
             onChange={(event) => setForm((p) => ({ ...p, type: event.target.value }))}
           >
@@ -201,7 +242,7 @@ export function ItemEditModal(props: {
               id="edit-item-category"
               type="text"
               list="edit-item-category-suggestions"
-              disabled={loading || saving}
+              disabled={loading || busy}
               value={form.category}
               onChange={(event) => setForm((p) => ({ ...p, category: event.target.value }))}
             />
@@ -218,7 +259,7 @@ export function ItemEditModal(props: {
               id="edit-item-subcategory"
               type="text"
               list="edit-item-subcategory-suggestions"
-              disabled={loading || saving}
+              disabled={loading || busy}
               value={form.subcategory}
               onChange={(event) => setForm((p) => ({ ...p, subcategory: event.target.value }))}
             />
@@ -229,13 +270,15 @@ export function ItemEditModal(props: {
             ))}
           </datalist>
 
+          {extraAfterSubcategory}
+
           <div className="item-edit-form-inline-pair">
             <label className="item-edit-form-row" htmlFor="edit-item-cost">
               <span>Coût</span>
               <input
                 id="edit-item-cost"
                 type="text"
-                disabled={loading || saving}
+                disabled={loading || busy}
                 value={form.cost}
                 onChange={(event) => setForm((p) => ({ ...p, cost: event.target.value }))}
               />
@@ -249,7 +292,7 @@ export function ItemEditModal(props: {
                 inputMode="decimal"
                 autoComplete="off"
                 placeholder="ex. 1 ou 0,5"
-                disabled={loading || saving}
+                disabled={loading || busy}
                 value={form.weight}
                 onChange={(event) => setForm((p) => ({ ...p, weight: event.target.value }))}
               />
@@ -261,11 +304,25 @@ export function ItemEditModal(props: {
           <textarea
             id="edit-item-description"
             rows={3}
-            disabled={loading || saving}
+            disabled={loading || busy}
             value={form.description}
             onChange={(event) => setForm((p) => ({ ...p, description: event.target.value }))}
           />
           </label>
+
+          {quantityDraft ? (
+            <label className="item-edit-form-row" htmlFor="edit-item-quantity">
+              <span>Quantité</span>
+              <input
+                id="edit-item-quantity"
+                type="number"
+                min={0}
+                disabled={loading || busy}
+                value={quantityDraft.value}
+                onChange={(event) => quantityDraft.onChange(event.target.value)}
+              />
+            </label>
+          ) : null}
 
           {form.type === 'weapon' ? (
             <>
@@ -274,7 +331,7 @@ export function ItemEditModal(props: {
                 <input
                   id="edit-item-damage"
                   type="text"
-                  disabled={loading || saving}
+                  disabled={loading || busy}
                   value={form.damage}
                   onChange={(event) => setForm((p) => ({ ...p, damage: event.target.value }))}
                 />
@@ -285,7 +342,7 @@ export function ItemEditModal(props: {
                 <input
                   id="edit-item-damage-type"
                   type="text"
-                  disabled={loading || saving}
+                  disabled={loading || busy}
                   value={form.damageType}
                   onChange={(event) => setForm((p) => ({ ...p, damageType: event.target.value }))}
                 />
@@ -297,7 +354,7 @@ export function ItemEditModal(props: {
                   <input
                     id="edit-item-range-normal"
                     type="text"
-                    disabled={loading || saving}
+                    disabled={loading || busy}
                     value={form.rangeNormal}
                     onChange={(event) => setForm((p) => ({ ...p, rangeNormal: event.target.value }))}
                   />
@@ -308,7 +365,7 @@ export function ItemEditModal(props: {
                   <input
                     id="edit-item-range-long"
                     type="text"
-                    disabled={loading || saving || meleeWeapon}
+                    disabled={loading || busy || meleeWeapon}
                     value={form.rangeLong}
                     onChange={(event) => setForm((p) => ({ ...p, rangeLong: event.target.value }))}
                   />
@@ -326,7 +383,7 @@ export function ItemEditModal(props: {
                           <button
                             type="button"
                             className="item-edit-weapon-property-remove"
-                            disabled={loading || saving}
+                            disabled={loading || busy}
                             onClick={() => removeWeaponProperty(propertyName)}
                           >
                             Retirer
@@ -343,7 +400,7 @@ export function ItemEditModal(props: {
                       type="text"
                       list="edit-item-weapon-property-suggestions"
                       placeholder="Ajouter une propriété"
-                      disabled={loading || saving}
+                      disabled={loading || busy}
                       value={weaponPropertyDraft}
                       onChange={(event) => setWeaponPropertyDraft(event.target.value)}
                       onKeyDown={(event) => {
@@ -353,7 +410,7 @@ export function ItemEditModal(props: {
                         }
                       }}
                     />
-                    <button type="button" className="btn btn-secondary btn-small" disabled={loading || saving} onClick={addWeaponProperty}>
+                    <button type="button" className="btn btn-secondary btn-small" disabled={loading || busy} onClick={addWeaponProperty}>
                       Ajouter
                     </button>
                   </div>
@@ -375,7 +432,7 @@ export function ItemEditModal(props: {
                   id="edit-item-ac"
                   type="number"
                   min={0}
-                  disabled={loading || saving}
+                  disabled={loading || busy}
                   value={form.armorClass}
                   onChange={(event) => setForm((p) => ({ ...p, armorClass: event.target.value }))}
                 />
@@ -385,7 +442,7 @@ export function ItemEditModal(props: {
                 <label className="skill-check item-edit-inline-check">
                   <input
                     type="checkbox"
-                    disabled={loading || saving}
+                    disabled={loading || busy}
                     checked={form.armorDexBonus}
                     onChange={(event) => setForm((p) => ({ ...p, armorDexBonus: event.target.checked }))}
                   />
@@ -395,7 +452,7 @@ export function ItemEditModal(props: {
                 <label className="skill-check item-edit-inline-check">
                   <input
                     type="checkbox"
-                    disabled={loading || saving}
+                    disabled={loading || busy}
                     checked={form.stealthDisadvantage}
                     onChange={(event) => setForm((p) => ({ ...p, stealthDisadvantage: event.target.checked }))}
                   />
@@ -405,19 +462,47 @@ export function ItemEditModal(props: {
             </>
           ) : null}
 
-          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
-            <button className="btn" type="submit" disabled={loading || saving}>
-              {saving ? 'Enregistrement…' : 'Enregistrer'}
+          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+            <button className="btn" type="submit" disabled={loading || busy}>
+              {saving ? (isCreate ? 'Création…' : 'Enregistrement…') : primaryLabel}
             </button>
+            {!isCreate && onDuplicate ? (
+              <button
+                className="btn btn-secondary"
+                type="button"
+                disabled={loading || busy}
+                onClick={() => onDuplicate()}
+              >
+                {duplicateSaving ? 'Duplication…' : 'Dupliquer'}
+              </button>
+            ) : null}
+            {showValidateCatalogButton && onValidateCatalog ? (
+              <button
+                className="btn btn-secondary"
+                type="button"
+                disabled={loading || busy}
+                title="Ajoute cet objet à la base utilisée par la liste « équipements importés » (D&amp;D 5e)"
+                onClick={() => onValidateCatalog()}
+              >
+                {validateCatalogSaving ? 'Validation…' : 'Valider'}
+              </button>
+            ) : null}
+            {!isCreate && onOpenRemoveConfirm ? (
+              <button
+                className="btn btn-secondary"
+                type="button"
+                disabled={loading || busy}
+                onClick={onOpenRemoveConfirm}
+              >
+                Supprimer de l’inventaire
+              </button>
+            ) : null}
             <button
               className="btn btn-secondary"
               type="button"
-              disabled={loading || saving}
-              onClick={onOpenRemoveConfirm}
+              disabled={loading || busy}
+              onClick={onClose}
             >
-              Supprimer de l’inventaire
-            </button>
-            <button className="btn btn-secondary" type="button" disabled={loading || saving} onClick={onClose}>
               Annuler
             </button>
           </div>

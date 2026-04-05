@@ -82,6 +82,7 @@ model User {
   characters   Character[]
   campaigns    Campaign[]
   sessionChatMessages SessionChatMessage[]
+  sessionDiceRolls  SessionDiceRoll[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -102,6 +103,10 @@ model Character {
   id              Int      @id @default(autoincrement())
   userId          Int
   user            User     @relation(fields: [userId], references: [id])
+  /// Personnage « compagnon / familier » lié à une fiche maîtresse (même joueur).
+  masterCharacterId Int?   @map("master_character_id")
+  masterCharacter   Character? @relation("CharacterPets", fields: [masterCharacterId], references: [id], onDelete: SetNull)
+  pets              Character[] @relation("CharacterPets")
   name            String
   avatarImageKey  String?  @map("avatar_image_key")
   race            String?
@@ -126,6 +131,8 @@ model Character {
   charisma        Int?
   description     String?
   notes           String?
+  /// Points de Destin (système maison) — défaut 3 à la création
+  destiny         Int      @default(3)
   isActive        Boolean  @default(true)
   skills          CharacterSkill[]
   savingThrows    CharacterSavingThrow[]
@@ -138,9 +145,11 @@ model Character {
   features        CharacterFeature[]
   campaignCharacters CampaignCharacter[]
   sessionAttendance SessionAttendance[]
+  sessionDiceRolls  SessionDiceRoll[]
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
+  @@index([masterCharacterId])
   @@map("characters")
 }
 
@@ -232,6 +241,9 @@ model Item {
 
   properties Json?
   raw        Json?
+
+  // custom = créé via API / fiche ; dnd5e = copie catalogue ou validé admin → dnd5e_equipment
+  source      String?
 
   isActive    Boolean  @default(true)
   inventory   Inventory[]
@@ -370,10 +382,32 @@ model GameSession {
   isActive    Boolean  @default(true)
   attendance  SessionAttendance[]
   chatMessages SessionChatMessage[]
+  diceRolls   SessionDiceRoll[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   @@map("game_sessions")
+}
+
+// Historique des lancers de dés (session live)
+model SessionDiceRoll {
+  id          Int         @id @default(autoincrement())
+  sessionId Int         @map("session_id")
+  session   GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  userId    Int         @map("user_id")
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  characterId Int?        @map("character_id")
+  character Character?  @relation(fields: [characterId], references: [id], onDelete: SetNull)
+  notation  String      @db.VarChar(64)
+  rolls     Json
+  modifier  Int         @default(0)
+  total     Int
+  label     String?     @db.VarChar(200)
+  createdAt DateTime    @default(now()) @map("created_at")
+
+  @@index([sessionId, id])
+  @@index([characterId])
+  @@map("session_dice_rolls")
 }
 
 // Messages du chat temps réel (session live)

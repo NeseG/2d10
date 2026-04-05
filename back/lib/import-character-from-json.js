@@ -80,6 +80,9 @@ async function importCharacterFromJson(prismaClient, userId, data) {
         description: data.description ?? null,
         notes: data.notes ?? null,
         spellcastingAbility: data.spellcastingAbility ?? null,
+        ...(data.destiny != null && String(data.destiny).trim() !== ''
+          ? { destiny: Math.max(0, Number.parseInt(String(data.destiny), 10) || 0) }
+          : {}),
       },
     });
 

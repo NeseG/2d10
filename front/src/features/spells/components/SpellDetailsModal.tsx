@@ -15,6 +15,7 @@ export type SpellDetail = {
   higherLevel?: string | null
   ritual?: boolean | null
   concentration?: boolean | null
+  source?: string | null
   raw?: unknown
 }
 
@@ -66,15 +67,32 @@ export function SpellDetailsModal(props: {
   loading: boolean
   spellDetails: SpellDetail | null
   onClose: () => void
+  stacked?: boolean
+  showDeleteFromImportedCatalog?: boolean
+  onDeleteFromImportedCatalog?: () => void
+  deleteFromImportedCatalogSaving?: boolean
 }) {
-  const { open, loading, spellDetails, onClose } = props
+  const {
+    open,
+    loading,
+    spellDetails,
+    onClose,
+    stacked = false,
+    showDeleteFromImportedCatalog = false,
+    onDeleteFromImportedCatalog,
+    deleteFromImportedCatalogSaving = false,
+  } = props
   if (!open) return null
 
+  const busy = loading || deleteFromImportedCatalogSaving
   const damageTypeLabel = !loading && spellDetails ? getSpellDamageType(spellDetails) : null
   const hasHigherLevel = !loading && spellDetails ? Boolean(String(spellDetails.higherLevel ?? '').trim()) : false
 
   return (
-    <div className="modal-backdrop" onClick={() => (!loading ? onClose() : null)}>
+    <div
+      className={stacked ? 'modal-backdrop modal-backdrop-stacked' : 'modal-backdrop'}
+      onClick={() => (!busy ? onClose() : null)}
+    >
       <div className="modal-card" onClick={(event) => event.stopPropagation()}>
         {loading ? <p>Chargement…</p> : null}
         {!loading && spellDetails ? (
@@ -156,8 +174,18 @@ export function SpellDetailsModal(props: {
           </>
         ) : null}
 
-        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
-          <button className="btn btn-secondary" type="button" disabled={loading} onClick={onClose}>
+        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
+          {showDeleteFromImportedCatalog && onDeleteFromImportedCatalog ? (
+            <button
+              className="btn btn-secondary"
+              type="button"
+              disabled={busy}
+              onClick={() => onDeleteFromImportedCatalog()}
+            >
+              {deleteFromImportedCatalogSaving ? 'Suppression…' : 'Supprimer du catalogue importé'}
+            </button>
+          ) : null}
+          <button className="btn btn-secondary" type="button" disabled={busy} onClick={onClose}>
             Fermer
           </button>
         </div>

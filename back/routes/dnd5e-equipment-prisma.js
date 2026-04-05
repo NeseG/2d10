@@ -193,6 +193,7 @@ router.post(
           stealthDisadvantage: equipment.stealthDisadvantage,
           properties: equipment.properties,
           raw: equipment.raw,
+          source: 'dnd5e',
         },
       });
 

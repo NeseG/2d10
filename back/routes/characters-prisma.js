@@ -99,6 +99,14 @@ function normalizeSpellcastingAbility(input) {
   return ABILITIES.includes(v) ? v : undefined;
 }
 
+/** Entier >= 0 pour le Destin ; undefined si absent ou invalide. */
+function parseDestinyInput(value) {
+  if (value === undefined || value === null || value === '') return undefined;
+  const n = Number.parseInt(String(value), 10);
+  if (!Number.isFinite(n) || n < 0) return undefined;
+  return n;
+}
+
 // Obtenir tous les personnages
 router.get('/', authenticateToken, async (req, res) => {
   try {
@@ -176,13 +184,15 @@ router.post('/', authenticateToken, async (req, res) => {
       name, race, class: characterClass, archetype, level, background, alignment,
       experiencePoints, hitPoints, hitPointsMax, hit_points_max, currentHitPoints, current_hit_points, hitDice, hit_dice, hitDiceRemaining, hit_dice_remaining, armorClass, speed,
       strength, dexterity, constitution, intelligence, wisdom, charisma,
-      description, notes
+      description, notes, destiny,
     } = req.body;
 
     // Validation minimale: seul le nom est obligatoire
     if (!name || !name.trim()) {
       return res.status(400).json({ error: 'Le nom du personnage est requis' });
     }
+
+    const createDestiny = parseDestinyInput(destiny);
 
     const character = await prisma.character.create({
       data: {
@@ -208,7 +218,8 @@ router.post('/', authenticateToken, async (req, res) => {
         wisdom: wisdom ?? undefined,
         charisma: charisma ?? undefined,
         description,
-        notes
+        notes,
+        ...(createDestiny !== undefined ? { destiny: createDestiny } : {}),
       },
       include: {
         user: {
@@ -321,6 +332,116 @@ router.get('/stats/overview', authenticateToken, async (req, res) => {
   }
 });
 
+// Créer un familier / compagnon (nouvelle fiche liée au personnage maître)
+router.post('/:id/pets', authenticateToken, async (req, res) => {
+  try {
+    const masterId = parseInt(req.params.id, 10);
+    if (Number.isNaN(masterId)) return res.status(400).json({ error: 'ID personnage invalide' });
+
+    const userId = req.user.id;
+    const userRole = req.user.role_name;
+
+    const master = await prisma.character.findFirst({
+      where: {
+        id: masterId,
+        ...(userRole !== 'admin' && userRole !== 'gm' ? { userId } : {}),
+        isActive: true,
+      },
+      select: { id: true, userId: true, masterCharacterId: true },
+    });
+    if (!master) return res.status(404).json({ error: 'Personnage non trouvé' });
+    if (master.masterCharacterId != null) {
+      return res.status(400).json({ error: 'Un compagnon ne peut pas avoir son propre familier.' });
+    }
+
+    const petUserId = master.userId;
+    const rawName = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+    const petName = rawName || 'Nouveau familier';
+
+    const character = await prisma.$transaction(async (tx) => {
+      const created = await tx.character.create({
+        data: {
+          userId: petUserId,
+          masterCharacterId: masterId,
+          name: petName,
+        },
+        include: {
+          user: {
+            select: { id: true, username: true, email: true },
+          },
+        },
+      });
+
+      await tx.characterSkill.createMany({
+        data: DND_SKILLS.map((skill) => ({
+          characterId: created.id,
+          skill,
+          mastery: 'NOT_PROFICIENT',
+        })),
+      });
+
+      await tx.characterSavingThrow.createMany({
+        data: ABILITIES.map((ability) => ({
+          characterId: created.id,
+          ability,
+          proficient: false,
+        })),
+      });
+
+      await tx.characterSpellSlot.createMany({
+        data: Array.from({ length: 10 }, (_, lvl) => ({
+          characterId: created.id,
+          level: lvl,
+          slotsMax: 0,
+          slotsUsed: 0,
+        })),
+      });
+
+      await tx.purse.create({
+        data: {
+          characterId: created.id,
+          copperPieces: 0,
+          silverPieces: 0,
+          electrumPieces: 0,
+          goldPieces: 0,
+          platinumPieces: 0,
+        },
+      });
+
+      const masterLinks = await tx.campaignCharacter.findMany({
+        where: { characterId: masterId, isActive: true },
+        select: { campaignId: true },
+      });
+
+      if (masterLinks.length > 0) {
+        await tx.campaignCharacter.createMany({
+          data: masterLinks.map((l) => ({
+            campaignId: l.campaignId,
+            characterId: created.id,
+            status: 'active',
+            isActive: true,
+          })),
+          skipDuplicates: true,
+        });
+      }
+
+      return created;
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Familier créé',
+      character: {
+        ...character,
+        avatar_url: buildCharacterAvatarUrl(character),
+      },
+    });
+  } catch (error) {
+    console.error('Erreur lors de la création du familier:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 // Obtenir un personnage par ID
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
@@ -340,6 +461,14 @@ router.get('/:id', authenticateToken, async (req, res) => {
             username: true,
             email: true
           }
+        },
+        masterCharacter: {
+          select: { id: true, name: true },
+        },
+        pets: {
+          where: { isActive: true },
+          select: { id: true, name: true },
+          orderBy: { name: 'asc' },
         },
         grimoire: {
           include: { spell: true }
@@ -605,6 +734,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
       notes,
       spellcastingAbility,
       spellcasting_ability,
+      destiny,
     } = req.body;
 
     let ownerPatch = {};
@@ -666,6 +796,9 @@ router.put('/:id', authenticateToken, async (req, res) => {
           ...(description !== undefined ? { description } : {}),
           ...(notes !== undefined ? { notes } : {}),
           ...(normalizedSpellcastingAbility !== undefined ? { spellcastingAbility: normalizedSpellcastingAbility } : {}),
+          ...(destiny !== undefined
+            ? { destiny: parseDestinyInput(destiny) ?? existingCharacter.destiny }
+            : {}),
           updatedAt: new Date(),
         },
       });

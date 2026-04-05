@@ -24,6 +24,7 @@ export function CharactersPage() {
   const [race, setRace] = useState('')
   const [characterClass, setCharacterClass] = useState('')
   const [level, setLevel] = useState('')
+  const [destiny, setDestiny] = useState('3')
 
   async function loadCharacters() {
     try {
@@ -72,6 +73,7 @@ export function CharactersPage() {
     setRace('')
     setCharacterClass('')
     setLevel('')
+    setDestiny('3')
   }
 
   async function handleCreateCharacter(event: React.FormEvent<HTMLFormElement>) {
@@ -82,12 +84,16 @@ export function CharactersPage() {
       const trimmedRace = race.trim()
       const trimmedClass = characterClass.trim()
       const parsedLevel = level.trim() === '' ? undefined : Number(level)
+      const parsedDestiny = destiny.trim() === '' ? 3 : Number.parseInt(destiny.trim(), 10)
+      const destinyOut =
+        Number.isFinite(parsedDestiny) && parsedDestiny >= 0 ? parsedDestiny : 3
 
       const payload = {
         name: trimmedName,
         ...(trimmedRace ? { race: trimmedRace } : {}),
         ...(trimmedClass ? { class: trimmedClass } : {}),
         ...(parsedLevel !== undefined && !Number.isNaN(parsedLevel) ? { level: parsedLevel } : {}),
+        destiny: destinyOut,
       }
 
       await apiPost('/api/characters', payload, token)
@@ -231,6 +237,16 @@ export function CharactersPage() {
                 min={1}
                 value={level}
                 onChange={(event) => setLevel(event.target.value)}
+              />
+
+              <label htmlFor="character-destiny">Destin</label>
+              <input
+                id="character-destiny"
+                type="number"
+                min={0}
+                title="Valeur par défaut : 3"
+                value={destiny}
+                onChange={(event) => setDestiny(event.target.value)}
               />
 
               <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>

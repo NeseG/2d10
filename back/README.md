@@ -23,6 +23,14 @@ npm run prisma:seed    # utilisateur admin de test
 npm start              # écoute sur PORT (défaut 3000)
 ```
 
+Avec **Docker Compose** (conteneur `back` déjà lancé, même profil que `up`, ex. `back`) :
+
+```bash
+docker compose --profile back exec back npx prisma db push
+```
+
+Voir aussi la section Docker du [README racine](../README.md).
+
 Imports optionnels des données SRD (long) :
 
 ```bash
@@ -88,7 +96,7 @@ Toutes les routes métier sont sous **`/api/...`** et nécessitent en général 
 
 ### Objets (catalogue)
 - `GET /api/items`, `GET /api/items/types`, `GET /api/items/:id`
-- `POST|PUT /api/items` (admin/gm), `DELETE /api/items/:id` (admin), `POST /api/items/types` (admin/gm)
+- `POST /api/items` (utilisateur authentifié), `POST /api/items/:id/validate-catalog` (admin — item custom → catalogue `dnd5e_equipment`), `PUT /api/items/:id` (admin/gm ou objet dans l’inventaire d’un perso du joueur), `DELETE /api/items/:id` (admin), `POST /api/items/types` (admin/gm)
 
 ### Équipement (slots)
 - `GET /api/equipment/:characterId`, `POST .../equip`, `POST .../unequip`, `GET /api/equipment/slots/available`
@@ -124,7 +132,7 @@ Toutes les routes métier sont sous **`/api/...`** et nécessitent en général 
 - `GET /api/dnd-local/search?q=...&types=...`, `GET /api/dnd-local/stats`
 
 ### Sorts applicatifs
-- `GET|POST /api/spells`, `GET|PUT /api/spells/:id` — table `Spell` (grimoire, copies, custom)
+- `GET|POST /api/spells`, `GET|PUT /api/spells/:id`, `POST /api/spells/:id/validate-catalog` (admin — sort custom → catalogue `dnd5e_spells_import`)
 
 > Détail des corps JSON, codes d’erreur et exemples : [COMPLETE_API_DOCUMENTATION.md](../docs/COMPLETE_API_DOCUMENTATION.md).
 

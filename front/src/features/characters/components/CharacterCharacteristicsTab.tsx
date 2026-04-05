@@ -1,28 +1,11 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Car, Cog, Dog, FlaskRound, Pickaxe, RotateCcw, Shapes, Shield, Sword } from 'lucide-react'
 import { useSnackbar } from '../../../app/hooks/useSnackbar'
+import { translateItemCategory, translateItemType } from '../../../shared/inventory/itemDisplayLabels'
+import { getItemTypeIcon } from '../../../shared/inventory/itemTypeIcon'
 import { apiGet, apiPut, apiPutFormData, getApiBaseUrl } from '../../../shared/api/client'
 import { ItemDetailsModal, type ItemDetail } from '../../inventory/components/ItemDetailsModal'
 import type { AuthUser } from '../../../shared/types'
 import { CharacterIdentityAccordion } from './CharacterIdentityAccordion'
-
-function getItemTypeIcon(typeValue?: string | null): { icon: React.ReactNode; label: string } {
-  const t = String(typeValue ?? '')
-    .trim()
-    .toLowerCase()
-  if (!t) return { icon: <Shapes size={18} aria-hidden="true" />, label: 'other' }
-
-  if (t === 'armor') return { icon: <Shield size={18} aria-hidden="true" />, label: 'armor' }
-  if (t === 'weapon') return { icon: <Sword size={18} aria-hidden="true" />, label: 'weapon' }
-  if (t === 'gear') return { icon: <Cog size={18} aria-hidden="true" />, label: 'gear' }
-  if (t === 'tool') return { icon: <Pickaxe size={18} aria-hidden="true" />, label: 'tool' }
-  if (t === 'mount') return { icon: <Dog size={18} aria-hidden="true" />, label: 'mount' }
-  if (t === 'vehicle') return { icon: <Car size={18} aria-hidden="true" />, label: 'vehicle' }
-  if (t === 'ammunition') return { icon: <RotateCcw size={18} aria-hidden="true" />, label: 'ammunition' }
-  if (t === 'consumable') return { icon: <FlaskRound size={18} aria-hidden="true" />, label: 'consumable' }
-
-  return { icon: <Shapes size={18} aria-hidden="true" />, label: t }
-}
 
 const DND_5E_RACES = [
   'Humain',
@@ -57,7 +40,7 @@ const DND_5E_SKILLS_FR: Array<{ key: string; label: string }> = [
   { key: 'ANIMAL_HANDLING', label: 'Dressage' },
   { key: 'ARCANA', label: 'Arcanes' },
   { key: 'ATHLETICS', label: 'Athletisme' },
-  { key: 'DECEPTION', label: 'Tromperie' },
+  { key: 'DECEPTION', label: 'Supercherie' },
   { key: 'HISTORY', label: 'Histoire' },
   { key: 'INSIGHT', label: 'Perspicacite' },
   { key: 'INTIMIDATION', label: 'Intimidation' },
@@ -134,6 +117,7 @@ type CharacterDetail = {
   charisma?: number | null
   description?: string | null
   notes?: string | null
+  destiny?: number | null
   avatar_url?: string | null
   skills?: Array<{
     skill: string
@@ -157,6 +141,7 @@ type CharacteristicsFormFields = {
   class: string
   archetype: string
   level: string
+  destiny: string
   background: string
   alignment: string
   experiencePoints: string
@@ -222,6 +207,7 @@ function buildCharacteristicsPersistSnapshot(
     class: form.class,
     archetype: form.archetype,
     level: form.level,
+    destiny: form.destiny,
     background: form.background,
     alignment: form.alignment,
     experiencePoints: form.experiencePoints,
@@ -341,8 +327,9 @@ type SessionEquippedOtherRow = {
   id: number
   item_id: number | null
   name: string
-  typeLabel: string
-  categoryLabel: string
+  /** Type technique (weapon, armor…) pour l’icône — traduire à l’affichage. */
+  itemType: string | null
+  itemCategory: string | null
 }
 
 /** Accordéons session live (souvent pilotés par la page pour survivre aux changements d’onglet). */
@@ -399,6 +386,7 @@ export function CharacterCharacteristicsTab(props: {
     class: '',
     archetype: '',
     level: '',
+    destiny: '3',
     background: '',
     alignment: '',
     experiencePoints: '',
@@ -532,6 +520,10 @@ export function CharacterCharacteristicsTab(props: {
           class: f.class.trim() || undefined,
           archetype: f.archetype.trim() || undefined,
           level: numberOrUndefined(f.level),
+          destiny: (() => {
+            const n = numberOrUndefined(f.destiny)
+            return n !== undefined ? n : 3
+          })(),
           background: f.background.trim() || undefined,
           alignment: f.alignment.trim() || undefined,
           experiencePoints: numberOrUndefined(f.experiencePoints),
@@ -591,6 +583,7 @@ export function CharacterCharacteristicsTab(props: {
           class: c.class ?? '',
           archetype: c.archetype ?? '',
           level: c.level != null ? String(c.level) : '',
+          destiny: c.destiny != null ? String(c.destiny) : '3',
           background: c.background ?? '',
           alignment: c.alignment ?? '',
           experiencePoints: c.experiencePoints != null ? String(c.experiencePoints) : '',
@@ -730,8 +723,8 @@ export function CharacterCharacteristicsTab(props: {
               id: line.id,
               item_id: line.item_id != null ? line.item_id : null,
               name: line.name?.trim() ? line.name : '—',
-              typeLabel: line.type?.trim() ? String(line.type) : '—',
-              categoryLabel: line.category?.trim() ? line.category : '—',
+              itemType: line.type?.trim() ? String(line.type) : null,
+              itemCategory: line.category?.trim() ? String(line.category) : null,
             })),
           )
         }
@@ -1054,6 +1047,10 @@ export function CharacterCharacteristicsTab(props: {
             <strong>Niveau</strong>
             <div>{form.level?.trim() ? form.level : '—'}</div>
           </div>
+          <div>
+            <strong>Destin</strong>
+            <div>{form.destiny?.trim() ? form.destiny : '—'}</div>
+          </div>
         </div>
       ) : (
         <CharacterIdentityAccordion
@@ -1064,6 +1061,7 @@ export function CharacterCharacteristicsTab(props: {
             archetype: form.archetype,
             level: form.level,
             experiencePoints: form.experiencePoints,
+            destiny: form.destiny,
             background: form.background,
             description: form.description,
             alignment: form.alignment,
@@ -1078,6 +1076,7 @@ export function CharacterCharacteristicsTab(props: {
                 archetype: prev.archetype,
                 level: prev.level,
                 experiencePoints: prev.experiencePoints,
+                destiny: prev.destiny,
                 background: prev.background,
                 description: prev.description,
                 alignment: prev.alignment,
@@ -1264,7 +1263,11 @@ export function CharacterCharacteristicsTab(props: {
                           >
                             <td data-label="Nom">
                               <span className="inventory-item-name">
-                                <span className="inventory-item-type-icon" title="weapon" aria-label="weapon">
+                                <span
+                                  className="inventory-item-type-icon"
+                                  title={translateItemType('weapon')}
+                                  aria-label={translateItemType('weapon')}
+                                >
                                   {getItemTypeIcon('weapon').icon}
                                 </span>
                                 <span>{w.name}</span>
@@ -1313,7 +1316,11 @@ export function CharacterCharacteristicsTab(props: {
                           >
                             <td data-label="Nom">
                               <span className="inventory-item-name">
-                                <span className="inventory-item-type-icon" title="consumable" aria-label="consumable">
+                                <span
+                                  className="inventory-item-type-icon"
+                                  title={translateItemType('consumable')}
+                                  aria-label={translateItemType('consumable')}
+                                >
                                   {getItemTypeIcon('consumable').icon}
                                 </span>
                                 <span>{c.name}</span>
@@ -1360,7 +1367,7 @@ export function CharacterCharacteristicsTab(props: {
                                 </button>
                               </div>
                             </td>
-                            <td data-label="Catégorie">{c.categoryLabel}</td>
+                            <td data-label="Catégorie">{translateItemCategory(c.categoryLabel)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -1400,14 +1407,18 @@ export function CharacterCharacteristicsTab(props: {
                           >
                             <td data-label="Nom">
                               <span className="inventory-item-name">
-                                <span className="inventory-item-type-icon" title={it.typeLabel ?? 'other'} aria-label={it.typeLabel ?? 'other'}>
-                                  {getItemTypeIcon(it.typeLabel).icon}
+                                <span
+                                  className="inventory-item-type-icon"
+                                  title={translateItemType(it.itemType)}
+                                  aria-label={translateItemType(it.itemType)}
+                                >
+                                  {getItemTypeIcon(it.itemType).icon}
                                 </span>
                                 <span>{it.name}</span>
                               </span>
                             </td>
-                            <td data-label="Type">{it.typeLabel}</td>
-                            <td data-label="Catégorie">{it.categoryLabel}</td>
+                            <td data-label="Type">{translateItemType(it.itemType)}</td>
+                            <td data-label="Catégorie">{translateItemCategory(it.itemCategory)}</td>
                           </tr>
                         ))}
                       </tbody>

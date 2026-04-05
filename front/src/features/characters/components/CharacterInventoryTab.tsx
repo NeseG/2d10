@@ -1,17 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { ArrowDown, ArrowUp, ArrowUpDown, Funnel, GripVertical, Shapes } from 'lucide-react'
 import {
-  Car,
-  Cog,
-  Dog,
-  FlaskRound,
-  Funnel,
-  GripVertical,
-  Pickaxe,
-  RotateCcw,
-  Shapes,
-  Shield,
-  Sword,
-} from 'lucide-react'
+  normalizeItemTypeKey,
+  translateItemCategory,
+  translateItemSubcategory,
+  translateItemType,
+  translateMagicItemRarity,
+} from '../../../shared/inventory/itemDisplayLabels'
+import { getItemTypeIcon } from '../../../shared/inventory/itemTypeIcon'
 import { apiDelete, apiGet, apiPost, apiPut } from '../../../shared/api/client'
 import { parseLocalizedDecimalString } from '../../../shared/utils/parseLocalizedDecimal'
 import { useAuth } from '../../../app/hooks/useAuth'
@@ -45,6 +41,8 @@ type InventoryItem = {
   cost?: string | null
   properties?: unknown
 }
+
+type InventoryTableSortKey = 'name' | 'quantity' | 'equipped'
 
 type Dnd5eEquipmentListItem = {
   id: number
@@ -142,22 +140,20 @@ function isEquipableItemType(typeValue?: string | null): boolean {
   )
 }
 
-function getItemTypeIcon(typeValue?: string | null): { icon: React.ReactNode; label: string } | null {
-  const t = String(typeValue ?? '')
-    .trim()
-    .toLowerCase()
-  if (!t) return { icon: <Shapes size={18} aria-hidden="true" />, label: 'other' }
-
-  if (t === 'armor') return { icon: <Shield size={18} aria-hidden="true" />, label: 'armor' }
-  if (t === 'weapon') return { icon: <Sword size={18} aria-hidden="true" />, label: 'weapon' }
-  if (t === 'gear') return { icon: <Cog size={18} aria-hidden="true" />, label: 'gear' }
-  if (t === 'tool') return { icon: <Pickaxe size={18} aria-hidden="true" />, label: 'tool' }
-  if (t === 'mount') return { icon: <Dog size={18} aria-hidden="true" />, label: 'mount' }
-  if (t === 'vehicle') return { icon: <Car size={18} aria-hidden="true" />, label: 'vehicle' }
-  if (t === 'ammunition') return { icon: <RotateCcw size={18} aria-hidden="true" />, label: 'ammunition' }
-  if (t === 'consumable') return { icon: <FlaskRound size={18} aria-hidden="true" />, label: 'consumable' }
-
-  return { icon: <Shapes size={18} aria-hidden="true" />, label: t }
+function compareInventoryRows(
+  a: InventoryItem,
+  b: InventoryItem,
+  key: InventoryTableSortKey,
+  dir: 'asc' | 'desc',
+): number {
+  const mul = dir === 'asc' ? 1 : -1
+  if (key === 'name') {
+    return mul * String(a.name || '').localeCompare(String(b.name || ''), 'fr', { sensitivity: 'base' })
+  }
+  if (key === 'quantity') {
+    return mul * ((a.quantity ?? 0) - (b.quantity ?? 0))
+  }
+  return mul * ((a.is_equipped ? 1 : 0) - (b.is_equipped ? 1 : 0))
 }
 
 type PurseDraft = {
@@ -169,70 +165,15 @@ type PurseDraft = {
 }
 
 const DND5E_ITEM_TYPES: Array<{ value: string; label: string }> = [
-  { value: 'weapon', label: 'weapon' },
-  { value: 'armor', label: 'armor' },
-  { value: 'gear', label: 'gear' },
-  { value: 'tool', label: 'tool' },
-  { value: 'mount', label: 'mount' },
-  { value: 'vehicle', label: 'vehicle' },
-  { value: 'ammunition', label: 'ammunition' },
-  { value: 'consumable', label: 'consumable' },
-  { value: 'other', label: 'other' },
-]
-
-const ITEM_CATEGORY_SUGGESTIONS = [
-  'Melee Weapon',
-  'Ranged Weapon',
-  'Magic Weapon',
-  'Light Armor',
-  'Medium Armor',
-  'Heavy Armor',
-  'Magic Armor',
-  'Shield',
-  'Magic Shield',
-  'Adventuring Gear',
-  'Tool',
-  'Artisan Tool',
-  'Musical Instrument',
-  'Gaming Set',
-  'Mount',
-  'Vehicle',
-  'Ammunition',
-  'Consumable',
-  'Potion',
-  'Scroll',
-  'Wondrous Item',
-  'Ring',
-  'Rod',
-  'Staff',
-  'Wand',
-  'Artifact',
-  'Wonderous Item',
-]
-
-const ITEM_SUBCATEGORY_SUGGESTIONS = [
-  'Simple Melee',
-  'Martial Melee',
-  'Simple Ranged',
-  'Martial Ranged',
-  'Light',
-  'Medium',
-  'Heavy',
-  'Shield',
-  'Arcane Focus',
-  'Druidic Focus',
-  'Holy Symbol',
-  'Ammunition',
-  'Potion',
-  'Scroll',
-  'Common',
-  'Uncommon',
-  'Rare',
-  'Very Rare',
-  'Legendary',
-  'Artifact',
-  'Varies',
-  'Unknown',
+  { value: 'weapon', label: 'Arme' },
+  { value: 'armor', label: 'Armure' },
+  { value: 'gear', label: 'Équipement' },
+  { value: 'tool', label: 'Outil' },
+  { value: 'mount', label: 'Monture' },
+  { value: 'vehicle', label: 'Véhicule' },
+  { value: 'ammunition', label: 'Munitions' },
+  { value: 'consumable', label: 'Consommable' },
+  { value: 'other', label: 'Autre' },
 ]
 
 function parseJsonOrNull(raw: string): unknown | null {
@@ -285,6 +226,88 @@ function serializeItemRange(normal: string, long: string): string | null {
   })
 }
 
+function emptyEditItemForm(): EditItemFormState {
+  return {
+    name: '',
+    description: '',
+    type: 'other',
+    category: '',
+    subcategory: '',
+    cost: '',
+    weight: '',
+    damage: '',
+    damageType: '',
+    rangeNormal: '',
+    rangeLong: '',
+    armorClass: '',
+    armorDexBonus: false,
+    stealthDisadvantage: false,
+    propertiesJson: '',
+  }
+}
+
+type BuildItemPayloadResult =
+  | { ok: true; payload: Record<string, unknown> }
+  | { ok: false; error: string }
+
+function buildItemApiPayloadFromForm(
+  form: EditItemFormState,
+  options: { asMagicCustom: boolean; magicRarity: string },
+): BuildItemPayloadResult {
+  let weightOut: number | null = null
+  if (form.weight.trim() !== '') {
+    const w = parseLocalizedDecimalString(form.weight)
+    if (w == null) return { ok: false, error: 'Poids invalide (ex. 1 ou 0,5).' }
+    weightOut = w
+  }
+
+  const parsedProperties = parseJsonOrNull(form.propertiesJson)
+  const armorPropsBase =
+    form.type === 'armor'
+      ? {
+          ...(parsedProperties && typeof parsedProperties === 'object' && !Array.isArray(parsedProperties)
+            ? (parsedProperties as Record<string, unknown>)
+            : {}),
+          armor_class: {
+            base: form.armorClass.trim() === '' ? null : Number.parseInt(form.armorClass, 10),
+            dex_bonus: Boolean(form.armorDexBonus),
+          },
+        }
+      : parsedProperties
+
+  let properties: unknown = armorPropsBase
+  let subcategory: string | null = form.subcategory.trim() || null
+
+  if (options.asMagicCustom) {
+    subcategory = options.magicRarity.trim() || null
+    const baseObj =
+      armorPropsBase && typeof armorPropsBase === 'object' && !Array.isArray(armorPropsBase)
+        ? ({ ...(armorPropsBase as Record<string, unknown>) } as Record<string, unknown>)
+        : {}
+    properties = { ...baseObj, dnd5e_magic_item: true, custom: true }
+  }
+
+  return {
+    ok: true,
+    payload: {
+      name: form.name.trim(),
+      description: form.description.trim() || null,
+      type: form.type,
+      category: form.category.trim() || null,
+      subcategory,
+      cost: form.cost.trim() || null,
+      weight: weightOut,
+      damage: form.damage.trim() || null,
+      damageType: form.damageType.trim() || null,
+      range: serializeItemRange(form.rangeNormal, form.rangeLong),
+      armorClass: form.armorClass.trim() === '' ? null : Number.parseInt(form.armorClass, 10),
+      armorDexBonus: Boolean(form.armorDexBonus),
+      stealthDisadvantage: Boolean(form.stealthDisadvantage),
+      properties,
+    },
+  }
+}
+
 function computeDraftGoldValue(draft: PurseDraft | null): number {
   if (!draft) return 0
   const pp = Number(draft.platinum) || 0
@@ -323,10 +346,22 @@ function pursePayloadsEqual(a: PursePayload, b: PursePayload): boolean {
   )
 }
 
-export function CharacterInventoryTab(props: { characterId: string; token: string }) {
-  const { characterId, token } = props
+export type SessionLiveInventoryTransferTarget = { characterId: string; label: string }
+
+export function CharacterInventoryTab(props: {
+  characterId: string
+  token: string
+  /** Session live : transfert vers d’autres persos de la session (MJ : tous ; joueur : ses persos uniquement). */
+  sessionLiveSessionId?: string
+  sessionLiveTransferTargets?: SessionLiveInventoryTransferTarget[]
+}) {
+  const { characterId, token, sessionLiveSessionId, sessionLiveTransferTargets = [] } = props
   const { user } = useAuth()
   const { showSnackbar } = useSnackbar()
+
+  const canSessionTransfer = Boolean(
+    sessionLiveSessionId && sessionLiveTransferTargets.length > 0,
+  )
 
   const [inventoryLoading, setInventoryLoading] = useState(false)
   const [inventoryLoaded, setInventoryLoaded] = useState(false)
@@ -353,6 +388,10 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
   const [inventorySearch, setInventorySearch] = useState('')
   const [inventoryFiltersOpen, setInventoryFiltersOpen] = useState(false)
   const [selectedTypes, setSelectedTypes] = useState<string[]>([])
+  const [inventorySort, setInventorySort] = useState<{
+    key: InventoryTableSortKey | null
+    dir: 'asc' | 'desc'
+  }>({ key: null, dir: 'asc' })
   const [draggingInventoryId, setDraggingInventoryId] = useState<number | null>(null)
   const [dragOverInventoryId, setDragOverInventoryId] = useState<number | null>(null)
   const reorderPointerRef = useRef<{
@@ -367,17 +406,9 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
   const [isCreateItemModalOpen, setIsCreateItemModalOpen] = useState(false)
   const [createItemSaving, setCreateItemSaving] = useState(false)
   const [createItemKind, setCreateItemKind] = useState<'normal' | 'magic'>('normal')
-  const [newItemForm, setNewItemForm] = useState({
-    name: '',
-    description: '',
-    quantity: '1',
-    type: 'other',
-    category: '',
-    subcategory: '',
-    rarity: '',
-    cost: '',
-    weight: '',
-  })
+  const [createMagicRarity, setCreateMagicRarity] = useState('')
+  const [createItemQuantity, setCreateItemQuantity] = useState('1')
+  const [createItemForm, setCreateItemForm] = useState<EditItemFormState>(() => emptyEditItemForm())
 
   const [isItemDetailsModalOpen, setIsItemDetailsModalOpen] = useState(false)
   const [itemDetailsLoading, setItemDetailsLoading] = useState(false)
@@ -387,6 +418,9 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
   const [isEditItemModalOpen, setIsEditItemModalOpen] = useState(false)
   const [editItemLoading, setEditItemLoading] = useState(false)
   const [editItemSaving, setEditItemSaving] = useState(false)
+  const [editItemDuplicateSaving, setEditItemDuplicateSaving] = useState(false)
+  const [validateItemCatalogSaving, setValidateItemCatalogSaving] = useState(false)
+  const [editItemShowValidateCatalog, setEditItemShowValidateCatalog] = useState(false)
   const [editItemId, setEditItemId] = useState<number | null>(null)
   const [editInventoryLineId, setEditInventoryLineId] = useState<number | null>(null)
   const [editItemForm, setEditItemForm] = useState<EditItemFormState>({
@@ -408,6 +442,12 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
   })
   const [removeFromInventoryConfirmOpen, setRemoveFromInventoryConfirmOpen] = useState(false)
   const [removingFromInventory, setRemovingFromInventory] = useState(false)
+
+  const [transferModalOpen, setTransferModalOpen] = useState(false)
+  const [transferLine, setTransferLine] = useState<InventoryItem | null>(null)
+  const [transferToCharacterId, setTransferToCharacterId] = useState('')
+  const [transferQuantityDraft, setTransferQuantityDraft] = useState('1')
+  const [transferSaving, setTransferSaving] = useState(false)
 
   const [isDndEquipmentModalOpen, setIsDndEquipmentModalOpen] = useState(false)
   const [dndImportTab, setDndImportTab] = useState<'equipment' | 'magic'>('equipment')
@@ -475,6 +515,7 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
   useEffect(() => {
     setInventoryLoaded(false)
     setInventoryQuantityDraft({})
+    setInventorySort({ key: null, dir: 'asc' })
   }, [characterId])
 
   useEffect(() => {
@@ -543,9 +584,7 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
   }, [inventoryItems])
 
   const availableTypes = useMemo(() => {
-    const present = new Set(
-      inventoryItems.map((item) => (getItemTypeIcon(item.type)?.label || 'other').trim().toLowerCase()),
-    )
+    const present = new Set(inventoryItems.map((item) => normalizeItemTypeKey(item.type)))
 
     const knownInOrder = DND5E_ITEM_TYPES.map((t) => t.value).filter((value) => present.has(value))
     const unknown = Array.from(present)
@@ -557,18 +596,33 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
 
   const filteredInventoryItems = useMemo(() => {
     const normalizedSearch = inventorySearch.trim().toLowerCase()
-    return inventoryItems.filter((item) => {
+    const filtered = inventoryItems.filter((item) => {
       const matchesSearch = !normalizedSearch || String(item.name || '').toLowerCase().includes(normalizedSearch)
-      const itemType = (getItemTypeIcon(item.type)?.label || 'other').trim().toLowerCase()
+      const itemType = normalizeItemTypeKey(item.type)
       const matchesType = selectedTypes.length === 0 || selectedTypes.includes(itemType)
       return matchesSearch && matchesType
     })
-  }, [inventoryItems, inventorySearch, selectedTypes])
+    const sk = inventorySort.key
+    if (!sk) return filtered
+    const dir = inventorySort.dir
+    return [...filtered].sort((a, b) => compareInventoryRows(a, b, sk, dir))
+  }, [inventoryItems, inventorySearch, selectedTypes, inventorySort])
+
+  function handleInventorySortHeaderClick(column: InventoryTableSortKey) {
+    setInventorySort((prev) => {
+      if (prev.key !== column) return { key: column, dir: 'asc' }
+      if (prev.dir === 'asc') return { key: column, dir: 'desc' }
+      return { key: null, dir: 'asc' }
+    })
+  }
 
   const canReorderInventory = useMemo(
     () =>
-      inventoryItems.length > 1 && !inventorySearch.trim() && selectedTypes.length === 0,
-    [inventoryItems.length, inventorySearch, selectedTypes.length],
+      inventoryItems.length > 1 &&
+      !inventorySearch.trim() &&
+      selectedTypes.length === 0 &&
+      inventorySort.key == null,
+    [inventoryItems.length, inventorySearch, selectedTypes.length, inventorySort.key],
   )
 
   async function applyInventoryReorder(draggedId: number, targetId: number) {
@@ -815,24 +869,73 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
     }
   }
 
-  function resetNewItemForm() {
+  function openTransferModal(item: InventoryItem) {
+    if (!canSessionTransfer || !sessionLiveSessionId) return
+    setTransferLine(item)
+    setTransferToCharacterId(sessionLiveTransferTargets[0]?.characterId ?? '')
+    setTransferQuantityDraft(String(item.quantity))
+    setTransferModalOpen(true)
+  }
+
+  function openTransferFromItemDetailsModal() {
+    const lineId = itemDetailsInventoryLineId
+    if (!lineId || !canSessionTransfer) return
+    const line = inventoryItems.find((x) => x.id === lineId)
+    if (!line) return
+    setIsItemDetailsModalOpen(false)
+    setItemDetailsInventoryLineId(null)
+    openTransferModal(line)
+  }
+
+  async function handleSessionTransferSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    if (!transferLine || !sessionLiveSessionId || !characterId) return
+    const toId = transferToCharacterId.trim()
+    if (!toId) {
+      showSnackbar({ message: 'Choisis un destinataire.', severity: 'error' })
+      return
+    }
+    const qty = Number.parseInt(transferQuantityDraft.trim(), 10)
+    if (Number.isNaN(qty) || qty < 1 || qty > transferLine.quantity) {
+      showSnackbar({ message: 'Quantité invalide.', severity: 'error' })
+      return
+    }
+    setTransferSaving(true)
+    try {
+      await apiPost(
+        `/api/sessions/${sessionLiveSessionId}/inventory/transfer`,
+        {
+          from_character_id: Number.parseInt(characterId, 10),
+          to_character_id: Number.parseInt(toId, 10),
+          inventory_id: transferLine.id,
+          quantity: qty,
+        },
+        token,
+      )
+      setTransferModalOpen(false)
+      setTransferLine(null)
+      setInventoryLoaded(false)
+      showSnackbar({ message: 'Objet transféré.', severity: 'success' })
+    } catch (err) {
+      showSnackbar({
+        message: err instanceof Error ? err.message : 'Erreur transfert',
+        severity: 'error',
+      })
+    } finally {
+      setTransferSaving(false)
+    }
+  }
+
+  function resetCreateItemForm() {
     setCreateItemKind('normal')
-    setNewItemForm({
-      name: '',
-      description: '',
-      quantity: '1',
-      type: 'other',
-      category: '',
-      subcategory: '',
-      rarity: '',
-      cost: '',
-      weight: '',
-    })
+    setCreateMagicRarity('')
+    setCreateItemQuantity('1')
+    setCreateItemForm(emptyEditItemForm())
   }
 
   async function openCreateItemModal() {
     setIsCreateItemModalOpen(true)
-    resetNewItemForm()
+    resetCreateItemForm()
   }
 
   async function handleCreateAndLinkItem(event: React.FormEvent<HTMLFormElement>) {
@@ -841,37 +944,22 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
     setCreateItemSaving(true)
     const createdAsMagic = createItemKind === 'magic'
     try {
-      let weightPayload: number | null = null
-      if (newItemForm.weight.trim() !== '') {
-        const w = parseLocalizedDecimalString(newItemForm.weight)
-        if (w == null) {
-          showSnackbar({ message: 'Poids invalide (ex. 1 ou 0,5).', severity: 'error' })
-          return
-        }
-        weightPayload = w
+      const built = buildItemApiPayloadFromForm(createItemForm, {
+        asMagicCustom: createdAsMagic,
+        magicRarity: createMagicRarity,
+      })
+      if (!built.ok) {
+        showSnackbar({ message: built.error, severity: 'error' })
+        return
       }
 
-      const payload: Record<string, unknown> = {
-        name: newItemForm.name.trim(),
-        description: newItemForm.description.trim() || null,
-        type: newItemForm.type,
-        category: newItemForm.category.trim() || null,
-        subcategory: newItemForm.subcategory.trim() || null,
-        cost: newItemForm.cost.trim() || null,
-        weight: weightPayload,
-      }
-      if (createdAsMagic) {
-        payload.subcategory = newItemForm.rarity.trim() || null
-        payload.properties = { dnd5e_magic_item: true, custom: true }
-      }
+      const created = await apiPost<{ item: { id: number } }>(`/api/items`, built.payload, token)
 
-      const created = await apiPost<{ item: { id: number } }>(`/api/items`, payload, token)
-
-      const qty = Number.parseInt(newItemForm.quantity, 10)
+      const qty = Number.parseInt(createItemQuantity, 10)
       await apiPost(`/api/inventory/${characterId}/items`, { item_id: created.item.id, quantity: Number.isNaN(qty) ? 1 : qty }, token)
 
       setIsCreateItemModalOpen(false)
-      resetNewItemForm()
+      resetCreateItemForm()
       setInventoryLoaded(false)
       showSnackbar({
         message: createdAsMagic ? 'Objet magique créé et ajouté.' : 'Objet créé et ajouté.',
@@ -911,11 +999,20 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
     setIsEditItemModalOpen(true)
     setEditItemLoading(true)
     setEditItemSaving(false)
+    setEditItemDuplicateSaving(false)
+    setValidateItemCatalogSaving(false)
     setEditItemId(params.itemId)
     setEditInventoryLineId(params.inventoryLineId)
     try {
       const itemRes = await apiGet<{ item: ItemDetail }>(`/api/items/${params.itemId}`, token)
       const it = itemRes.item
+      const props = it.properties
+      const magicMirror =
+        props != null && typeof props === 'object' && Boolean((props as Record<string, unknown>).dnd5e_magic_item)
+      const isCustomSource =
+        it.source === 'custom' ||
+        (it.source == null && String(it.index ?? '').includes('__manual__'))
+      setEditItemShowValidateCatalog(Boolean(user?.role === 'admin' && isCustomSource && !magicMirror))
       const armorDexBonus = extractArmorDexBonus(it.raw) || extractArmorDexBonus(it.properties)
       const parsedRange = parseItemRange(it.range)
       setEditItemForm({
@@ -950,49 +1047,12 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
     if (!editItemId) return
     setEditItemSaving(true)
     try {
-      let weightOut: number | null = null
-      if (editItemForm.weight.trim() !== '') {
-        const w = parseLocalizedDecimalString(editItemForm.weight)
-        if (w == null) {
-          showSnackbar({ message: 'Poids invalide (ex. 1 ou 0,5).', severity: 'error' })
-          return
-        }
-        weightOut = w
+      const built = buildItemApiPayloadFromForm(editItemForm, { asMagicCustom: false, magicRarity: '' })
+      if (!built.ok) {
+        showSnackbar({ message: built.error, severity: 'error' })
+        return
       }
-
-      const parsedProperties = parseJsonOrNull(editItemForm.propertiesJson)
-      const armorProperties =
-        editItemForm.type === 'armor'
-          ? {
-              ...(parsedProperties && typeof parsedProperties === 'object' && !Array.isArray(parsedProperties)
-                ? (parsedProperties as Record<string, unknown>)
-                : {}),
-              armor_class: {
-                base: editItemForm.armorClass.trim() === '' ? null : Number.parseInt(editItemForm.armorClass, 10),
-                dex_bonus: Boolean(editItemForm.armorDexBonus),
-              },
-            }
-          : parsedProperties
-      await apiPut(
-        `/api/items/${editItemId}`,
-        {
-          name: editItemForm.name.trim(),
-          description: editItemForm.description.trim() || null,
-          type: editItemForm.type,
-          category: editItemForm.category.trim() || null,
-          subcategory: editItemForm.subcategory.trim() || null,
-          cost: editItemForm.cost.trim() || null,
-          weight: weightOut,
-          damage: editItemForm.damage.trim() || null,
-          damageType: editItemForm.damageType.trim() || null,
-          range: serializeItemRange(editItemForm.rangeNormal, editItemForm.rangeLong),
-          armorClass: editItemForm.armorClass.trim() === '' ? null : Number.parseInt(editItemForm.armorClass, 10),
-          armorDexBonus: Boolean(editItemForm.armorDexBonus),
-          stealthDisadvantage: Boolean(editItemForm.stealthDisadvantage),
-          properties: armorProperties,
-        },
-        token,
-      )
+      await apiPut(`/api/items/${editItemId}`, built.payload, token)
       setIsEditItemModalOpen(false)
       setEditItemId(null)
       setInventoryLoaded(false)
@@ -1004,6 +1064,52 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
       })
     } finally {
       setEditItemSaving(false)
+    }
+  }
+
+  async function handleValidateCatalogItem() {
+    if (!editItemId || user?.role !== 'admin') return
+    setValidateItemCatalogSaving(true)
+    try {
+      await apiPost(`/api/items/${editItemId}/validate-catalog`, {}, token)
+      setEditItemShowValidateCatalog(false)
+      setInventoryLoaded(false)
+      showSnackbar({
+        message: 'Objet validé : il est disponible dans la liste des équipements importés.',
+        severity: 'success',
+      })
+    } catch (err) {
+      showSnackbar({
+        message: err instanceof Error ? err.message : 'Erreur lors de la validation de l’objet',
+        severity: 'error',
+      })
+    } finally {
+      setValidateItemCatalogSaving(false)
+    }
+  }
+
+  async function handleDuplicateEditedItem() {
+    if (!characterId || !editInventoryLineId) return
+    setEditItemDuplicateSaving(true)
+    try {
+      const built = buildItemApiPayloadFromForm(editItemForm, { asMagicCustom: false, magicRarity: '' })
+      if (!built.ok) {
+        showSnackbar({ message: built.error, severity: 'error' })
+        return
+      }
+      const created = await apiPost<{ item: { id: number } }>(`/api/items`, built.payload, token)
+      const row = inventoryItems.find((x) => x.id === editInventoryLineId)
+      const qty = row?.quantity ?? 1
+      await apiPost(`/api/inventory/${characterId}/items`, { item_id: created.item.id, quantity: qty }, token)
+      setInventoryLoaded(false)
+      showSnackbar({ message: 'Copie ajoutée à l’inventaire.', severity: 'success' })
+    } catch (err) {
+      showSnackbar({
+        message: err instanceof Error ? err.message : 'Erreur lors de la duplication',
+        severity: 'error',
+      })
+    } finally {
+      setEditItemDuplicateSaving(false)
     }
   }
 
@@ -1305,7 +1411,7 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
                         type="button"
                         className={`inventory-type-filter ${selected ? 'active' : ''}`}
                         aria-pressed={selected}
-                        title={icon?.label || typeValue}
+                        title={translateItemType(typeValue)}
                         onClick={() => toggleTypeFilter(typeValue)}
                       >
                         <span className={`inventory-type-filter-icon ${selected ? 'active' : ''}`}>
@@ -1328,9 +1434,90 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
               <table className="table inventory-items-table">
                 <thead>
                   <tr>
-                    <th className="inventory-name-col">Nom</th>
-                    <th className="inventory-qty-col">Qty</th>
-                    <th className="inventory-equipped-col">Équipé</th>
+                    <th
+                      className="inventory-sortable-th inventory-name-col"
+                      aria-sort={
+                        inventorySort.key === 'name'
+                          ? inventorySort.dir === 'asc'
+                            ? 'ascending'
+                            : 'descending'
+                          : 'none'
+                      }
+                    >
+                      <button
+                        type="button"
+                        className="inventory-sort-header-btn"
+                        title="Trier par nom : A→Z, puis Z→A, puis ordre enregistré"
+                        onClick={() => handleInventorySortHeaderClick('name')}
+                      >
+                        <span>Nom</span>
+                        {inventorySort.key === 'name' ? (
+                          inventorySort.dir === 'asc' ? (
+                            <ArrowUp className="inventory-sort-icon" size={15} strokeWidth={2.25} aria-hidden="true" />
+                          ) : (
+                            <ArrowDown className="inventory-sort-icon" size={15} strokeWidth={2.25} aria-hidden="true" />
+                          )
+                        ) : (
+                          <ArrowUpDown className="inventory-sort-icon inventory-sort-icon--muted" size={15} strokeWidth={2} aria-hidden="true" />
+                        )}
+                      </button>
+                    </th>
+                    <th
+                      className="inventory-sortable-th inventory-qty-col"
+                      aria-sort={
+                        inventorySort.key === 'quantity'
+                          ? inventorySort.dir === 'asc'
+                            ? 'ascending'
+                            : 'descending'
+                          : 'none'
+                      }
+                    >
+                      <button
+                        type="button"
+                        className="inventory-sort-header-btn inventory-sort-header-btn--center"
+                        title="Trier par quantité : croissant, décroissant, puis ordre enregistré"
+                        onClick={() => handleInventorySortHeaderClick('quantity')}
+                      >
+                        <span>Qty</span>
+                        {inventorySort.key === 'quantity' ? (
+                          inventorySort.dir === 'asc' ? (
+                            <ArrowUp className="inventory-sort-icon" size={15} strokeWidth={2.25} aria-hidden="true" />
+                          ) : (
+                            <ArrowDown className="inventory-sort-icon" size={15} strokeWidth={2.25} aria-hidden="true" />
+                          )
+                        ) : (
+                          <ArrowUpDown className="inventory-sort-icon inventory-sort-icon--muted" size={15} strokeWidth={2} aria-hidden="true" />
+                        )}
+                      </button>
+                    </th>
+                    <th
+                      className="inventory-sortable-th inventory-equipped-col"
+                      aria-sort={
+                        inventorySort.key === 'equipped'
+                          ? inventorySort.dir === 'asc'
+                            ? 'ascending'
+                            : 'descending'
+                          : 'none'
+                      }
+                    >
+                      <button
+                        type="button"
+                        className="inventory-sort-header-btn inventory-sort-header-btn--center"
+                        title="Trier par équipé : non équipés d’abord, puis équipés d’abord, puis ordre enregistré"
+                        onClick={() => handleInventorySortHeaderClick('equipped')}
+                      >
+                        <span>Équipé</span>
+                        {inventorySort.key === 'equipped' ? (
+                          inventorySort.dir === 'asc' ? (
+                            <ArrowUp className="inventory-sort-icon" size={15} strokeWidth={2.25} aria-hidden="true" />
+                          ) : (
+                            <ArrowDown className="inventory-sort-icon" size={15} strokeWidth={2.25} aria-hidden="true" />
+                          )
+                        ) : (
+                          <ArrowUpDown className="inventory-sort-icon inventory-sort-icon--muted" size={15} strokeWidth={2} aria-hidden="true" />
+                        )}
+                      </button>
+                    </th>
                     <th className="inventory-drag-handle-th" aria-label="Réordonner" title="Réordonner">
                       <GripVertical size={16} aria-hidden="true" className="inventory-drag-header-icon" />
                     </th>
@@ -1365,11 +1552,12 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
                         <span className="inventory-item-name">
                           {(() => {
                             const icon = getItemTypeIcon(item.type)
-                            return icon ? (
-                              <span className="inventory-item-type-icon" title={icon.label} aria-label={icon.label}>
+                            const typeTitle = translateItemType(item.type)
+                            return (
+                              <span className="inventory-item-type-icon" title={typeTitle} aria-label={typeTitle}>
                                 {icon.icon}
                               </span>
-                            ) : null
+                            )
                           })()}
                           <span>{item.name ?? '—'}</span>
                         </span>
@@ -1456,7 +1644,9 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
                           title={
                             canReorderInventory
                               ? 'Glisser pour réordonner'
-                              : 'Réordonner : retirez recherche et filtres'
+                              : inventorySort.key != null
+                                ? 'Réordonner : 3ᵉ clic sur la colonne triée pour revenir à l’ordre enregistré'
+                                : 'Réordonner : retirez recherche et filtres'
                           }
                         >
                           <GripVertical size={18} aria-hidden="true" />
@@ -1484,131 +1674,65 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
         </>
       )}
 
-      {isCreateItemModalOpen && (
-        <div className="modal-backdrop" onClick={() => (!createItemSaving ? setIsCreateItemModalOpen(false) : null)}>
-          <div className="modal-card" onClick={(event) => event.stopPropagation()}>
-            <h3>Créer un item</h3>
-            <form className="login-form" onSubmit={handleCreateAndLinkItem}>
-              <span className="create-item-kind-label">Type d&apos;objet</span>
-              <div className="tabs-row create-item-kind-tabs" role="group" aria-label="Type d'objet">
-                <button
-                  type="button"
-                  className={`tab-btn ${createItemKind === 'normal' ? 'active' : ''}`}
-                  onClick={() => {
-                    setCreateItemKind('normal')
-                    setNewItemForm((prev) => ({ ...prev, rarity: '' }))
-                  }}
-                >
-                  Normal
-                </button>
-                <button
-                  type="button"
-                  className={`tab-btn ${createItemKind === 'magic' ? 'active' : ''}`}
-                  onClick={() => setCreateItemKind('magic')}
-                >
-                  Magique
-                </button>
-              </div>
-
-              <label htmlFor="new-item-name">Nom</label>
+      <ItemEditModal
+        open={isCreateItemModalOpen}
+        variant="create"
+        loading={false}
+        saving={createItemSaving}
+        form={createItemForm}
+        setForm={setCreateItemForm}
+        itemTypes={DND5E_ITEM_TYPES}
+        onSubmit={handleCreateAndLinkItem}
+        onClose={() => {
+          if (!createItemSaving) {
+            setIsCreateItemModalOpen(false)
+            resetCreateItemForm()
+          }
+        }}
+        headerExtra={
+          <>
+            <span className="create-item-kind-label">Type d&apos;objet</span>
+            <div className="tabs-row create-item-kind-tabs" role="group" aria-label="Type d'objet">
+              <button
+                type="button"
+                className={`tab-btn ${createItemKind === 'normal' ? 'active' : ''}`}
+                onClick={() => {
+                  setCreateItemKind('normal')
+                  setCreateMagicRarity('')
+                }}
+              >
+                Normal
+              </button>
+              <button
+                type="button"
+                className={`tab-btn ${createItemKind === 'magic' ? 'active' : ''}`}
+                onClick={() => setCreateItemKind('magic')}
+              >
+                Magique
+              </button>
+            </div>
+          </>
+        }
+        extraAfterSubcategory={
+          createItemKind === 'magic' ? (
+            <label className="item-edit-form-row" htmlFor="create-magic-rarity">
+              <span>Rareté</span>
               <input
-                id="new-item-name"
+                id="create-magic-rarity"
                 type="text"
-                required
-                value={newItemForm.name}
-                onChange={(event) => setNewItemForm((prev) => ({ ...prev, name: event.target.value }))}
+                placeholder="Ex. Peu commun, Rare, Très rare…"
+                disabled={createItemSaving}
+                value={createMagicRarity}
+                onChange={(event) => setCreateMagicRarity(event.target.value)}
               />
-
-              <label htmlFor="new-item-type">Type</label>
-              <select id="new-item-type" value={newItemForm.type} onChange={(event) => setNewItemForm((prev) => ({ ...prev, type: event.target.value }))}>
-                {DND5E_ITEM_TYPES.map((t) => (
-                  <option key={t.value} value={t.value}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
-
-              <label htmlFor="new-item-category">Catégorie</label>
-              <input
-                id="new-item-category"
-                type="text"
-                list="new-item-category-suggestions"
-                value={newItemForm.category}
-                onChange={(event) => setNewItemForm((prev) => ({ ...prev, category: event.target.value }))}
-              />
-              <datalist id="new-item-category-suggestions">
-                {ITEM_CATEGORY_SUGGESTIONS.map((category) => (
-                  <option key={category} value={category} />
-                ))}
-              </datalist>
-
-              <label htmlFor="new-item-subcategory">Sous-catégorie</label>
-              <input
-                id="new-item-subcategory"
-                type="text"
-                list="new-item-subcategory-suggestions"
-                value={newItemForm.subcategory}
-                onChange={(event) => setNewItemForm((prev) => ({ ...prev, subcategory: event.target.value }))}
-              />
-              <datalist id="new-item-subcategory-suggestions">
-                {ITEM_SUBCATEGORY_SUGGESTIONS.map((subcategory) => (
-                  <option key={subcategory} value={subcategory} />
-                ))}
-              </datalist>
-
-              {createItemKind === 'magic' ? (
-                <>
-                  <label htmlFor="new-item-rarity">Rareté</label>
-                  <input
-                    id="new-item-rarity"
-                    type="text"
-                    placeholder="Ex. Peu commun, Rare, Très rare…"
-                    value={newItemForm.rarity}
-                    onChange={(event) => setNewItemForm((prev) => ({ ...prev, rarity: event.target.value }))}
-                  />
-                </>
-              ) : null}
-
-              <label htmlFor="new-item-cost">Coût</label>
-              <input id="new-item-cost" type="text" placeholder="Ex. 15 gp" value={newItemForm.cost} onChange={(event) => setNewItemForm((prev) => ({ ...prev, cost: event.target.value }))} />
-
-              <label htmlFor="new-item-weight">Poids (kg)</label>
-              <input
-                id="new-item-weight"
-                type="text"
-                inputMode="decimal"
-                autoComplete="off"
-                placeholder="ex. 1 ou 0,5"
-                value={newItemForm.weight}
-                onChange={(event) => setNewItemForm((prev) => ({ ...prev, weight: event.target.value }))}
-              />
-
-              <label htmlFor="new-item-description">Description</label>
-              <textarea id="new-item-description" rows={3} value={newItemForm.description} onChange={(event) => setNewItemForm((prev) => ({ ...prev, description: event.target.value }))} />
-
-              <label htmlFor="new-item-quantity">Quantité</label>
-              <input id="new-item-quantity" type="number" min={0} value={newItemForm.quantity} onChange={(event) => setNewItemForm((prev) => ({ ...prev, quantity: event.target.value }))} />
-
-              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
-                <button className="btn" type="submit" disabled={createItemSaving}>
-                  {createItemSaving ? 'Création...' : 'Créer et ajouter'}
-                </button>
-                <button
-                  className="btn btn-secondary"
-                  type="button"
-                  disabled={createItemSaving}
-                  onClick={() => {
-                    setIsCreateItemModalOpen(false)
-                    resetNewItemForm()
-                  }}
-                >
-                  Annuler
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+            </label>
+          ) : null
+        }
+        quantityDraft={{
+          value: createItemQuantity,
+          onChange: (next) => setCreateItemQuantity(next),
+        }}
+      />
 
       {isItemDetailsModalOpen && (
         <ItemDetailsModal
@@ -1625,6 +1749,8 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
             void openEditItemModal({ itemId: itemDetails.id, inventoryLineId: itemDetailsInventoryLineId })
           }}
           editDisabled={!itemDetails?.id || !itemDetailsInventoryLineId}
+          onTransfer={canSessionTransfer ? () => openTransferFromItemDetailsModal() : undefined}
+          transferDisabled={!itemDetailsInventoryLineId}
         />
       )}
 
@@ -1638,12 +1764,18 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
           itemTypes={DND5E_ITEM_TYPES}
           onSubmit={handleSaveEditedItem}
           onClose={() => {
-            if (!editItemSaving) {
+            if (!editItemSaving && !editItemDuplicateSaving && !validateItemCatalogSaving) {
               setIsEditItemModalOpen(false)
               setEditItemId(null)
+              setEditItemShowValidateCatalog(false)
             }
           }}
           onOpenRemoveConfirm={() => setRemoveFromInventoryConfirmOpen(true)}
+          onDuplicate={() => void handleDuplicateEditedItem()}
+          duplicateSaving={editItemDuplicateSaving}
+          showValidateCatalogButton={editItemShowValidateCatalog}
+          onValidateCatalog={() => void handleValidateCatalogItem()}
+          validateCatalogSaving={validateItemCatalogSaving}
         />
       )}
 
@@ -1655,6 +1787,70 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
         }}
         onConfirm={() => void handleRemoveFromInventory()}
       />
+
+      {transferModalOpen && transferLine && sessionLiveSessionId ? (
+        <div
+          className="modal-backdrop"
+          onClick={() => {
+            if (!transferSaving) {
+              setTransferModalOpen(false)
+              setTransferLine(null)
+            }
+          }}
+        >
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <h3>Transférer l&apos;objet</h3>
+            <p style={{ color: 'var(--muted)', marginTop: 0 }}>
+              <strong>{transferLine.name}</strong> — quantité sur cette fiche : {transferLine.quantity}
+            </p>
+            <form className="login-form" onSubmit={(e) => void handleSessionTransferSubmit(e)}>
+              <label className="item-edit-form-row" htmlFor="inv-transfer-to">
+                <span>Destinataire</span>
+                <select
+                  id="inv-transfer-to"
+                  value={transferToCharacterId}
+                  onChange={(e) => setTransferToCharacterId(e.target.value)}
+                  disabled={transferSaving}
+                >
+                  {sessionLiveTransferTargets.map((t) => (
+                    <option key={t.characterId} value={t.characterId}>
+                      {t.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="item-edit-form-row" htmlFor="inv-transfer-qty">
+                <span>Quantité</span>
+                <input
+                  id="inv-transfer-qty"
+                  type="number"
+                  min={1}
+                  max={transferLine.quantity}
+                  value={transferQuantityDraft}
+                  onChange={(e) => setTransferQuantityDraft(e.target.value)}
+                  disabled={transferSaving}
+                />
+              </label>
+              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+                <button className="btn" type="submit" disabled={transferSaving}>
+                  {transferSaving ? 'Transfert…' : 'Transférer'}
+                </button>
+                <button
+                  className="btn btn-secondary"
+                  type="button"
+                  disabled={transferSaving}
+                  onClick={() => {
+                    setTransferModalOpen(false)
+                    setTransferLine(null)
+                  }}
+                >
+                  Annuler
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
 
       {isDndEquipmentModalOpen && canImportDndEquipment && (
         <>
@@ -1746,7 +1942,7 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
                             onClick={() => void openDndCatalogEquipmentDetail(eq.index)}
                           >
                             <td>{eq.name}</td>
-                            <td>{eq.type}</td>
+                            <td>{translateItemType(eq.type)}</td>
                             <td>
                               <button
                                 className="btn btn-small"
@@ -1858,8 +2054,8 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
                             onClick={() => void openDndCatalogMagicDetail(m.index)}
                           >
                             <td>{m.name}</td>
-                            <td>{m.categoryName ?? m.categoryIndex ?? '—'}</td>
-                            <td>{m.rarity ?? '—'}</td>
+                            <td>{translateItemCategory(m.categoryName ?? m.categoryIndex)}</td>
+                            <td>{m.rarity?.trim() ? translateMagicItemRarity(m.rarity) : '—'}</td>
                             <td>
                               <button
                                 className="btn btn-small"
@@ -1946,13 +2142,13 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
                     <strong>Nom</strong> {dndCatalogDetail.data.name}
                   </p>
                   <p>
-                    <strong>Type</strong> {dndCatalogDetail.data.type ?? '—'}
+                    <strong>Type</strong> {translateItemType(dndCatalogDetail.data.type)}
                   </p>
                   <p>
-                    <strong>Catégorie</strong> {dndCatalogDetail.data.category ?? '—'}
+                    <strong>Catégorie</strong> {translateItemCategory(dndCatalogDetail.data.category)}
                   </p>
                   <p>
-                    <strong>Sous-catégorie</strong> {dndCatalogDetail.data.subcategory ?? '—'}
+                    <strong>Sous-catégorie</strong> {translateItemSubcategory(dndCatalogDetail.data.subcategory)}
                   </p>
                   <p>
                     <strong>Coût</strong> {dndCatalogDetail.data.cost ?? '—'}
@@ -2003,10 +2199,13 @@ export function CharacterInventoryTab(props: { characterId: string; token: strin
                   </p>
                   <p>
                     <strong>Catégorie</strong>{' '}
-                    {dndCatalogDetail.data.categoryName ?? dndCatalogDetail.data.categoryIndex ?? '—'}
+                    {translateItemCategory(dndCatalogDetail.data.categoryName ?? dndCatalogDetail.data.categoryIndex)}
                   </p>
                   <p>
-                    <strong>Rareté</strong> {dndCatalogDetail.data.rarity ?? '—'}
+                    <strong>Rareté</strong>{' '}
+                    {dndCatalogDetail.data.rarity?.trim()
+                      ? translateMagicItemRarity(dndCatalogDetail.data.rarity)
+                      : '—'}
                   </p>
                   <p>
                     <strong>Variante</strong> {dndCatalogDetail.data.variant ? 'Oui' : 'Non'}

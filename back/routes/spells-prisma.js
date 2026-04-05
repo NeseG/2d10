@@ -1,6 +1,6 @@
 const express = require('express');
 const prisma = require('../lib/prisma');
-const { authenticateToken, requireRole } = require('../middleware/auth');
+const { authenticateToken, requireAdmin, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -139,6 +139,83 @@ router.post('/', authenticateToken, requireRole(['admin', 'gm']), async (req, re
   }
 });
 
+/** Index stable dans `dnd5e_spells_import` pour un sort validé depuis une fiche custom. */
+function validatedCatalogIndex(spellId) {
+  return `validated-spell-${spellId}`;
+}
+
+// POST /api/spells/:id/validate-catalog — admin : copie le sort dans la base « sorts importés » (Dnd5eSpellImport)
+router.post('/:id/validate-catalog', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const id = Number.parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) return res.status(400).json({ error: 'ID invalide' });
+
+    const spell = await prisma.spell.findFirst({ where: { id, isActive: true } });
+    if (!spell) return res.status(404).json({ error: 'Sort non trouvé' });
+
+    if (spell.source !== 'custom') {
+      return res.status(400).json({
+        error: 'Seuls les sorts personnalisés (source custom) peuvent être validés pour le catalogue importé.',
+      });
+    }
+
+    const importIndex = validatedCatalogIndex(id);
+
+    const importRow = await prisma.dnd5eSpellImport.upsert({
+      where: { index: importIndex },
+      create: {
+        index: importIndex,
+        name: spell.name,
+        level: spell.level,
+        school: spell.school,
+        castingTime: spell.castingTime,
+        range: spell.range,
+        components: spell.components,
+        duration: spell.duration,
+        description: spell.description,
+        higherLevel: spell.higherLevel,
+        ritual: spell.ritual,
+        concentration: spell.concentration,
+        raw: spell.raw,
+      },
+      update: {
+        name: spell.name,
+        level: spell.level,
+        school: spell.school,
+        castingTime: spell.castingTime,
+        range: spell.range,
+        components: spell.components,
+        duration: spell.duration,
+        description: spell.description,
+        higherLevel: spell.higherLevel,
+        ritual: spell.ritual,
+        concentration: spell.concentration,
+        raw: spell.raw,
+      },
+    });
+
+    const updatedSpell = await prisma.spell.update({
+      where: { id },
+      data: { source: 'dnd5e' },
+    });
+
+    res.json({
+      message: 'Sort validé et ajouté à la base des sorts importés.',
+      item: updatedSpell,
+      dnd5e_import: {
+        id: importRow.id,
+        index: importRow.index,
+        name: importRow.name,
+        level: importRow.level,
+        school: importRow.school,
+      },
+    });
+  } catch (error) {
+    console.error('Erreur validation sort catalogue:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 // PUT /api/spells/:id
 // - admin/gm: peut éditer n'importe quel sort
 // - user: peut éditer un sort seulement s'il est dans le grimoire d'un de ses personnages
@@ -175,6 +252,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
       concentration,
       raw,
       isActive,
+      source,
     } = req.body ?? {};
 
     const data = {};
@@ -191,6 +269,10 @@ router.put('/:id', authenticateToken, async (req, res) => {
     if (concentration !== undefined) data.concentration = concentration != null ? Boolean(concentration) : null;
     if (raw !== undefined) data.raw = raw ?? null;
     if (isActive !== undefined) data.isActive = Boolean(isActive);
+    if (source !== undefined && (role === 'admin' || role === 'gm')) {
+      const s = source != null ? String(source).trim() : '';
+      data.source = s || null;
+    }
 
     if (data.name !== undefined && !data.name) {
       return res.status(400).json({ error: 'name requis' });
