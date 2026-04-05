@@ -1,6 +1,5 @@
 /* ============================================================
-   INDEX.CSS — Thème Grimdark Fantasy
-   Palette inspirée des fiches D&D "Les Pierres de l'Éclipse Noire"
+   INDEX.CSS — Default Or et Rouille (fallback avant chargement du thème JS)
    Structure React inchangée — seules les couleurs/typographie changent
    ============================================================ */
 
@@ -11,24 +10,25 @@ html {
   scrollbar-gutter: stable;
 }
 
-/* ── PALETTE GLOBALE ── */
+/* ── Default Or et Rouille (:root) ── */
+
 :root {
   /* Fonds */
-  --bg:      #08060a;       /* Noir profond — fond principal */
-  --panel:   #100c08;       /* Brun sombre — cartes, panels */
-  --sidebar: #060408;       /* Void — sidebar */
+  --bg:      #08060a;
+  --panel:   #100c08;
+  --sidebar: #060408;
 
   /* Texte */
-  --text:    #d4c0a8;       /* Parchemin clair */
-  --muted:   #7a6a5a;       /* Cendre — texte secondaire */
+  --text:    #d4c0a8;
+  --muted:   #7a6a5a;
 
   /* Bordures */
-  --border:  #2a1e14;       /* Brun très sombre */
+  --border:  #2a1e14;
 
-  /* Couleur primaire — Or brûlé / rouille dorée */
-  --primary: #b07830;       /* Remplace indigo #6366f1 */
+  /* Couleur primaire */
+  --primary: #b07830;
 
-  /* Extras utiles dans le thème */
+  /* Extras */
   --gold:         #c9a84c;
   --gold-dim:     #7a6030;
   --rust:         #8a3a10;
@@ -42,6 +42,32 @@ html {
   --ash:          #7a6a5a;
   --bone:         #d4c0a8;
   --void:         #0a0614;
+
+  /*
+   * Surfaces dérivées (inputs, session live, etc.) : suivent la palette active.
+   * color-mix se met à jour quand --panel / --bg / --void changent (applyThemeVars).
+   */
+  --surface-input: color-mix(in srgb, var(--panel) 75%, var(--bg));
+  --surface-input-raised: color-mix(in srgb, var(--panel) 82%, var(--bg));
+  --surface-session-card: color-mix(in srgb, var(--panel) 62%, var(--bg));
+  --surface-shade: color-mix(in srgb, var(--panel) 42%, var(--void));
+  --surface-shade-mid: color-mix(in srgb, var(--panel) 48%, var(--void));
+  --surface-well: color-mix(in srgb, var(--panel) 34%, var(--bg));
+  --surface-band: color-mix(in srgb, var(--panel) 52%, var(--bg));
+  --surface-list-row: color-mix(in srgb, var(--panel) 48%, var(--bg));
+  --surface-feature: color-mix(in srgb, var(--panel) 46%, var(--void));
+  --border-faint: color-mix(in srgb, var(--border) 52%, transparent);
+  --focus-ring: color-mix(in srgb, var(--gold-dim) 22%, transparent);
+
+  /* Boutons : suivent --rust / --panel */
+  --btn-primary-fill: color-mix(in srgb, var(--rust) 26%, transparent);
+  --btn-primary-fill-hover: color-mix(in srgb, var(--rust-bright) 38%, transparent);
+  --btn-secondary-fill: color-mix(in srgb, var(--panel) 55%, var(--void));
+  --btn-secondary-fill-hover: color-mix(in srgb, var(--panel) 72%, var(--void));
+
+  /* Onglets session live (dock secondaire + état actif, partagé avec l’app) */
+  --tab-active-bg: color-mix(in srgb, var(--rust) 15%, transparent);
+  --nav-session-dock-bg: color-mix(in srgb, var(--panel) 88%, transparent);
 
   /* Scrollbars */
   scrollbar-color: var(--gold-dim) var(--bg);
@@ -396,7 +422,7 @@ body {
   text-transform: uppercase;
   border: 1px solid var(--rust-bright);
   border-radius: 2px;
-  background: rgba(138, 58, 16, 0.25);
+  background: var(--btn-primary-fill);
   color: var(--rust-glow);
   padding: 0.55rem 1rem;
   cursor: pointer;
@@ -406,19 +432,19 @@ body {
 }
 
 .btn:hover {
-  background: rgba(192, 57, 10, 0.4);
+  background: var(--btn-primary-fill-hover);
   border-color: var(--rust-glow);
   color: var(--bone);
 }
 
 .btn-secondary {
-  background: rgba(42, 30, 20, 0.6);
+  background: var(--btn-secondary-fill);
   border-color: var(--border);
   color: var(--muted);
 }
 
 .btn-secondary:hover {
-  background: rgba(58, 42, 26, 0.8);
+  background: var(--btn-secondary-fill-hover);
   border-color: var(--muted);
   color: var(--bone);
 }
@@ -552,7 +578,7 @@ body {
   padding: 0.6rem 0.7rem;
   border-radius: 2px;
   border: 1px solid var(--border);
-  background: rgba(6, 4, 8, 0.8);
+  background: var(--surface-input);
   color: var(--text);
   font: inherit;
 }
@@ -626,7 +652,7 @@ body {
   justify-content: center;
   border: 1px solid var(--border);
   border-radius: 2px;
-  background: rgba(6, 4, 8, 0.45);
+  background: var(--surface-shade);
   color: var(--muted);
   transition: all 0.15s;
 }
@@ -649,7 +675,7 @@ body {
   padding: 0.35rem 0.55rem;
   border-radius: 2px;
   border: 1px solid var(--border);
-  background: rgba(6, 4, 8, 0.5);
+  background: var(--surface-shade-mid);
   color: var(--text);
   font: inherit;
 }
@@ -735,7 +761,7 @@ body {
   border: 1px solid var(--border);
   border-left: 3px solid var(--rust);
   border-radius: 2px;
-  background: rgba(8, 6, 10, 0.6);
+  background: var(--surface-feature);
   padding: 0.75rem;
   margin-bottom: 0.6rem;
 }
@@ -753,7 +779,7 @@ body {
   padding: 0.6rem 0.7rem;
   border-radius: 2px;
   border: 1px solid var(--border);
-  background: rgba(6, 4, 8, 0.8);
+  background: var(--surface-input);
   color: var(--text);
   font: inherit;
 }
@@ -818,7 +844,7 @@ body {
   padding: 0.35rem 0.45rem;
   border-radius: 2px;
   border: 1px solid var(--border);
-  background: rgba(6, 4, 8, 0.8);
+  background: var(--surface-input);
   color: var(--text);
   text-align: center;
 }
@@ -839,7 +865,7 @@ body {
   justify-content: center;
   border: 1px solid var(--border);
   border-radius: 2px;
-  background: rgba(16, 12, 8, 0.8);
+  background: var(--surface-input-raised);
   color: var(--muted);
   font: inherit;
   cursor: pointer;
@@ -971,7 +997,7 @@ tr.inventory-row-drag-over {
   padding: 0.6rem 0.7rem;
   border-radius: 2px;
   border: 1px solid var(--border);
-  background: rgba(6, 4, 8, 0.8);
+  background: var(--surface-input);
   color: var(--text);
   font: inherit;
 }
@@ -1561,7 +1587,7 @@ input[type='number'] {
 }
 
 .tab-btn.active {
-  background: rgba(138, 58, 16, 0.15);
+  background: var(--tab-active-bg);
   color: var(--gold);
   border-color: var(--border);
   border-bottom-color: var(--rust-bright);
@@ -1622,7 +1648,7 @@ input[type='number'] {
   border: 1px solid var(--border);
   border-top: 2px solid var(--rust);
   border-radius: 2px;
-  background: rgba(16, 12, 8, 0.72);
+  background: var(--surface-session-card);
 }
 
 .session-live-character-title-row {
@@ -1838,7 +1864,7 @@ input[type='number'] {
   padding: 0.5rem 0.65rem;
   border-radius: 2px;
   border: 1px solid var(--border);
-  background: rgba(16, 12, 8, 0.85);
+  background: var(--surface-input-raised);
   color: var(--text);
   font-size: 0.95rem;
   font-family: inherit;
@@ -1876,7 +1902,7 @@ input[type='number'] {
   border: 1px solid var(--border);
   border-radius: 2px;
   padding: 0.65rem 0.75rem;
-  background: rgba(16, 12, 8, 0.6);
+  background: var(--surface-band);
 }
 
 .initiative-tracker-header-left {
@@ -1904,7 +1930,7 @@ input[type='number'] {
   border: 1px solid var(--border);
   border-radius: 2px;
   padding: 0.65rem 0.75rem;
-  background: rgba(16, 12, 8, 0.4);
+  background: var(--surface-well);
 }
 
 .initiative-tracker-add-row {
@@ -1920,7 +1946,7 @@ input[type='number'] {
   padding: 0.5rem 0.65rem;
   border-radius: 2px;
   border: 1px solid var(--border);
-  background: rgba(16, 12, 8, 0.85);
+  background: var(--surface-input-raised);
   color: var(--text);
   font: inherit;
 }
@@ -1937,7 +1963,7 @@ input[type='number'] {
   padding: 0.35rem 0.45rem;
   border-radius: 2px;
   border: 1px solid var(--border);
-  background: rgba(16, 12, 8, 0.85);
+  background: var(--surface-input-raised);
   color: var(--text);
   font: inherit;
 }
@@ -2133,7 +2159,7 @@ button.initiative-visibility-toggle {
   padding: 0.45rem 0.55rem;
   border-radius: 2px;
   border: 1px solid var(--border);
-  background: rgba(16, 12, 8, 0.85);
+  background: var(--surface-input-raised);
   color: var(--text);
   font: inherit;
   min-width: 0;
@@ -2372,8 +2398,8 @@ button.initiative-visibility-toggle {
   gap: 0.25rem 0.65rem;
   padding: 0.45rem 0.55rem;
   border-radius: 2px;
-  background: rgba(16, 12, 8, 0.5);
-  border: 1px solid rgba(42, 30, 20, 0.5);
+  background: var(--surface-list-row);
+  border: 1px solid var(--border-faint);
   font-size: 0.88rem;
 }
 
@@ -2440,7 +2466,7 @@ button.initiative-visibility-toggle {
   display: flex;
   gap: 0.5rem;
   padding: 0.6rem 0.75rem;
-  background: rgba(8, 6, 10, 0.94);
+  background: var(--nav-session-dock-bg);
   border-top: 1px solid var(--border);
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
@@ -2985,7 +3011,7 @@ button.initiative-visibility-toggle {
   padding: 0.35rem 0.35rem;
   border-radius: 2px;
   border: 1px solid var(--border);
-  background: rgba(6, 4, 8, 0.8);
+  background: var(--surface-input);
   color: var(--text);
   font-family: 'Cinzel', serif;
   font-variant-numeric: tabular-nums;
@@ -3079,8 +3105,8 @@ button.initiative-visibility-toggle {
   align-items: center;
   border-radius: 2px;
   overflow: hidden;
-  border: 1px solid var(--ability-border, rgba(90, 70, 50, 0.45));
-  background: var(--ability-bg, rgba(42, 30, 20, 0.25));
+  border: 1px solid var(--ability-border, var(--border-faint));
+  background: var(--ability-bg, var(--surface-well));
 }
 
 .session-ability-name,
@@ -3103,12 +3129,12 @@ button.initiative-visibility-toggle {
 .session-ability-mod {
   font-weight: 800;
   font-size: 1.1rem;
-  background: var(--ability-mod-bg, rgba(6, 4, 8, 0.75));
+  background: var(--ability-mod-bg, var(--surface-input-raised));
   color: var(--bone);
   margin: 0.24rem;
   min-height: calc(2.5rem - 0.48rem);
   border-radius: 2px;
-  border: 1px solid rgba(90, 70, 50, 0.3);
+  border: 1px solid var(--border-faint);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
   font-family: 'Cinzel', serif;
 }
@@ -3207,7 +3233,7 @@ button.initiative-visibility-toggle {
   padding: 0.45rem 0.5rem;
   border-radius: 2px;
   border: 1px solid var(--border);
-  background: rgba(6, 4, 8, 0.8);
+  background: var(--surface-input);
   color: var(--gold);
   text-align: center;
   font-family: 'Cinzel', serif;
@@ -3248,7 +3274,7 @@ input[type='password'],
 input[type='number'],
 select,
 textarea {
-  background: rgba(6, 4, 8, 0.8);
+  background: var(--surface-input);
   border: 1px solid var(--border);
   color: var(--text);
   border-radius: 2px;
@@ -3261,7 +3287,7 @@ select:focus,
 textarea:focus {
   outline: none;
   border-color: var(--gold-dim);
-  box-shadow: 0 0 0 2px rgba(122, 96, 48, 0.15);
+  box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
 input::placeholder,
@@ -3569,7 +3595,7 @@ textarea::placeholder {
     border-radius: 2px;
     padding: 0.45rem 0.55rem;
     margin-bottom: 0.6rem;
-    background: rgba(6, 4, 8, 0.6);
+    background: var(--surface-band);
   }
 
   .responsive-table td {
@@ -3710,4 +3736,91 @@ textarea::placeholder {
   .purse-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* ── Page Options : choix de palette ── */
+.theme-palette-section {
+  margin-top: 0.25rem;
+}
+
+.theme-palette-heading {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--gold);
+}
+
+.theme-palette-intro {
+  margin: 0 0 1rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.theme-palette-intro code {
+  font-size: 0.82rem;
+  color: var(--bone);
+}
+
+.theme-palette-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.65rem;
+}
+
+.theme-palette-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.65rem 0.75rem;
+  text-align: left;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  color: var(--text);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.theme-palette-card:hover {
+  border-color: var(--gold-dim);
+}
+
+.theme-palette-card--active {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
+}
+
+.theme-palette-swatches {
+  display: flex;
+  height: 2.25rem;
+  border-radius: 0.35rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.theme-palette-swatch {
+  flex: 1;
+  min-width: 0;
+}
+
+.theme-palette-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.theme-palette-card-title {
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--bone);
+}
+
+.theme-palette-card-desc {
+  font-size: 0.78rem;
+  color: var(--muted);
 }

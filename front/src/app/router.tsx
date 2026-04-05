@@ -10,6 +10,7 @@ import { UsersPage } from '../features/users/pages/UsersPage'
 import { CampaignsPage } from '../features/campaigns/pages/CampaignsPage'
 import { CampaignMapEditorPage } from '../features/campaigns/pages/CampaignMapEditorPage'
 import { SessionsPage } from '../features/sessions/pages/SessionsPage'
+import { OptionsPage } from '../features/sessions/pages/OptionsPage'
 import { LiveSessionPage } from '../features/sessions/pages/LiveSessionPage'
 
 export function AppRouter() {
@@ -25,6 +26,7 @@ export function AppRouter() {
             <Route path="/characters" element={<CharactersPage />} />
             <Route path="/characters/:id/edit" element={<CharacterEditPage />} />
             <Route path="/sessions" element={<SessionsPage />} />
+            <Route path="/options" element={<OptionsPage />} />
             <Route path="/session-live" element={<LiveSessionPage />} />
 
             <Route element={<ProtectedRoute allowedRoles={['admin']} />}>

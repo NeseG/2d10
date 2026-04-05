@@ -15,7 +15,7 @@ type NavItem = {
   roles?: UserRole[]
 }
 
-const navItems: NavItem[] = [
+const navItemsCore: NavItem[] = [
   { to: '/', label: 'Accueil' },
   { to: '/characters', label: 'Mes personnages' },
   { to: '/users', label: 'Gestion utilisateurs', roles: ['admin'] },
@@ -23,18 +23,20 @@ const navItems: NavItem[] = [
   { to: '/sessions', label: 'Gestion sessions' },
 ]
 
+const navItemOptions: NavItem = { to: '/options', label: 'Options' }
+const navItemSessionLive: NavItem = { to: '/session-live', label: 'Session en cours' }
+
 export function Sidebar({ role, hasJoinedSession = false, isOpen = true, onNavigate, onLogout }: SidebarProps) {
+  const coreFiltered = navItemsCore.filter((item) => !item.roles || item.roles.includes(role))
   const computedItems = hasJoinedSession
-    ? [...navItems, { to: '/session-live', label: 'Session en cours' }]
-    : navItems
+    ? [...coreFiltered, navItemSessionLive, navItemOptions]
+    : [...coreFiltered, navItemOptions]
 
   return (
     <aside className={`sidebar ${isOpen ? 'open' : ''}`}>
       <h2 className="sidebar-title">2d10</h2>
       <nav className="sidebar-nav">
-        {computedItems
-          .filter((item) => !item.roles || item.roles.includes(role))
-          .map((item) => (
+        {computedItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
