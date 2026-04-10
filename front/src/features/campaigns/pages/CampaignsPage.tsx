@@ -1,5 +1,5 @@
 import { Card } from '../../../shared/components/Card'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiDelete, apiGet, apiPost, apiPostFormData, apiPut, apiPutFormData } from '../../../shared/api/client'
 import { useAuth } from '../../../app/hooks/useAuth'
@@ -66,6 +66,7 @@ export function CampaignsPage() {
   const { showSnackbar } = useSnackbar()
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([])
   const [loading, setLoading] = useState(false)
+  const [search, setSearch] = useState('')
 
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [createSaving, setCreateSaving] = useState(false)
@@ -162,6 +163,23 @@ export function CampaignsPage() {
   }, [])
 
   const canManageCampaigns = user?.role === 'admin' || user?.role === 'gm'
+
+  const filteredCampaigns = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return campaigns
+    return campaigns.filter((c) => {
+      const haystack = [
+        c.name,
+        c.description ?? '',
+        c.status,
+        String(c.characterCount),
+        String(c.id),
+      ]
+        .join(' ')
+        .toLowerCase()
+      return haystack.includes(q)
+    })
+  }, [campaigns, search])
 
   async function loadCampaignMaps(campaignId: number) {
     setMapsLoading(true)
@@ -600,6 +618,19 @@ export function CampaignsPage() {
         </div>
       ) : null}
 
+      <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '0.75rem' }}>
+        <div className="login-form" style={{ marginTop: 0, minWidth: 260, flex: '1 1 260px' }}>
+          <span className="create-item-kind-label">Rechercher</span>
+          <input
+            id="campaigns-search"
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Nom, description, statut…"
+          />
+        </div>
+      </div>
+
       {loading ? <p>Chargement…</p> : null}
 
       <div className="table-wrap">
@@ -614,7 +645,7 @@ export function CampaignsPage() {
             </tr>
           </thead>
           <tbody>
-            {campaigns.map((campaign) => (
+            {filteredCampaigns.map((campaign) => (
               <tr
                 key={campaign.id}
                 className="clickable-row"

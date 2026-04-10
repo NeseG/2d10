@@ -114,8 +114,13 @@ router.get('/:id', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Objet non trouvé' });
     }
 
+    let canValidateCatalog = false;
+    if (req.user.role_name === 'admin') {
+      canValidateCatalog = await computeCanValidateCatalogForAdmin(record);
+    }
+
     res.json({
-      item: record,
+      item: { ...record, canValidateCatalog },
     });
   } catch (error) {
     console.error('Erreur lors de la récupération de l\'objet:', error);
@@ -137,6 +142,30 @@ function itemIsMagicItemMirror(properties) {
   return Boolean(properties.dnd5e_magic_item);
 }
 
+/** Objet éligible à une première publication dans `dnd5e_equipment` (custom ou copie d’import équipement). */
+function itemEligibleForFirstEquipmentCatalogPublish(item) {
+  if (itemIsMagicItemMirror(item.properties)) return false;
+  const idx = String(item.index || '');
+  if (item.source === 'custom' || isLegacyCustomItem(item)) return true;
+  if (item.source === 'dnd5e' && idx.includes('__copy__')) return true;
+  return false;
+}
+
+async function itemHasValidatedCatalogRow(itemId) {
+  const row = await prisma.dnd5eEquipment.findUnique({
+    where: { index: validatedEquipmentCatalogIndex(itemId) },
+    select: { id: true },
+  });
+  return Boolean(row);
+}
+
+async function computeCanValidateCatalogForAdmin(item) {
+  if (!item || itemIsMagicItemMirror(item.properties)) return false;
+  const id = item.id;
+  if (itemEligibleForFirstEquipmentCatalogPublish(item)) return true;
+  return itemHasValidatedCatalogRow(id);
+}
+
 // POST /api/items/:id/validate-catalog — admin : copie l’objet dans la base « équipements importés » (Dnd5eEquipment)
 router.post('/:id/validate-catalog', authenticateToken, requireAdmin, async (req, res) => {
   try {
@@ -153,10 +182,12 @@ router.post('/:id/validate-catalog', authenticateToken, requireAdmin, async (req
       });
     }
 
-    const isCustom = item.source === 'custom' || isLegacyCustomItem(item);
-    if (!isCustom) {
+    const eligibleFirst = itemEligibleForFirstEquipmentCatalogPublish(item);
+    const alreadyInCatalog = await itemHasValidatedCatalogRow(id);
+    if (!eligibleFirst && !alreadyInCatalog) {
       return res.status(400).json({
-        error: 'Seuls les objets personnalisés (source custom) peuvent être validés pour le catalogue importé.',
+        error:
+          'Seuls les objets personnalisés (source custom) ou les copies importées depuis « équipements D&D 5e » (index __copy__) peuvent être validés. Réessaie après une première validation si l’objet est déjà lié au catalogue.',
       });
     }
 

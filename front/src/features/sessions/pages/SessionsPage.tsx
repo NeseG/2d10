@@ -59,6 +59,7 @@ export function SessionsPage() {
   const [sessions, setSessions] = useState<SessionListItem[]>([])
   const [campaigns, setCampaigns] = useState<CampaignListItem[]>([])
   const [loading, setLoading] = useState(false)
+  const [search, setSearch] = useState('')
 
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [createSaving, setCreateSaving] = useState(false)
@@ -132,6 +133,25 @@ export function SessionsPage() {
   }, [token, canManageSessions, showSnackbar])
 
   const activeSessions = useMemo(() => sessions.filter((s) => s.is_active), [sessions])
+
+  const filteredActiveSessions = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return activeSessions
+    return activeSessions.filter((s) => {
+      const title = s.title ?? `Session #${s.session_number ?? s.id}`
+      const haystack = [
+        title,
+        s.campaign_name ?? '',
+        s.session_date ?? '',
+        s.is_active ? 'active' : 'inactive',
+        String(s.session_number ?? ''),
+        String(s.id),
+      ]
+        .join(' ')
+        .toLowerCase()
+      return haystack.includes(q)
+    })
+  }, [activeSessions, search])
 
   function handleJoinSession(session: SessionListItem) {
     const payload = {
@@ -336,6 +356,19 @@ export function SessionsPage() {
         </div>
       ) : null}
 
+      <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '0.75rem' }}>
+        <div className="login-form" style={{ marginTop: 0, minWidth: 260, flex: '1 1 260px' }}>
+          <span className="create-item-kind-label">Rechercher</span>
+          <input
+            id="sessions-search"
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Session, campagne, date…"
+          />
+        </div>
+      </div>
+
       {loading ? <p>Chargement…</p> : null}
 
       <div className="table-wrap">
@@ -350,7 +383,7 @@ export function SessionsPage() {
             </tr>
           </thead>
           <tbody>
-            {activeSessions.map((session) => (
+            {filteredActiveSessions.map((session) => (
               <tr
                 key={session.id}
                 className="clickable-row"
@@ -390,7 +423,7 @@ export function SessionsPage() {
                 </td>
               </tr>
             ))}
-            {!loading && activeSessions.length === 0 ? (
+            {!loading && filteredActiveSessions.length === 0 ? (
               <tr>
                 <td colSpan={5}>Aucune session active disponible.</td>
               </tr>

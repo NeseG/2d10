@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Activity, Backpack, BookMarked, Cat, Clover, ScrollText } from 'lucide-react'
+import { Activity, Backpack, BookMarked, Cat, Clover, Eye, ScrollText } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Card } from '../../../shared/components/Card'
 import { useAuth } from '../../../app/hooks/useAuth'
@@ -77,7 +77,27 @@ export function CharacterEditPage() {
               <span>{(characterName.trim()[0] || '?').toUpperCase()}</span>
             )}
           </div>
-          <h3 className="character-page-title">Edition du personnage {characterName.trim() || (id ? `#${id}` : '')}</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <h3 className="character-page-title">Edition du personnage {characterName.trim() || (id ? `#${id}` : '')}</h3>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <button
+                className="btn btn-secondary"
+                type="button"
+                disabled={!id}
+                onClick={() => {
+                  if (!id) return
+                  navigate(`/characters/${id}/view`)
+                }}
+                title="Ouvrir la visualisation (vue session)"
+                aria-label="Ouvrir la visualisation (vue session)"
+              >
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <Eye size={16} aria-hidden="true" />
+                  Visualiser
+                </span>
+              </button>
+            </div>
+          </div>
         </div>
         <div className="tabs-row">
           <button

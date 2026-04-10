@@ -20,6 +20,8 @@ export type ItemDetail = {
   raw?: unknown
   /** `custom` | `dnd5e` — aligné sur le modèle Prisma `Item`. */
   source?: string | null
+  /** Admin : l’API indique si l’objet peut être publié / mis à jour dans « équipements importés ». */
+  canValidateCatalog?: boolean
   isActive?: boolean
   createdAt?: string | null
   updatedAt?: string | null
@@ -114,6 +116,16 @@ function extractArmorClass(value: unknown): { base: number | null; dexBonus: boo
   return { base: null, dexBonus: null }
 }
 
+/** CA affichée : colonne Prisma (mise à jour à l’édition) > properties > raw (snapshot import souvent obsolète). */
+function resolveArmorDisplay(item: ItemDetail): { base: number | null; dexBonus: boolean | null } {
+  const fromProps = extractArmorClass(item.properties)
+  const fromRaw = extractArmorClass(item.raw)
+  const fromColumn = typeof item.armorClass === 'number' && !Number.isNaN(item.armorClass) ? item.armorClass : null
+  const base = fromColumn ?? fromProps.base ?? fromRaw.base ?? null
+  const dexBonus = fromProps.dexBonus ?? fromRaw.dexBonus ?? null
+  return { base, dexBonus }
+}
+
 export function ItemDetailsModal(props: {
   open: boolean
   loading: boolean
@@ -164,12 +176,7 @@ export function ItemDetailsModal(props: {
                     <strong>CA</strong>{' '}
                     <strong>
                       {(() => {
-                        const fromRaw = extractArmorClass(itemDetails.raw)
-                        const fromProps = extractArmorClass(itemDetails.properties)
-                        const base =
-                          fromRaw.base ??
-                          fromProps.base ??
-                          (typeof itemDetails.armorClass === 'number' ? itemDetails.armorClass : null)
+                        const { base } = resolveArmorDisplay(itemDetails)
                         return base ?? '—'
                       })()}
                     </strong>{' '}
@@ -182,9 +189,7 @@ export function ItemDetailsModal(props: {
                       </>
                     ) : null}
                     {(() => {
-                      const fromRaw = extractArmorClass(itemDetails.raw)
-                      const fromProps = extractArmorClass(itemDetails.properties)
-                      const dexBonus = fromRaw.dexBonus ?? fromProps.dexBonus ?? null
+                      const { dexBonus } = resolveArmorDisplay(itemDetails)
                       return dexBonus ? (
                         <span style={{ fontSize: '0.85rem', color: 'var(--muted)', fontWeight: 500 }}>+Dex</span>
                       ) : null

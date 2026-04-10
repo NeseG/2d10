@@ -481,10 +481,10 @@ export function ItemEditModal(props: {
                 className="btn btn-secondary"
                 type="button"
                 disabled={loading || busy}
-                title="Ajoute cet objet à la base utilisée par la liste « équipements importés » (D&amp;D 5e)"
+                title="Enregistre la fiche dans la base « équipements importés » (liste D&amp;D 5e), après tes modifications"
                 onClick={() => onValidateCatalog()}
               >
-                {validateCatalogSaving ? 'Validation…' : 'Valider'}
+                {validateCatalogSaving ? 'Enregistrement…' : 'Valider (catalogue)'}
               </button>
             ) : null}
             {!isCreate && onOpenRemoveConfirm ? (

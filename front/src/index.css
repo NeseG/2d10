@@ -1112,7 +1112,6 @@ tr.inventory-row-drag-over {
   width: 0.9rem;
   height: 0.9rem;
   flex: 0 0 auto;
-  accent-color: var(--rust-bright);
 }
 
 .item-edit-armor-checks {
@@ -1203,7 +1202,6 @@ tr.inventory-row-drag-over {
   width: 0.9rem;
   height: 0.9rem;
   flex: 0 0 auto;
-  accent-color: var(--rust-bright);
 }
 
 @media (max-width: 520px) {
@@ -2692,7 +2690,6 @@ button.initiative-visibility-toggle {
   width: 1.15rem;
   height: 1.15rem;
   cursor: pointer;
-  accent-color: var(--rust-bright);
 }
 
 .grimoire-session-level-body {
@@ -3158,7 +3155,6 @@ button.initiative-visibility-toggle {
 .session-ability-value-prof input[type='checkbox'] {
   width: 1.05rem;
   height: 1.05rem;
-  accent-color: var(--rust-bright);
 }
 
 /* Couleurs par caractéristique — palette grimdark */
@@ -3201,7 +3197,6 @@ button.initiative-visibility-toggle {
 .session-ability-prof input[type='checkbox'] {
   width: 1.05rem;
   height: 1.05rem;
-  accent-color: var(--rust-bright);
 }
 
 /* ── BOURSE ── */
@@ -3282,7 +3277,7 @@ textarea {
   padding: 0.55rem 0.7rem;
 }
 
-input:focus,
+input:focus:not([type='checkbox']):not([type='radio']),
 select:focus,
 textarea:focus {
   outline: none;
@@ -3294,6 +3289,59 @@ input::placeholder,
 textarea::placeholder {
   color: var(--muted);
   opacity: 0.6;
+}
+
+/* Cases à cocher — même vocabulaire que les champs (bordure, surfaces, accent) */
+input[type='checkbox'] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 1.05rem;
+  height: 1.05rem;
+  margin: 0;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: var(--surface-input);
+  cursor: pointer;
+  vertical-align: middle;
+  position: relative;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+input[type='checkbox']:hover {
+  border-color: var(--gold-dim);
+}
+
+input[type='checkbox']:checked {
+  background: var(--rust-bright);
+  border-color: var(--rust-bright);
+}
+
+input[type='checkbox']:checked::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  width: 0.22rem;
+  height: 0.42rem;
+  border: solid var(--bone);
+  border-width: 0 2px 2px 0;
+  transform: translate(-50%, -50%) rotate(45deg);
+  box-sizing: border-box;
+}
+
+input[type='checkbox']:focus-visible {
+  outline: none;
+  border-color: var(--gold-dim);
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+input[type='checkbox']:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* ── SNACKBAR / TOASTS ── */

@@ -1,5 +1,5 @@
 import { Card } from '../../../shared/components/Card'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { apiGet, apiPut } from '../../../shared/api/client'
 import { useAuth } from '../../../app/hooks/useAuth'
 import { useSnackbar } from '../../../app/hooks/useSnackbar'
@@ -16,6 +16,7 @@ export function UsersPage() {
   const { token } = useAuth()
   const { showSnackbar } = useSnackbar()
   const [users, setUsers] = useState<AdminUser[]>([])
+  const [search, setSearch] = useState('')
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [editLoading, setEditLoading] = useState(false)
@@ -43,6 +44,17 @@ export function UsersPage() {
 
     void loadUsers()
   }, [token, showSnackbar])
+
+  const filteredUsers = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return users
+    return users.filter((u) => {
+      const haystack = [u.username, u.email, u.role_name, u.is_active ? 'active' : 'inactive']
+        .join(' ')
+        .toLowerCase()
+      return haystack.includes(q)
+    })
+  }, [search, users])
 
   async function openEditModal(userId: number) {
     setIsEditModalOpen(true)
@@ -103,6 +115,19 @@ export function UsersPage() {
 
   return (
     <Card title="Gestion des utilisateurs">
+      <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '0.75rem' }}>
+        <div className="login-form" style={{ marginTop: 0, minWidth: 260, flex: '1 1 260px' }}>
+          <span className="create-item-kind-label">Rechercher</span>
+          <input
+            id="admin-users-search"
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Username, email, rôle…"
+          />
+        </div>
+      </div>
+
       <div className="table-wrap">
         <table className="table responsive-table">
           <thead>
@@ -114,7 +139,7 @@ export function UsersPage() {
             </tr>
           </thead>
           <tbody>
-            {users.map((user) => (
+            {filteredUsers.map((user) => (
               <tr key={user.id}>
                 <td data-label="Username">{user.username}</td>
                 <td data-label="Email">{user.email}</td>

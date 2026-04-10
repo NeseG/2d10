@@ -1009,10 +1009,16 @@ export function CharacterInventoryTab(props: {
       const props = it.properties
       const magicMirror =
         props != null && typeof props === 'object' && Boolean((props as Record<string, unknown>).dnd5e_magic_item)
-      const isCustomSource =
+      const idx = String(it.index ?? '')
+      const catalogFallbackEligible =
         it.source === 'custom' ||
-        (it.source == null && String(it.index ?? '').includes('__manual__'))
-      setEditItemShowValidateCatalog(Boolean(user?.role === 'admin' && isCustomSource && !magicMirror))
+        (it.source == null && idx.includes('__manual__')) ||
+        (it.source === 'dnd5e' && idx.includes('__copy__'))
+      const canCatalog =
+        it.canValidateCatalog !== undefined && it.canValidateCatalog !== null
+          ? Boolean(it.canValidateCatalog)
+          : catalogFallbackEligible
+      setEditItemShowValidateCatalog(Boolean(user?.role === 'admin' && !magicMirror && canCatalog))
       const armorDexBonus = extractArmorDexBonus(it.raw) || extractArmorDexBonus(it.properties)
       const parsedRange = parseItemRange(it.range)
       setEditItemForm({
@@ -1075,7 +1081,7 @@ export function CharacterInventoryTab(props: {
       setEditItemShowValidateCatalog(false)
       setInventoryLoaded(false)
       showSnackbar({
-        message: 'Objet validé : il est disponible dans la liste des équipements importés.',
+        message: 'Fiche enregistrée dans la base des équipements importés (recherche D&D 5e).',
         severity: 'success',
       })
     } catch (err) {

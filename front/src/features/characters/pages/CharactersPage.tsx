@@ -1,5 +1,5 @@
 import { Card } from '../../../shared/components/Card'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { apiGet, apiPost } from '../../../shared/api/client'
 import { useAuth } from '../../../app/hooks/useAuth'
 import { useSnackbar } from '../../../app/hooks/useSnackbar'
@@ -16,6 +16,7 @@ export function CharactersPage() {
   const { token } = useAuth()
   const { showSnackbar } = useSnackbar()
   const [characters, setCharacters] = useState<CharacterRow[]>([])
+  const [search, setSearch] = useState('')
   const [selectedCharacter, setSelectedCharacter] = useState<CharacterRow | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false)
@@ -68,6 +69,24 @@ export function CharactersPage() {
     void loadCharacters()
   }, [token, showSnackbar])
 
+  const filteredCharacters = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return characters
+    return characters.filter((c) => {
+      const haystack = [
+        c.name,
+        c.ownerUsername ?? '',
+        c.className,
+        c.race,
+        String(c.level),
+        ...c.campaigns.map((x) => x.name),
+      ]
+        .join(' ')
+        .toLowerCase()
+      return haystack.includes(q)
+    })
+  }, [characters, search])
+
   function resetForm() {
     setName('')
     setRace('')
@@ -112,7 +131,18 @@ export function CharactersPage() {
 
   return (
     <Card title="Mes personnages">
-      <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: '0.75rem' }}>
+      <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '0.75rem' }}>
+        <div className="login-form" style={{ marginTop: 0, minWidth: 260, flex: '1 1 260px' }}>
+          <span className="create-item-kind-label">Rechercher</span>
+          <input
+            id="characters-search"
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Nom, joueur, classe, race, campagne…"
+          />
+        </div>
+
         <button className="btn" type="button" onClick={() => setIsModalOpen(true)}>
           Créer un personnage
         </button>
@@ -131,7 +161,7 @@ export function CharactersPage() {
             </tr>
           </thead>
           <tbody>
-            {characters.map((character) => (
+            {filteredCharacters.map((character) => (
               <tr
                 key={character.id}
                 className="clickable-row"

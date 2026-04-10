@@ -6,6 +6,7 @@ import { RegisterPage } from '../features/auth/pages/RegisterPage'
 import { DashboardPage } from '../features/dashboard/pages/DashboardPage'
 import { CharactersPage } from '../features/characters/pages/CharactersPage'
 import { CharacterEditPage } from '../features/characters/pages/CharacterEditPage'
+import { CharacterViewPage } from '../features/characters/pages/CharacterViewPage'
 import { UsersPage } from '../features/users/pages/UsersPage'
 import { CampaignsPage } from '../features/campaigns/pages/CampaignsPage'
 import { CampaignMapEditorPage } from '../features/campaigns/pages/CampaignMapEditorPage'
@@ -25,6 +26,7 @@ export function AppRouter() {
             <Route path="/" element={<DashboardPage />} />
             <Route path="/characters" element={<CharactersPage />} />
             <Route path="/characters/:id/edit" element={<CharacterEditPage />} />
+            <Route path="/characters/:id/view" element={<CharacterViewPage />} />
             <Route path="/sessions" element={<SessionsPage />} />
             <Route path="/options" element={<OptionsPage />} />
             <Route path="/session-live" element={<LiveSessionPage />} />
