@@ -1047,10 +1047,6 @@ export function CharacterCharacteristicsTab(props: {
             <strong>Niveau</strong>
             <div>{form.level?.trim() ? form.level : '—'}</div>
           </div>
-          <div>
-            <strong>Destin</strong>
-            <div>{form.destiny?.trim() ? form.destiny : '—'}</div>
-          </div>
         </div>
       ) : (
         <CharacterIdentityAccordion
@@ -1187,14 +1183,26 @@ export function CharacterCharacteristicsTab(props: {
                 </span>
               </div>
             </div>
+          <div className="session-game-secondary-row">
             <div className="session-game-row session-game-row-ac">
-              <strong>Classe d'armure</strong>
+              <strong>CA</strong>
               <span>{form.armorClass?.trim() ? form.armorClass : '—'}</span>
             </div>
             <div className="session-game-row session-game-row-prof">
               <strong>Maîtrise</strong>
               <span>{formatModifier(proficiencyBonus)}</span>
             </div>
+            <div className="session-game-row session-game-row-destiny">
+              <strong>Destin</strong>
+              <input
+                id="char-destiny"
+                type="number"
+                min={0}
+                value={form.destiny}
+                onChange={(e) => setForm((p) => ({ ...p, destiny: e.target.value }))}
+              />
+            </div>
+          </div>
           </div>
 
           <h4 className="session-ability-title">Caractéristiques</h4>
