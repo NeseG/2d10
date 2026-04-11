@@ -3236,6 +3236,103 @@ button.initiative-visibility-toggle {
   height: 1.05rem;
 }
 
+/* ── RESSOURCES DE CLASSE SESSION ── */
+.session-class-resources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.session-class-resource-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.session-class-resource-label {
+  font-size: 0.65rem;
+  font-family: 'Cinzel', serif;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--resource-color, var(--muted));
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.session-class-resource-icons {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.session-class-resource-icon {
+  display: grid;
+  place-items: center;
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: 2px;
+  border: 1px solid var(--resource-color, var(--border-faint));
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+  padding: 0;
+  color: var(--resource-color, var(--muted));
+}
+
+.session-class-resource-icon.active {
+  background: color-mix(in srgb, var(--resource-color, var(--border-faint)) 20%, transparent);
+  opacity: 1;
+}
+
+.session-class-resource-icon.spent {
+  opacity: 0.25;
+  border-color: var(--border-faint);
+  color: var(--muted);
+}
+
+.session-class-resource-counter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.session-class-resource-counter button {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 2px;
+  border: 1px solid var(--resource-color, var(--border-faint));
+  background: transparent;
+  color: var(--resource-color, var(--muted));
+  cursor: pointer;
+  font-size: 0.9rem;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  line-height: 1;
+}
+
+.session-class-resource-count {
+  font-weight: 700;
+  font-family: 'Cinzel', serif;
+  font-size: 0.9rem;
+  color: var(--bone);
+  min-width: 1.4rem;
+  text-align: center;
+}
+
+.session-class-resource-sep {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.session-class-resource-max {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-family: 'Cinzel', serif;
+}
+
 /* ── BOURSE ── */
 .purse-grid {
   display: grid;

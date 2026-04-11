@@ -6,6 +6,7 @@ import { apiGet, apiPut, apiPutFormData, getApiBaseUrl } from '../../../shared/a
 import { ItemDetailsModal, type ItemDetail } from '../../inventory/components/ItemDetailsModal'
 import type { AuthUser } from '../../../shared/types'
 import { CharacterIdentityAccordion } from './CharacterIdentityAccordion'
+import { Axe, Guitar, Sparkles, Rabbit, ChevronsUp, HandHelping } from 'lucide-react'
 
 const DND_5E_RACES = [
   'Humain',
@@ -90,6 +91,49 @@ const ABILITY_SKILL_DISPLAY: Record<AbilityScoreFormKey, { abbr: string; colorCl
   charisma: { abbr: 'Cha.', colorClass: 'character-skill-ability-cha' },
 }
 
+// ── RESSOURCES DE CLASSE SESSION ──────────────────────────────────────────────
+
+const CLASS_RESOURCE_ICONS = { Axe, Guitar, Sparkles, Rabbit, ChevronsUp, HandHelping } as const
+type ClassResourceIconName = keyof typeof CLASS_RESOURCE_ICONS
+
+type ClassResourceConfig = {
+  key: string
+  label: string
+  type: 'icon' | 'number'
+  icon?: ClassResourceIconName
+  maxFn: (level: number, chaScore: number) => number
+  color: string
+}
+
+const CLASS_RESOURCES_CONFIG: Record<string, ClassResourceConfig[]> = {
+  barbare: [{ key: 'rages', label: 'Rages', type: 'icon', icon: 'Axe', color: 'rgba(200,60,60,0.9)', maxFn: (l) => l >= 17 ? 6 : l >= 12 ? 5 : l >= 6 ? 4 : l >= 3 ? 3 : 2 }],
+  barde: [{ key: 'bardicInspiration', label: 'Inspiration', type: 'icon', icon: 'Guitar', color: 'rgba(160,80,200,0.9)', maxFn: (_, cha) => Math.max(1, Math.floor((cha - 10) / 2)) }],
+  clerc: [{ key: 'channelDivinity', label: 'Conduit Divin', type: 'icon', icon: 'Sparkles', color: 'rgba(220,180,60,0.9)', maxFn: (l) => l >= 18 ? 3 : l >= 6 ? 2 : 1 }],
+  druide: [{ key: 'wildShape', label: 'Forme Sauvage', type: 'icon', icon: 'Rabbit', color: 'rgba(60,160,80,0.9)', maxFn: () => 2 }],
+  guerrier: [{ key: 'actionSurge', label: 'Action Héroïque', type: 'icon', icon: 'ChevronsUp', color: 'rgba(80,130,210,0.9)', maxFn: (l) => l >= 17 ? 2 : 1 }],
+  moine: [{ key: 'ki', label: 'Points de Ki', type: 'number', color: 'rgba(80,190,200,0.9)', maxFn: (l) => l }],
+  paladin: [
+    { key: 'channelDivinity', label: 'Conduit Divin', type: 'icon', icon: 'Sparkles', color: 'rgba(220,180,60,0.9)', maxFn: (l) => l >= 18 ? 3 : l >= 6 ? 2 : 1 },
+    { key: 'layOnHands', label: 'Impos. des mains', type: 'number', icon: 'HandHelping', color: 'rgba(220,120,160,0.9)', maxFn: (l) => l * 5 },
+  ],
+  magicien: [{ key: 'arcanicRecovery', label: 'Récup. Arcanique', type: 'icon', icon: 'Sparkles', color: 'rgba(100,140,220,0.9)', maxFn: () => 1 }],
+}
+
+function detectClassKey(className: string): string {
+  const c = (className ?? '').toLowerCase().trim()
+  if (c.includes('barbar')) return 'barbare'
+  if (c.includes('barde') || c.startsWith('bard')) return 'barde'
+  if (c.includes('clerc') || c.includes('cleric')) return 'clerc'
+  if (c.includes('druide') || c.includes('druid')) return 'druide'
+  if (c.includes('guerrier') || c.includes('fighter')) return 'guerrier'
+  if (c.includes('moine') || c.includes('monk')) return 'moine'
+  if (c.includes('paladin')) return 'paladin'
+  if (c.includes('magicien') || c.includes('wizard')) return 'magicien'
+  return ''
+}
+
+// ── FIN RESSOURCES DE CLASSE ───────────────────────────────────────────────────
+
 type CharacterDetail = {
   id: number
   userId?: number | null
@@ -118,6 +162,7 @@ type CharacterDetail = {
   description?: string | null
   notes?: string | null
   destiny?: number | null
+  classResources?: Record<string, number> | null
   avatar_url?: string | null
   skills?: Array<{
     skill: string
@@ -171,6 +216,7 @@ function buildCharacteristicsPersistSnapshot(
   form: CharacteristicsFormFields,
   skillsState: SkillsStateMap,
   savingThrowsState: SavingThrowsStateMap,
+  classResources: Record<string, number>,
 ): string {
   const st = ['STRENGTH', 'DEXTERITY', 'CONSTITUTION', 'INTELLIGENCE', 'WISDOM', 'CHARISMA'].map((ability) => [
     ability,
@@ -183,12 +229,14 @@ function buildCharacteristicsPersistSnapshot(
       sessionId,
       currentHitPoints: form.currentHitPoints,
       hitDiceRemaining: form.hitDiceRemaining,
+      destiny: form.destiny,
       strength: form.strength,
       dexterity: form.dexterity,
       constitution: form.constitution,
       intelligence: form.intelligence,
       wisdom: form.wisdom,
       charisma: form.charisma,
+      classResources,
       st,
     })
   }
@@ -422,12 +470,16 @@ export function CharacterCharacteristicsTab(props: {
     }, {}),
   )
 
+  const [classResources, setClassResources] = useState<Record<string, number>>({})
+
   const formRef = useRef(form)
   const skillsStateRef = useRef(skillsState)
   const savingThrowsStateRef = useRef(savingThrowsState)
+  const classResourcesRef = useRef(classResources)
   formRef.current = form
   skillsStateRef.current = skillsState
   savingThrowsStateRef.current = savingThrowsState
+  classResourcesRef.current = classResources
 
   const onNameLoadedRef = useRef(onNameLoaded)
   onNameLoadedRef.current = onNameLoaded
@@ -480,7 +532,7 @@ export function CharacterCharacteristicsTab(props: {
   }, [sessionConsumables, sessionView])
 
   const persistCharacteristicsPayload = useCallback(
-    async (f: CharacteristicsFormFields, sk: SkillsStateMap, sv: SavingThrowsStateMap) => {
+    async (f: CharacteristicsFormFields, sk: SkillsStateMap, sv: SavingThrowsStateMap, cr: Record<string, number>) => {
       if (sessionView && sessionId) {
         await apiPut(
           `/api/sessions/${sessionId}/characters/${characterId}/state`,
@@ -493,12 +545,14 @@ export function CharacterCharacteristicsTab(props: {
         await apiPut(
           `/api/characters/${characterId}`,
           {
+            destiny: numberOrUndefined(f.destiny) ?? 3,
             strength: numberOrUndefined(f.strength),
             dexterity: numberOrUndefined(f.dexterity),
             constitution: numberOrUndefined(f.constitution),
             intelligence: numberOrUndefined(f.intelligence),
             wisdom: numberOrUndefined(f.wisdom),
             charisma: numberOrUndefined(f.charisma),
+            classResources: cr,
             savingThrows: ['STRENGTH', 'DEXTERITY', 'CONSTITUTION', 'INTELLIGENCE', 'WISDOM', 'CHARISMA'].map((ability) => ({
               ability,
               proficient: Boolean(sv[ability]?.proficient),
@@ -541,6 +595,7 @@ export function CharacterCharacteristicsTab(props: {
           charisma: numberOrUndefined(f.charisma),
           description: f.description.trim() || undefined,
           notes: f.notes.trim() || undefined,
+          classResources: cr,
           skills: DND_5E_SKILLS_FR.map((item) => {
             const entry = sk[item.key]
             let mastery: 'NOT_PROFICIENT' | 'PROFICIENT' | 'EXPERTISE' = 'NOT_PROFICIENT'
@@ -610,6 +665,10 @@ export function CharacterCharacteristicsTab(props: {
           description: c.description ?? '',
           notes: c.notes ?? '',
         })
+
+        if (c.classResources && typeof c.classResources === 'object') {
+          setClassResources(c.classResources as Record<string, number>)
+        }
 
         if (!sessionView) {
           const existingOwnerId =
@@ -779,12 +838,13 @@ export function CharacterCharacteristicsTab(props: {
         form as CharacteristicsFormFields,
         skillsState,
         savingThrowsState,
+        classResources,
       )
       wasLoadingRef.current = false
     } else if (loading) {
       wasLoadingRef.current = true
     }
-  }, [loading, characterId, sessionView, sessionId, form, skillsState, savingThrowsState])
+  }, [loading, characterId, sessionView, sessionId, form, skillsState, savingThrowsState, classResources])
 
   useEffect(() => {
     if (loading) return
@@ -795,6 +855,7 @@ export function CharacterCharacteristicsTab(props: {
       form as CharacteristicsFormFields,
       skillsState,
       savingThrowsState,
+      classResources,
     )
     if (key === lastPersistedKeyRef.current) return
     if (!sessionView && !form.name.trim()) return
@@ -804,11 +865,12 @@ export function CharacterCharacteristicsTab(props: {
         const f = formRef.current as CharacteristicsFormFields
         const sk = skillsStateRef.current
         const sv = savingThrowsStateRef.current
+        const cr = classResourcesRef.current
         if (!sessionView && !f.name.trim()) return
-        const k = buildCharacteristicsPersistSnapshot(characterId, sessionView, sessionId, f, sk, sv)
+        const k = buildCharacteristicsPersistSnapshot(characterId, sessionView, sessionId, f, sk, sv, cr)
         if (k === lastPersistedKeyRef.current) return
         try {
-          await persistCharacteristicsPayload(f, sk, sv)
+          await persistCharacteristicsPayload(f, sk, sv, cr)
           lastPersistedKeyRef.current = k
         } catch (err) {
           showSnackbar({
@@ -823,6 +885,7 @@ export function CharacterCharacteristicsTab(props: {
     form,
     skillsState,
     savingThrowsState,
+    classResources,
     loading,
     characterId,
     sessionView,
@@ -836,12 +899,13 @@ export function CharacterCharacteristicsTab(props: {
       const f = formRef.current as CharacteristicsFormFields
       const sk = skillsStateRef.current
       const sv = savingThrowsStateRef.current
-      const k = buildCharacteristicsPersistSnapshot(characterId, sessionView, sessionId, f, sk, sv)
+      const cr = classResourcesRef.current
+      const k = buildCharacteristicsPersistSnapshot(characterId, sessionView, sessionId, f, sk, sv, cr)
       if (k === lastPersistedKeyRef.current) return
       if (!sessionView && !f.name.trim()) return
       void (async () => {
         try {
-          await persistCharacteristicsPayload(f, sk, sv)
+          await persistCharacteristicsPayload(f, sk, sv, cr)
           lastPersistedKeyRef.current = k
         } catch {
           /* démontage / navigation */
@@ -1204,6 +1268,82 @@ export function CharacterCharacteristicsTab(props: {
             </div>
           </div>
           </div>
+
+          {(() => {
+            const classKey = detectClassKey(form.class)
+            const resources = CLASS_RESOURCES_CONFIG[classKey] ?? []
+            if (resources.length === 0) return null
+            const level = Math.max(1, Number(form.level) || 1)
+            const chaScore = Number(form.charisma) || 10
+            return (
+              <div className="session-class-resources">
+                {resources.map((resource) => {
+                  const maxVal = resource.maxFn(level, chaScore)
+                  const currentVal = classResources[resource.key] ?? maxVal
+                  const IconComp = resource.icon ? CLASS_RESOURCE_ICONS[resource.icon] : null
+                  if (resource.type === 'number') {
+                    return (
+                      <div
+                        key={resource.key}
+                        className="session-class-resource-group"
+                        style={{ '--resource-color': resource.color } as React.CSSProperties}
+                      >
+                        <strong className="session-class-resource-label">
+                          {IconComp && <IconComp size={12} aria-hidden="true" />}
+                          {resource.label}
+                        </strong>
+                        <div className="session-class-resource-counter">
+                          <button
+                            type="button"
+                            onClick={() => setClassResources((cr) => ({ ...cr, [resource.key]: Math.max(0, (cr[resource.key] ?? maxVal) - 1) }))}
+                          >−</button>
+                          <span className="session-class-resource-count">{currentVal}</span>
+                          <span className="session-class-resource-sep">/</span>
+                          <span className="session-class-resource-max">{maxVal}</span>
+                          <button
+                            type="button"
+                            onClick={() => setClassResources((cr) => ({ ...cr, [resource.key]: Math.min(maxVal, (cr[resource.key] ?? maxVal) + 1) }))}
+                          >+</button>
+                        </div>
+                      </div>
+                    )
+                  }
+                  return (
+                    <div
+                      key={resource.key}
+                      className="session-class-resource-group"
+                      style={{ '--resource-color': resource.color } as React.CSSProperties}
+                    >
+                      <strong className="session-class-resource-label">{resource.label}</strong>
+                      <div className="session-class-resource-icons">
+                        {Array.from({ length: maxVal }, (_, i) => {
+                          const isActive = i < currentVal
+                          return (
+                            <button
+                              key={i}
+                              type="button"
+                              className={`session-class-resource-icon${isActive ? ' active' : ' spent'}`}
+                              title={isActive ? 'Dépenser' : 'Récupérer'}
+                              onClick={() =>
+                                setClassResources((cr) => ({
+                                  ...cr,
+                                  [resource.key]: isActive
+                                    ? Math.max(0, (cr[resource.key] ?? maxVal) - 1)
+                                    : Math.min(maxVal, (cr[resource.key] ?? maxVal) + 1),
+                                }))
+                              }
+                            >
+                              {IconComp && <IconComp size={15} aria-hidden="true" />}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })()}
 
           <h4 className="session-ability-title">Caractéristiques</h4>
           <div className="session-ability-grid">

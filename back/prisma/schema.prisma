@@ -133,6 +133,8 @@ model Character {
   notes           String?
   /// Points de Destin (système maison) — défaut 3 à la création
   destiny         Int      @default(3)
+  /// Ressources de classe pour la session (rages, ki, inspirations bardiques…)
+  classResources  Json?    @map("class_resources")
   isActive        Boolean  @default(true)
   skills          CharacterSkill[]
   savingThrows    CharacterSavingThrow[]

@@ -206,6 +206,8 @@ export function CharacterGrimoireTab(props: {
 
   const [spellcastingAbility, setSpellcastingAbility] = useState<AbilityName | ''>('')
   const [characterLevel, setCharacterLevel] = useState<number | null>(null)
+  const [characterClass, setCharacterClass] = useState<string>('')
+  const [classResources, setClassResources] = useState<Record<string, number>>({})
   const [abilityScores, setAbilityScores] = useState<Partial<Record<'strength' | 'dexterity' | 'constitution' | 'intelligence' | 'wisdom' | 'charisma', number>>>({})
 
   const [spellSlotsDraft, setSpellSlotsDraft] = useState<Record<number, { slotsMax: string }>>(() =>
@@ -330,6 +332,8 @@ export function CharacterGrimoireTab(props: {
           character: {
             spellSlots?: Array<{ level: number; slotsMax: number }>
             level?: number | null
+            class?: string | null
+            classResources?: Record<string, number> | null
             strength?: number | null
             dexterity?: number | null
             constitution?: number | null
@@ -356,6 +360,10 @@ export function CharacterGrimoireTab(props: {
         const ability = (response.character?.spellcastingAbility ?? response.character?.spellcasting_ability) ?? null
         setSpellcastingAbility(ability ? ability : '')
         setCharacterLevel(response.character?.level != null ? Number(response.character.level) : null)
+        setCharacterClass(response.character?.class ?? '')
+        if (response.character?.classResources && typeof response.character.classResources === 'object') {
+          setClassResources(response.character.classResources)
+        }
         setAbilityScores({
           strength: response.character?.strength ?? undefined,
           dexterity: response.character?.dexterity ?? undefined,
@@ -929,6 +937,38 @@ export function CharacterGrimoireTab(props: {
               </span>
             </span>
           </p>
+          {(() => {
+            const c = (characterClass ?? '').toLowerCase().trim()
+            const isSorcerer = c.includes('ensorcel') || c.includes('sorcer') || c.includes('sorcier') || c.includes('warlock')
+            if (!isSorcerer) return null
+            const level = Math.max(1, characterLevel ?? 1)
+            const maxSP = level >= 2 ? level : 0
+            if (maxSP === 0) return null
+            const currentSP = classResources['sorceryPoints'] ?? maxSP
+            const saveSorceryPoints = async (next: number) => {
+              const nextCr = { ...classResources, sorceryPoints: next }
+              setClassResources(nextCr)
+              try {
+                await apiPut(`/api/characters/${characterId}`, { classResources: nextCr }, token)
+              } catch {
+                /* ignore */
+              }
+            }
+            return (
+              <div className="session-class-resources" style={{ marginBottom: '0.5rem' }}>
+                <div className="session-class-resource-group" style={{ '--resource-color': 'rgba(160,80,200,0.9)' } as React.CSSProperties}>
+                  <strong className="session-class-resource-label">Points de sorcellerie</strong>
+                  <div className="session-class-resource-counter">
+                    <button type="button" onClick={() => void saveSorceryPoints(Math.max(0, currentSP - 1))}>−</button>
+                    <span className="session-class-resource-count">{currentSP}</span>
+                    <span className="session-class-resource-sep">/</span>
+                    <span className="session-class-resource-max">{maxSP}</span>
+                    <button type="button" onClick={() => void saveSorceryPoints(Math.min(maxSP, currentSP + 1))}>+</button>
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
           <div className="inventory-search-row">
             <input
               className="inventory-search-input"

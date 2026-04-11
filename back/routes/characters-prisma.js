@@ -735,6 +735,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
       spellcastingAbility,
       spellcasting_ability,
       destiny,
+      classResources,
     } = req.body;
 
     let ownerPatch = {};
@@ -798,6 +799,9 @@ router.put('/:id', authenticateToken, async (req, res) => {
           ...(normalizedSpellcastingAbility !== undefined ? { spellcastingAbility: normalizedSpellcastingAbility } : {}),
           ...(destiny !== undefined
             ? { destiny: parseDestinyInput(destiny) ?? existingCharacter.destiny }
+            : {}),
+          ...(classResources !== undefined && classResources !== null && typeof classResources === 'object'
+            ? { classResources }
             : {}),
           updatedAt: new Date(),
         },
