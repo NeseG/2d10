@@ -217,7 +217,20 @@ router.get('/active', authenticateToken, async (req, res) => {
       role === 'admin'
         ? { isActive: true, campaign: { isActive: true } }
         : role === 'gm'
-          ? { isActive: true, campaign: { isActive: true, gmId: userId } }
+          ? {
+              isActive: true,
+              OR: [
+                { campaign: { isActive: true, gmId: userId } },
+                {
+                  campaign: {
+                    isActive: true,
+                    characters: {
+                      some: { isActive: true, character: { userId, isActive: true } },
+                    },
+                  },
+                },
+              ],
+            }
           : {
               isActive: true,
               campaign: {

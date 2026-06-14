@@ -288,6 +288,22 @@ body {
   border-radius: 2px;
 }
 
+.badge-homebrew {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-family: 'Cinzel', serif;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 0.1rem 0.4rem;
+  border-radius: 2px;
+  border: 1px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  color: var(--accent);
+  vertical-align: middle;
+  margin-left: 0.4rem;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
 /* ── PAGE CONTENT ── */
 .page-content {
   padding: 1.25rem;
@@ -3423,6 +3439,18 @@ input::placeholder,
 textarea::placeholder {
   color: var(--muted);
   opacity: 0.6;
+}
+
+/* Neutralise le fond blanc imposé par le navigateur lors de l'autofill / sélection datalist */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active,
+select:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 1000px var(--surface-input) inset !important;
+  -webkit-text-fill-color: var(--text) !important;
+  caret-color: var(--text);
+  border-color: var(--border) !important;
 }
 
 /* Cases à cocher — même vocabulaire que les champs (bordure, surfaces, accent) */

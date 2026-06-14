@@ -163,7 +163,7 @@ router.post('/users', async (req, res) => {
 router.put('/users/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { username, email, role, is_active } = req.body;
+    const { username, email, role, is_active, password } = req.body;
     const userId = parseInt(id);
     
     if (isNaN(userId)) {
@@ -198,6 +198,16 @@ router.put('/users/:id', async (req, res) => {
     if (email) updateData.email = email;
     if (roleId) updateData.roleId = roleId;
     if (typeof is_active === 'boolean') updateData.isActive = is_active;
+
+    const passwordStr =
+      password !== undefined && password !== null ? String(password).trim() : '';
+    if (passwordStr.length > 0) {
+      if (passwordStr.length < 6) {
+        return res.status(400).json({ error: 'Le mot de passe doit contenir au moins 6 caractères' });
+      }
+      const saltRounds = 10;
+      updateData.passwordHash = await bcrypt.hash(passwordStr, saltRounds);
+    }
 
     if (Object.keys(updateData).length === 0) {
       return res.status(400).json({ error: 'Aucune donnée à mettre à jour' });

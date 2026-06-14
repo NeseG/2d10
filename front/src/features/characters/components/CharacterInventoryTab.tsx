@@ -1947,7 +1947,12 @@ export function CharacterInventoryTab(props: {
                             title="Cliquer pour la fiche complète"
                             onClick={() => void openDndCatalogEquipmentDetail(eq.index)}
                           >
-                            <td>{eq.name}</td>
+                            <td>
+                              {eq.name}
+                              {eq.index.startsWith('validated-item-') && (
+                                <span className="badge-homebrew">Maison</span>
+                              )}
+                            </td>
                             <td>{translateItemType(eq.type)}</td>
                             <td>
                               <button

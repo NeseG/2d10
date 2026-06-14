@@ -1457,7 +1457,12 @@ export function CharacterGrimoireTab(props: {
                   <tbody>
                     {dndSpellItems.map((s) => (
                       <tr key={s.index} className="clickable-row" onClick={() => void openDndImportSpellDetail(s.index)}>
-                        <td data-label="Nom">{s.name}</td>
+                        <td data-label="Nom">
+                          {s.name}
+                          {s.index.startsWith('validated-spell-') && (
+                            <span className="badge-homebrew">Maison</span>
+                          )}
+                        </td>
                         <td data-label="Niveau">{s.level ?? '—'}</td>
                         <td data-label="École">{s.school ?? '—'}</td>
                         <td data-label="" onClick={(event) => event.stopPropagation()}>

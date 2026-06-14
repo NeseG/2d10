@@ -140,7 +140,7 @@ export function CampaignMapEditorPage() {
     try {
       await apiDelete(`/api/campaigns/${campaignId}/maps/${mapId}`, token)
       showSnackbar({ message: 'Carte supprimée.', severity: 'success' })
-      navigate('/campaigns')
+      navigate(`/campaigns/${campaignId}`)
     } catch (err) {
       showSnackbar({
         message: err instanceof Error ? err.message : 'Suppression impossible',
@@ -176,8 +176,8 @@ export function CampaignMapEditorPage() {
     <Card title="Édition de carte">
       {Number.isNaN(campaignId) || Number.isNaN(mapId) ? <p>Paramètres invalides.</p> : null}
       <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
-        <button className="btn btn-secondary" type="button" onClick={() => navigate('/campaigns')}>
-          Retour campagnes
+        <button className="btn btn-secondary" type="button" onClick={() => navigate(`/campaigns/${campaignId}`)}>
+          Retour campagne
         </button>
         <button className="btn" type="button" onClick={() => void saveStates()} disabled={saving || loading || !map}>
           {saving ? 'Sauvegarde…' : 'Sauvegarder'}

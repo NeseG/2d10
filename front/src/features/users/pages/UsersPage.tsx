@@ -27,6 +27,8 @@ export function UsersPage() {
     email: '',
     role: 'user',
     is_active: true,
+    new_password: '',
+    new_password_confirm: '',
   })
 
   useEffect(() => {
@@ -69,6 +71,8 @@ export function UsersPage() {
         email: u.email ?? '',
         role: u.role_name ?? 'user',
         is_active: Boolean(u.is_active),
+        new_password: '',
+        new_password_confirm: '',
       })
     } catch (err) {
       showSnackbar({
@@ -83,18 +87,39 @@ export function UsersPage() {
   async function handleSaveUser(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (editUserId == null) return
+
+    const pwd = editForm.new_password.trim()
+    const pwdConfirm = editForm.new_password_confirm.trim()
+    if (pwd.length > 0 || pwdConfirm.length > 0) {
+      if (pwd.length < 6) {
+        showSnackbar({
+          message: 'Le nouveau mot de passe doit contenir au moins 6 caractères.',
+          severity: 'error',
+        })
+        return
+      }
+      if (pwd !== pwdConfirm) {
+        showSnackbar({
+          message: 'Les mots de passe ne correspondent pas.',
+          severity: 'error',
+        })
+        return
+      }
+    }
+
     setEditSaving(true)
     try {
-      await apiPut(
-        `/api/admin/users/${editUserId}`,
-        {
-          username: editForm.username.trim(),
-          email: editForm.email.trim(),
-          role: editForm.role,
-          is_active: Boolean(editForm.is_active),
-        },
-        token,
-      )
+      const body: Record<string, unknown> = {
+        username: editForm.username.trim(),
+        email: editForm.email.trim(),
+        role: editForm.role,
+        is_active: Boolean(editForm.is_active),
+      }
+      if (pwd.length > 0) {
+        body.password = pwd
+      }
+
+      await apiPut(`/api/admin/users/${editUserId}`, body, token)
 
       showSnackbar({ message: 'Utilisateur mis à jour.', severity: 'success' })
       setIsEditModalOpen(false)
@@ -211,6 +236,34 @@ export function UsersPage() {
                 />
                 Actif
               </label>
+
+              <p className="create-item-kind-label" style={{ marginTop: '0.75rem', marginBottom: '0.25rem' }}>
+                Nouveau mot de passe (optionnel)
+              </p>
+              <p style={{ fontSize: '0.85rem', opacity: 0.85, margin: '0 0 0.5rem' }}>
+                Laisser vide pour conserver le mot de passe actuel. Remplir les deux champs pour le remplacer.
+              </p>
+              <label htmlFor="edit-user-new-password">Nouveau mot de passe</label>
+              <input
+                id="edit-user-new-password"
+                type="password"
+                autoComplete="new-password"
+                disabled={editLoading || editSaving}
+                value={editForm.new_password}
+                onChange={(event) => setEditForm((p) => ({ ...p, new_password: event.target.value }))}
+                placeholder="Minimum 6 caractères"
+              />
+
+              <label htmlFor="edit-user-new-password-confirm">Confirmer le mot de passe</label>
+              <input
+                id="edit-user-new-password-confirm"
+                type="password"
+                autoComplete="new-password"
+                disabled={editLoading || editSaving}
+                value={editForm.new_password_confirm}
+                onChange={(event) => setEditForm((p) => ({ ...p, new_password_confirm: event.target.value }))}
+                placeholder="Répéter le mot de passe"
+              />
 
               <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
                 <button className="btn" type="submit" disabled={editLoading || editSaving}>

@@ -9,6 +9,7 @@ import { CharacterEditPage } from '../features/characters/pages/CharacterEditPag
 import { CharacterViewPage } from '../features/characters/pages/CharacterViewPage'
 import { UsersPage } from '../features/users/pages/UsersPage'
 import { CampaignsPage } from '../features/campaigns/pages/CampaignsPage'
+import { CampaignPage } from '../features/campaigns/pages/CampaignPage'
 import { CampaignMapEditorPage } from '../features/campaigns/pages/CampaignMapEditorPage'
 import { SessionsPage } from '../features/sessions/pages/SessionsPage'
 import { OptionsPage } from '../features/sessions/pages/OptionsPage'
@@ -36,6 +37,7 @@ export function AppRouter() {
             </Route>
             <Route element={<ProtectedRoute allowedRoles={['admin', 'gm']} />}>
               <Route path="/campaigns" element={<CampaignsPage />} />
+              <Route path="/campaigns/:campaignId" element={<CampaignPage />} />
               <Route path="/campaigns/:campaignId/maps/:mapId/edit" element={<CampaignMapEditorPage />} />
             </Route>
           </Route>

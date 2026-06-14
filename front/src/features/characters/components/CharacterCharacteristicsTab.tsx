@@ -6,7 +6,7 @@ import { apiGet, apiPut, apiPutFormData, getApiBaseUrl } from '../../../shared/a
 import { ItemDetailsModal, type ItemDetail } from '../../inventory/components/ItemDetailsModal'
 import type { AuthUser } from '../../../shared/types'
 import { CharacterIdentityAccordion } from './CharacterIdentityAccordion'
-import { Axe, Guitar, Sparkles, Rabbit, ChevronsUp, HandHelping } from 'lucide-react'
+import { Axe, Guitar, Sparkles, Rabbit, ChevronsUp, HandHelping, Target, ScrollText } from 'lucide-react'
 
 const DND_5E_RACES = [
   'Humain',
@@ -93,7 +93,7 @@ const ABILITY_SKILL_DISPLAY: Record<AbilityScoreFormKey, { abbr: string; colorCl
 
 // ── RESSOURCES DE CLASSE SESSION ──────────────────────────────────────────────
 
-const CLASS_RESOURCE_ICONS = { Axe, Guitar, Sparkles, Rabbit, ChevronsUp, HandHelping } as const
+const CLASS_RESOURCE_ICONS = { Axe, Guitar, Sparkles, Rabbit, ChevronsUp, HandHelping, Target, ScrollText } as const
 type ClassResourceIconName = keyof typeof CLASS_RESOURCE_ICONS
 
 type ClassResourceConfig = {
@@ -129,6 +129,40 @@ function detectClassKey(className: string): string {
   if (c.includes('moine') || c.includes('monk')) return 'moine'
   if (c.includes('paladin')) return 'paladin'
   if (c.includes('magicien') || c.includes('wizard')) return 'magicien'
+  return ''
+}
+
+// ── RESSOURCES D'ARCHÉTYPE SESSION ────────────────────────────────────────────
+
+
+const ARCHETYPE_RESOURCES_CONFIG: Record<string, ClassResourceConfig[]> = {
+  // Guerrier — Archer Arcanique
+  'archer-arcanique': [
+    { key: 'arcanicShot', label: 'Tir Arcanique', type: 'icon', icon: 'Target', color: 'rgba(60,180,120,0.9)', maxFn: () => 2 },
+  ],
+  // Guerrier — Chevalier Runique
+  'chevalier-runique': [
+    { key: 'runicInvocation', label: 'Invoc. Runique', type: 'icon', icon: 'ScrollText', color: 'rgba(200,160,60,0.9)', maxFn: (l) => l >= 18 ? 2 : 1 },
+  ],
+  // Guerrier — Guerrier Psy
+  'guerrier-psy': [
+    { key: 'psionicEnergy', label: 'Dés Psioniques', type: 'number', icon: 'Sparkles', color: 'rgba(140,80,220,0.9)', maxFn: (l) => l >= 17 ? 12 : l >= 13 ? 10 : l >= 9 ? 8 : l >= 5 ? 6 : 4 },
+  ],
+  // Moine — Voie des Ombres
+  'voie-des-ombres': [],  // Ki déjà tracké
+  // Barbare — Voie de la Magie Sauvage
+  'magie-sauvage-barbare': [
+    { key: 'magicAwareness', label: 'Éveil Magique', type: 'icon', icon: 'Sparkles', color: 'rgba(180,80,200,0.9)', maxFn: (l) => Math.ceil(l / 4) },
+  ],
+}
+
+function detectArchetypeKey(archetypeName: string): string {
+  const a = (archetypeName ?? '').toLowerCase().trim()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  if (a.includes('archer arcanique') || a.includes('arcane archer')) return 'archer-arcanique'
+  if (a.includes('runique') || a.includes('rune knight')) return 'chevalier-runique'
+  if (a.includes('psi') || a.includes('guerrier psy')) return 'guerrier-psy'
+  if (a.includes('magie sauvage') && !a.includes('origine')) return 'magie-sauvage-barbare'
   return ''
 }
 
@@ -1332,6 +1366,68 @@ export function CharacterCharacteristicsTab(props: {
                                     : Math.min(maxVal, (cr[resource.key] ?? maxVal) + 1),
                                 }))
                               }
+                            >
+                              {IconComp && <IconComp size={15} aria-hidden="true" />}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })()}
+
+          {(() => {
+            const archetypeKey = detectArchetypeKey(form.archetype)
+            const resources = (ARCHETYPE_RESOURCES_CONFIG[archetypeKey] ?? []).filter(
+              (r) => r.maxFn(Math.max(1, Number(form.level) || 1), Number(form.charisma) || 10) > 0,
+            )
+            if (resources.length === 0) return null
+            const level = Math.max(1, Number(form.level) || 1)
+            const chaScore = Number(form.charisma) || 10
+            return (
+              <div className="session-class-resources">
+                {resources.map((resource) => {
+                  const maxVal = resource.maxFn(level, chaScore)
+                  const currentVal = classResources[resource.key] ?? maxVal
+                  const IconComp = resource.icon ? CLASS_RESOURCE_ICONS[resource.icon] : null
+                  if (resource.type === 'number') {
+                    return (
+                      <div key={resource.key} className="session-class-resource-group" style={{ '--resource-color': resource.color } as React.CSSProperties}>
+                        <strong className="session-class-resource-label">
+                          {IconComp && <IconComp size={12} aria-hidden="true" />}
+                          {resource.label}
+                        </strong>
+                        <div className="session-class-resource-counter">
+                          <button type="button" onClick={() => setClassResources((cr) => ({ ...cr, [resource.key]: Math.max(0, (cr[resource.key] ?? maxVal) - 1) }))}>−</button>
+                          <span className="session-class-resource-count">{currentVal}</span>
+                          <span className="session-class-resource-sep">/</span>
+                          <span className="session-class-resource-max">{maxVal}</span>
+                          <button type="button" onClick={() => setClassResources((cr) => ({ ...cr, [resource.key]: Math.min(maxVal, (cr[resource.key] ?? maxVal) + 1) }))}>+</button>
+                        </div>
+                      </div>
+                    )
+                  }
+                  return (
+                    <div key={resource.key} className="session-class-resource-group" style={{ '--resource-color': resource.color } as React.CSSProperties}>
+                      <strong className="session-class-resource-label">{resource.label}</strong>
+                      <div className="session-class-resource-icons">
+                        {Array.from({ length: maxVal }, (_, i) => {
+                          const isActive = i < currentVal
+                          return (
+                            <button
+                              key={i}
+                              type="button"
+                              className={`session-class-resource-icon${isActive ? ' active' : ' spent'}`}
+                              title={isActive ? 'Dépenser' : 'Récupérer'}
+                              onClick={() => setClassResources((cr) => ({
+                                ...cr,
+                                [resource.key]: isActive
+                                  ? Math.max(0, (cr[resource.key] ?? maxVal) - 1)
+                                  : Math.min(maxVal, (cr[resource.key] ?? maxVal) + 1),
+                              }))}
                             >
                               {IconComp && <IconComp size={15} aria-hidden="true" />}
                             </button>

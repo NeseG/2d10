@@ -333,6 +333,7 @@ model Campaign {
   isActive      Boolean  @default(true)
   characters    CampaignCharacter[]
   sessions      GameSession[]
+  mapFolders    CampaignMapFolder[]
   maps          CampaignMap[]
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -340,10 +341,35 @@ model Campaign {
   @@map("campaigns")
 }
 
+model CampaignMapFolder {
+  id         Int      @id @default(autoincrement())
+  campaignId Int
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  parentId Int? @map("parent_id")
+  parent   CampaignMapFolder? @relation("CampaignMapFolderTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children CampaignMapFolder[] @relation("CampaignMapFolderTree")
+
+  name      String
+  sortOrder Int     @default(0) @map("sort_order")
+
+  maps CampaignMap[]
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([campaignId, parentId, sortOrder])
+  @@map("campaign_map_folders")
+}
+
 model CampaignMap {
   id         Int      @id @default(autoincrement())
   campaignId Int
   campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  folderId Int? @map("folder_id")
+  folder   CampaignMapFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
 
   name     String
   imageKey String  @map("image_key")
@@ -354,11 +380,12 @@ model CampaignMap {
 
   activeSessions GameSession[] @relation("ActiveMap")
 
+  sortOrder Int     @default(0) @map("sort_order")
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([campaignId, id])
+  @@index([campaignId, folderId, sortOrder, id])
   @@map("campaign_maps")
 }
 

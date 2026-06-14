@@ -79,8 +79,8 @@ router.get('/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// POST /api/spells (admin/gm) -> créer un nouveau sort custom
-router.post('/', authenticateToken, requireRole(['admin', 'gm']), async (req, res) => {
+// POST /api/spells -> créer un nouveau sort custom (tout utilisateur connecté)
+router.post('/', authenticateToken, async (req, res) => {
   try {
     const {
       index,

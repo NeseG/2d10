@@ -1,3 +1,154 @@
+// ── ARCHÉTYPES D&D 5e ────────────────────────────────────────────────────────
+
+const DND_5E_ARCHETYPES: Record<string, string[]> = {
+  barbare: [
+    'Voie du Berserker',
+    'Voie du Guerrier Totem',
+    'Voie de la Magie Sauvage',
+    'Voie de la Bête',
+    'Voie des Tempêtes',
+    'Voie des Zéalotes',
+    'Voie du Ravageur',
+  ],
+  barde: [
+    'Collège du Savoir',
+    'Collège de la Vaillance',
+    'Collège de la Création',
+    'Collège de l\'Éloquence',
+    'Collège du Glamour',
+    'Collège des Murmures',
+    'Collège de l\'Épée',
+  ],
+  clerc: [
+    'Domaine de la Vie',
+    'Domaine de la Lumière',
+    'Domaine de la Guerre',
+    'Domaine des Tempêtes',
+    'Domaine des Tromperies',
+    'Domaine de la Connaissance',
+    'Domaine de la Nature',
+    'Domaine de la Mort',
+    'Domaine de la Forge',
+    'Domaine de la Tombe',
+    'Domaine de l\'Ordre',
+    'Domaine de la Paix',
+    'Domaine du Crépuscule',
+    'Domaine Arcanique',
+  ],
+  druide: [
+    'Cercle de la Lune',
+    'Cercle de la Terre',
+    'Cercle des Rêves',
+    'Cercle du Berger',
+    'Cercle des Spores',
+    'Cercle des Étoiles',
+    'Cercle des Feux Follets',
+  ],
+  guerrier: [
+    'Champion',
+    'Maître des Combats',
+    'Chevalier Eldritch',
+    'Sorcelame',
+    'Archer Arcanique',
+    'Cavalier',
+    'Samouraï',
+    'Guerrier Psy',
+    'Chevalier Runique',
+    'Chevalier du Dragon Pourpre',
+  ],
+  moine: [
+    'Voie de la Main Ouverte',
+    'Voie des Ombres',
+    'Voie des Quatre Éléments',
+    'Voie du Soleil',
+    'Voie du Kensai',
+    'Voie de la Miséricorde',
+    'Voie de l\'Esprit Astral',
+    'Voie de l\'Ivrogne',
+  ],
+  paladin: [
+    'Serment de Dévotion',
+    'Serment des Anciens',
+    'Serment de Vengeance',
+    'Serment de Conquête',
+    'Serment de Rédemption',
+    'Serment de Gloire',
+    'Serment du Gardien',
+    'Paladin Sans Serment',
+  ],
+  rodeur: [
+    'Chasseur',
+    'Maître des Bêtes',
+    'Traqueur des Ombres',
+    'Marcheur des Horizons',
+    'Pourfendeur de Monstres',
+    'Essaimeur',
+    'Vagabond des Fées',
+  ],
+  roublard: [
+    'Escroc',
+    'Assassin',
+    'Trickster Arcanique',
+    'Bretteur',
+    'Inquisiteur',
+    'Fantôme',
+    'Éclaireur',
+    'Lame-Âme',
+  ],
+  ensorceleur: [
+    'Origine Draconique',
+    'Magie Sauvage',
+    'Âme Divine',
+    'Magie des Ombres',
+    'Magie des Tempêtes',
+    'Âme Aberrante',
+    'Âme Mécanique',
+  ],
+  sorcier: [
+    'Le Fieffé',
+    'Le Grand Ancien',
+    'L\'Archifée',
+    'La Lame Maudite',
+    'La Céleste',
+    'Le Génie',
+    'L\'Être des Abysses',
+  ],
+  magicien: [
+    'École d\'Abjuration',
+    'École de Conjuration',
+    'École de Divination',
+    'École d\'Enchantement',
+    'École d\'Évocation',
+    'École d\'Illusion',
+    'École de Nécromancie',
+    'École de Transmutation',
+    'Lame Chantante',
+    'Ordre des Scribes',
+    'Chronurgie',
+    'Graviturgie',
+  ],
+}
+
+function classToArchetypeKey(className: string): string {
+  const c = (className ?? '').toLowerCase().trim()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  if (c.includes('barbar')) return 'barbare'
+  if (c.includes('barde') || c.startsWith('bard')) return 'barde'
+  if (c.includes('clerc') || c.includes('cleric')) return 'clerc'
+  if (c.includes('druide') || c.includes('druid')) return 'druide'
+  if (c.includes('guerrier') || c.includes('fighter')) return 'guerrier'
+  if (c.includes('moine') || c.includes('monk')) return 'moine'
+  if (c.includes('paladin')) return 'paladin'
+  if (c.includes('rodeur') || c.includes('ranger') || c.includes('rôdeur')) return 'rodeur'
+  if (c.includes('roublard') || c.includes('rogue')) return 'roublard'
+  if (c.includes('ensorcel') || c.includes('sorcer')) return 'ensorceleur'
+  if (c.includes('sorcier') || c.includes('warlock')) return 'sorcier'
+  if (c.includes('magicien') || c.includes('wizard')) return 'magicien'
+  return ''
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 type CharacterIdentityAccordionProps = {
   form: {
     name: string
@@ -92,7 +243,7 @@ export function CharacterIdentityAccordion(props: CharacterIdentityAccordionProp
               type="text"
               list="dnd-classes"
               value={form.class}
-              onChange={(e) => setForm((p) => ({ ...p, class: e.target.value }))}
+              onChange={(e) => setForm((p) => ({ ...p, class: e.target.value, archetype: '' }))}
             />
           </div>
 
@@ -101,9 +252,15 @@ export function CharacterIdentityAccordion(props: CharacterIdentityAccordionProp
             <input
               id="char-archetype"
               type="text"
+              list="dnd-archetypes"
               value={form.archetype}
               onChange={(e) => setForm((p) => ({ ...p, archetype: e.target.value }))}
             />
+            <datalist id="dnd-archetypes">
+              {(DND_5E_ARCHETYPES[classToArchetypeKey(form.class)] ?? []).map((a) => (
+                <option key={a} value={a} />
+              ))}
+            </datalist>
           </div>
 
           <div>

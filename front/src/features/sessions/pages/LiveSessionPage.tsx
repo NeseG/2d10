@@ -158,9 +158,9 @@ export function LiveSessionPage() {
           sessionDate: detail.session_date ?? session.session_date ?? null,
         })
         const attendance = Array.isArray(detail.attendance) ? detail.attendance : []
-        const isOwner = user.role === 'admin' || user.role === 'gm' || detail.gm_id === user.id
+        const isOwner = user.role === 'admin' || detail.gm_id === user.id
         const mine = attendance.filter((entry) => entry.character_user_id === user.id)
-        const initial = isOwner ? attendance[0] : mine[0]
+        const initial = isOwner ? attendance[0] : (mine[0] ?? attendance[0])
         if (initial) {
           setSelectedCharacterId(String(initial.character_id))
           setSelectedCharacterName(initial.character_name ?? '')
@@ -186,7 +186,7 @@ export function LiveSessionPage() {
 
   const isSessionOwner = useMemo(() => {
     if (!user) return false
-    if (user.role === 'admin' || user.role === 'gm') return true
+    if (user.role === 'admin') return true
     return sessionDetail?.gm_id === user.id
   }, [sessionDetail?.gm_id, user])
 

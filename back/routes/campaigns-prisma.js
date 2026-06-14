@@ -42,13 +42,28 @@ function formatCampaignMap(map) {
   return {
     id: map.id,
     campaign_id: map.campaignId,
+    folder_id: map.folderId ?? null,
     name: map.name,
     image_url: mapImagePath(map.campaignId, map.id),
     fog_state: map.fogState ?? null,
     tokens_state: map.tokensState ?? null,
     is_active: map.isActive,
+    sort_order: map.sortOrder ?? 0,
     created_at: map.createdAt,
     updated_at: map.updatedAt,
+  };
+}
+
+function formatCampaignMapFolder(folder) {
+  return {
+    id: folder.id,
+    campaign_id: folder.campaignId,
+    parent_id: folder.parentId ?? null,
+    name: folder.name,
+    sort_order: folder.sortOrder ?? 0,
+    is_active: folder.isActive,
+    created_at: folder.createdAt,
+    updated_at: folder.updatedAt,
   };
 }
 
@@ -348,6 +363,179 @@ router.get('/:campaignId', authenticateToken, async (req, res) => {
 // Note: pour l'instant, l'accès est volontairement limité à GM/Admin.
 // L'accès joueur sera ouvert plus tard via la partie sessions-live.
 
+// === Dossiers de cartes ===
+router.get('/:campaignId/map-folders', authenticateToken, checkCampaignOwnership, async (req, res) => {
+  try {
+    const campaignId = parseInt(req.params.campaignId, 10);
+    if (Number.isNaN(campaignId)) return res.status(400).json({ error: 'ID de campagne invalide' });
+
+    const folders = await prisma.campaignMapFolder.findMany({
+      where: { campaignId, isActive: true },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+    });
+
+    return res.json({ success: true, folders: folders.map(formatCampaignMapFolder) });
+  } catch (error) {
+    console.error('Erreur lors de la récupération des dossiers de cartes:', error);
+    return res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+router.post('/:campaignId/map-folders', authenticateToken, checkCampaignOwnership, async (req, res) => {
+  try {
+    const campaignId = parseInt(req.params.campaignId, 10);
+    if (Number.isNaN(campaignId)) return res.status(400).json({ error: 'ID de campagne invalide' });
+
+    const name = (req.body?.name ?? '').toString().trim();
+    if (!name) return res.status(400).json({ error: 'Nom de dossier requis' });
+    if (name.length > 200) return res.status(400).json({ error: 'Nom de dossier trop long' });
+
+    const parentIdRaw = req.body?.parent_id ?? req.body?.parentId ?? null;
+    const parentId = parentIdRaw == null || parentIdRaw === '' ? null : parseInt(parentIdRaw, 10);
+    if (parentIdRaw != null && parentIdRaw !== '' && Number.isNaN(parentId)) {
+      return res.status(400).json({ error: 'parent_id invalide' });
+    }
+
+    if (parentId != null) {
+      const parent = await prisma.campaignMapFolder.findFirst({
+        where: { id: parentId, campaignId, isActive: true },
+        select: { id: true },
+      });
+      if (!parent) return res.status(404).json({ error: 'Dossier parent introuvable' });
+    }
+
+    const max = await prisma.campaignMapFolder.aggregate({
+      where: { campaignId, parentId, isActive: true },
+      _max: { sortOrder: true },
+    });
+    const nextSort = (max?._max?.sortOrder ?? 0) + 1;
+
+    const created = await prisma.campaignMapFolder.create({
+      data: { campaignId, parentId, name, sortOrder: nextSort },
+    });
+
+    return res.status(201).json({ success: true, folder: formatCampaignMapFolder(created) });
+  } catch (error) {
+    console.error('Erreur lors de la création du dossier de cartes:', error);
+    return res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+async function folderIsDescendant({ folderId, possibleAncestorId }) {
+  // Returns true if folderId is a descendant of possibleAncestorId
+  if (folderId == null || possibleAncestorId == null) return false;
+  if (folderId === possibleAncestorId) return true;
+  const visited = new Set();
+  let current = folderId;
+  while (current != null) {
+    if (visited.has(current)) return true; // cycle protection
+    visited.add(current);
+    const row = await prisma.campaignMapFolder.findUnique({
+      where: { id: current },
+      select: { parentId: true },
+    });
+    const p = row?.parentId ?? null;
+    if (p == null) return false;
+    if (p === possibleAncestorId) return true;
+    current = p;
+  }
+  return false;
+}
+
+router.put('/:campaignId/map-folders/:folderId', authenticateToken, checkCampaignOwnership, async (req, res) => {
+  try {
+    const campaignId = parseInt(req.params.campaignId, 10);
+    const folderId = parseInt(req.params.folderId, 10);
+    if (Number.isNaN(campaignId) || Number.isNaN(folderId)) return res.status(400).json({ error: 'ID invalide' });
+
+    const existing = await prisma.campaignMapFolder.findFirst({
+      where: { id: folderId, campaignId, isActive: true },
+    });
+    if (!existing) return res.status(404).json({ error: 'Dossier introuvable' });
+
+    const updateData = {};
+
+    if (req.body?.name !== undefined) {
+      const name = (req.body.name ?? '').toString().trim();
+      if (!name) return res.status(400).json({ error: 'Nom de dossier requis' });
+      if (name.length > 200) return res.status(400).json({ error: 'Nom de dossier trop long' });
+      updateData.name = name;
+    }
+
+    if (req.body?.parent_id !== undefined || req.body?.parentId !== undefined) {
+      const parentIdRaw = req.body?.parent_id ?? req.body?.parentId ?? null;
+      const parentId = parentIdRaw == null || parentIdRaw === '' ? null : parseInt(parentIdRaw, 10);
+      if (parentIdRaw != null && parentIdRaw !== '' && Number.isNaN(parentId)) {
+        return res.status(400).json({ error: 'parent_id invalide' });
+      }
+      if (parentId === folderId) return res.status(400).json({ error: 'parent_id invalide' });
+
+      if (parentId != null) {
+        const parent = await prisma.campaignMapFolder.findFirst({
+          where: { id: parentId, campaignId, isActive: true },
+          select: { id: true },
+        });
+        if (!parent) return res.status(404).json({ error: 'Dossier parent introuvable' });
+        const isBad = await folderIsDescendant({ folderId: parentId, possibleAncestorId: folderId });
+        if (isBad) return res.status(400).json({ error: 'Déplacement impossible (cycle)' });
+      }
+
+      updateData.parentId = parentId;
+    }
+
+    if (req.body?.sort_order !== undefined || req.body?.sortOrder !== undefined) {
+      const raw = req.body?.sort_order ?? req.body?.sortOrder;
+      const n = parseInt(raw, 10);
+      if (Number.isNaN(n)) return res.status(400).json({ error: 'sort_order invalide' });
+      updateData.sortOrder = n;
+    }
+
+    if (Object.keys(updateData).length === 0) return res.status(400).json({ error: 'Aucune donnée à mettre à jour' });
+
+    const updated = await prisma.campaignMapFolder.update({ where: { id: existing.id }, data: updateData });
+    return res.json({ success: true, folder: formatCampaignMapFolder(updated) });
+  } catch (error) {
+    console.error('Erreur lors de la mise à jour du dossier de cartes:', error);
+    return res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+router.delete('/:campaignId/map-folders/:folderId', authenticateToken, checkCampaignOwnership, async (req, res) => {
+  try {
+    const campaignId = parseInt(req.params.campaignId, 10);
+    const folderId = parseInt(req.params.folderId, 10);
+    if (Number.isNaN(campaignId) || Number.isNaN(folderId)) return res.status(400).json({ error: 'ID invalide' });
+
+    const existing = await prisma.campaignMapFolder.findFirst({
+      where: { id: folderId, campaignId, isActive: true },
+      select: { id: true, parentId: true },
+    });
+    if (!existing) return res.status(404).json({ error: 'Dossier introuvable' });
+
+    const parentId = existing.parentId ?? null;
+
+    await prisma.$transaction([
+      prisma.campaignMapFolder.updateMany({
+        where: { campaignId, parentId: folderId, isActive: true },
+        data: { parentId },
+      }),
+      prisma.campaignMap.updateMany({
+        where: { campaignId, folderId, isActive: true },
+        data: { folderId: parentId },
+      }),
+      prisma.campaignMapFolder.update({
+        where: { id: folderId },
+        data: { isActive: false },
+      }),
+    ]);
+
+    return res.json({ success: true, message: 'Dossier supprimé' });
+  } catch (error) {
+    console.error('Erreur lors de la suppression du dossier de cartes:', error);
+    return res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 router.get('/:campaignId/maps/:mapId/image', authenticateToken, checkCampaignOwnership, async (req, res) => {
   try {
     const campaignId = parseInt(req.params.campaignId, 10);
@@ -400,7 +588,7 @@ router.get('/:campaignId/maps', authenticateToken, checkCampaignOwnership, async
 
     const maps = await prisma.campaignMap.findMany({
       where: { campaignId, isActive: true },
-      orderBy: { createdAt: 'asc' },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
     });
 
     return res.json({
@@ -465,13 +653,34 @@ router.post('/:campaignId/maps', authenticateToken, checkCampaignOwnership, mapI
     const fogState = parseMaybeJson(req.body?.fog_state ?? req.body?.fogState ?? null);
     const tokensState = parseMaybeJson(req.body?.tokens_state ?? req.body?.tokensState ?? null);
 
+    const folderIdRaw = req.body?.folder_id ?? req.body?.folderId ?? null;
+    const folderId = folderIdRaw == null || folderIdRaw === '' ? null : parseInt(folderIdRaw, 10);
+    if (folderIdRaw != null && folderIdRaw !== '' && Number.isNaN(folderId)) {
+      return res.status(400).json({ error: 'folder_id invalide' });
+    }
+    if (folderId != null) {
+      const folder = await prisma.campaignMapFolder.findFirst({
+        where: { id: folderId, campaignId, isActive: true },
+        select: { id: true },
+      });
+      if (!folder) return res.status(404).json({ error: 'Dossier introuvable' });
+    }
+
+    const max = await prisma.campaignMap.aggregate({
+      where: { campaignId, folderId, isActive: true },
+      _max: { sortOrder: true },
+    });
+    const nextSort = (max?._max?.sortOrder ?? 0) + 1;
+
     const created = await prisma.campaignMap.create({
       data: {
         campaignId,
+        folderId,
         name,
         imageKey: req.file.filename,
         fogState,
         tokensState,
+        sortOrder: nextSort,
       },
     });
 
@@ -527,6 +736,37 @@ router.put('/:campaignId/maps/:mapId', authenticateToken, checkCampaignOwnership
 
     if (req.body?.tokens_state !== undefined || req.body?.tokensState !== undefined) {
       updateData.tokensState = parseMaybeJson(req.body?.tokens_state ?? req.body?.tokensState ?? null);
+    }
+
+    if (req.body?.folder_id !== undefined || req.body?.folderId !== undefined) {
+      const folderIdRaw = req.body?.folder_id ?? req.body?.folderId ?? null;
+      const folderId = folderIdRaw == null || folderIdRaw === '' ? null : parseInt(folderIdRaw, 10);
+      if (folderIdRaw != null && folderIdRaw !== '' && Number.isNaN(folderId)) {
+        return res.status(400).json({ error: 'folder_id invalide' });
+      }
+      if (folderId != null) {
+        const folder = await prisma.campaignMapFolder.findFirst({
+          where: { id: folderId, campaignId, isActive: true },
+          select: { id: true },
+        });
+        if (!folder) return res.status(404).json({ error: 'Dossier introuvable' });
+      }
+      updateData.folderId = folderId;
+      // if moving folder and sort is not provided, put at end
+      if (req.body?.sort_order === undefined && req.body?.sortOrder === undefined) {
+        const max = await prisma.campaignMap.aggregate({
+          where: { campaignId, folderId, isActive: true },
+          _max: { sortOrder: true },
+        });
+        updateData.sortOrder = (max?._max?.sortOrder ?? 0) + 1;
+      }
+    }
+
+    if (req.body?.sort_order !== undefined || req.body?.sortOrder !== undefined) {
+      const raw = req.body?.sort_order ?? req.body?.sortOrder;
+      const n = parseInt(raw, 10);
+      if (Number.isNaN(n)) return res.status(400).json({ error: 'sort_order invalide' });
+      updateData.sortOrder = n;
     }
 
     if (Object.keys(updateData).length === 0) {
