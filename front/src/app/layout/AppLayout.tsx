@@ -4,10 +4,12 @@ import { Sidebar } from './Sidebar'
 import { useEffect, useState } from 'react'
 import { HeaderProvider } from '../providers/HeaderProvider'
 import { HeaderTopbarSession } from './HeaderTopbarSession'
+import { LanguageToggle } from './LanguageToggle'
 
 export function AppLayout() {
   const { user, logout } = useAuth()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('sidebar_collapsed') === 'true')
   const [hasJoinedSession, setHasJoinedSession] = useState(() => Boolean(localStorage.getItem('joined_session')))
 
   useEffect(() => {
@@ -20,11 +22,19 @@ export function AppLayout() {
     }
   }, [])
 
+  function toggleSidebar() {
+    setSidebarCollapsed((prev) => {
+      const next = !prev
+      localStorage.setItem('sidebar_collapsed', String(next))
+      return next
+    })
+  }
+
   if (!user) return null
 
   return (
     <HeaderProvider>
-      <div className="app-shell">
+      <div className={`app-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
         <Sidebar
           role={user.role}
           hasJoinedSession={hasJoinedSession}
@@ -44,9 +54,20 @@ export function AppLayout() {
               >
                 ☰
               </button>
+              <button
+                className="sidebar-toggle-btn"
+                type="button"
+                aria-label={sidebarCollapsed ? 'Afficher le menu' : 'Masquer le menu'}
+                onClick={toggleSidebar}
+              >
+                {sidebarCollapsed ? '›' : '‹'}
+              </button>
               <strong>{user.username}</strong> <span className="badge">{user.role}</span>
             </div>
-            <HeaderTopbarSession />
+            <div className="topbar-right">
+              <LanguageToggle />
+              <HeaderTopbarSession />
+            </div>
           </header>
           <main className="page-content">
             <Outlet />

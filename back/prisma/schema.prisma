@@ -533,6 +533,16 @@ model Dnd5eSpellImport {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
+  // Traduction française (référentiel bilingue) — nulle tant que non traduite, fallback EN côté front.
+  nameFr        String?
+  schoolFr      String?
+  castingTimeFr String?
+  rangeFr       String?
+  componentsFr  String?
+  durationFr    String?
+  descriptionFr String?
+  higherLevelFr String?
+
   @@map("dnd5e_spells_import")
 }
 
@@ -582,9 +592,50 @@ model DndMonster {
   challengeRating String?
   xp              Int?
   description     String?
+  raw             Json?
   createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Traduction française (référentiel bilingue) — nulle tant que non traduite, fallback EN côté front.
+  nameFr        String?
+  sizeFr        String?
+  typeFr        String?
+  subtypeFr     String?
+  alignmentFr   String?
+  speedFr       String?
+  descriptionFr String?
 
   @@map("dnd_monsters")
+}
+
+model Monster {
+  id              Int      @id @default(autoincrement())
+  slug            String   @unique
+  name            String
+  size            String?
+  type            String?
+  subtype         String?
+  alignment       String?
+  armorClass      Int?
+  hitPoints       Int?
+  hitDice         String?
+  speed           String?
+  strength        Int?
+  dexterity       Int?
+  constitution    Int?
+  intelligence    Int?
+  wisdom          Int?
+  charisma        Int?
+  challengeRating String?
+  xp              Int?
+  description     String?
+  source          String? // 'dnd5e' | 'custom'
+  raw             Json?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("monsters")
 }
 
 model DndWeapon {
@@ -662,6 +713,13 @@ model Dnd5eEquipment {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  // Traduction française (référentiel bilingue) — nulle tant que non traduite, fallback EN côté front.
+  nameFr        String?
+  categoryFr    String?
+  subcategoryFr String?
+  descriptionFr String?
+  damageTypeFr  String?
+
   @@map("dnd5e_equipment")
 }
 
@@ -697,6 +755,12 @@ model Dnd5eMagicItem {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // Traduction française (référentiel bilingue) — nulle tant que non traduite, fallback EN côté front.
+  nameFr         String?
+  categoryNameFr String?
+  rarityFr       String?
+  descriptionFr  String? @db.Text
 
   @@map("dnd5e_magic_items")
 }

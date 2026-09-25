@@ -1,4 +1,6 @@
+import { useLanguage } from '../../../app/hooks/useLanguage'
 import { MarkdownContent } from '../../../shared/components/MarkdownContent'
+import { pickLang } from '../../../shared/utils/pickLang'
 
 export type SpellDetail = {
   id: number
@@ -17,6 +19,15 @@ export type SpellDetail = {
   concentration?: boolean | null
   source?: string | null
   raw?: unknown
+  // Traduction FR du référentiel importé (absent pour les sorts du grimoire / custom)
+  nameFr?: string | null
+  schoolFr?: string | null
+  castingTimeFr?: string | null
+  rangeFr?: string | null
+  componentsFr?: string | null
+  durationFr?: string | null
+  descriptionFr?: string | null
+  higherLevelFr?: string | null
 }
 
 function formatSpellClassesName(spell: SpellDetail): string {
@@ -82,11 +93,20 @@ export function SpellDetailsModal(props: {
     onDeleteFromImportedCatalog,
     deleteFromImportedCatalogSaving = false,
   } = props
+  const { language } = useLanguage()
   if (!open) return null
 
   const busy = loading || deleteFromImportedCatalogSaving
   const damageTypeLabel = !loading && spellDetails ? getSpellDamageType(spellDetails) : null
-  const hasHigherLevel = !loading && spellDetails ? Boolean(String(spellDetails.higherLevel ?? '').trim()) : false
+  const displayName = spellDetails ? pickLang(language, spellDetails.nameFr, spellDetails.name) : null
+  const displaySchool = spellDetails ? pickLang(language, spellDetails.schoolFr, spellDetails.school) : null
+  const displayCastingTime = spellDetails ? pickLang(language, spellDetails.castingTimeFr, spellDetails.castingTime) : null
+  const displayRange = spellDetails ? pickLang(language, spellDetails.rangeFr, spellDetails.range) : null
+  const displayDuration = spellDetails ? pickLang(language, spellDetails.durationFr, spellDetails.duration) : null
+  const displayComponents = spellDetails ? pickLang(language, spellDetails.componentsFr, spellDetails.components) : null
+  const displayDescription = spellDetails ? pickLang(language, spellDetails.descriptionFr, spellDetails.description) : null
+  const displayHigherLevel = spellDetails ? pickLang(language, spellDetails.higherLevelFr, spellDetails.higherLevel) : null
+  const hasHigherLevel = !loading && spellDetails ? Boolean(displayHigherLevel?.trim()) : false
 
   return (
     <div
@@ -100,7 +120,7 @@ export function SpellDetailsModal(props: {
             <div className="item-details-header">
               <div>
                 <div className="item-details-header-name" style={{ fontSize: '1.12rem' }}>
-                  {spellDetails.name}
+                  {displayName ?? spellDetails.name}
                 </div>
                 <div className="item-details-header-submeta">{formatSpellClassesName(spellDetails)}</div>
               </div>
@@ -109,25 +129,25 @@ export function SpellDetailsModal(props: {
                   {spellDetails.level == null ? '—' : spellDetails.level === 0 ? 'Niveau 0' : `Niveau ${spellDetails.level}`}
                 </span>
                 <span className="item-details-header-type" style={{ fontSize: '0.78rem', opacity: 0.92 }}>
-                  {spellDetails.school ?? '—'}
+                  {displaySchool ?? '—'}
                 </span>
               </div>
             </div>
 
             <div className="item-details">
               <p>
-                <strong>{spellDetails.castingTime?.trim() ? spellDetails.castingTime : '—'}</strong>
+                <strong>{displayCastingTime?.trim() ? displayCastingTime : '—'}</strong>
                 <span style={{ color: 'var(--muted)' }}> · </span>
                 <span style={{ fontSize: '0.85rem', color: 'var(--muted)', fontWeight: 500 }}>
-                  {spellDetails.range?.trim() ? spellDetails.range : '—'}
+                  {displayRange?.trim() ? displayRange : '—'}
                 </span>
                 <span style={{ color: 'var(--muted)' }}> · </span>
                 <span style={{ fontSize: '0.85rem', color: 'var(--muted)', fontWeight: 500 }}>
-                  {spellDetails.duration?.trim() ? spellDetails.duration : '—'}
+                  {displayDuration?.trim() ? displayDuration : '—'}
                 </span>
                 <span style={{ color: 'var(--muted)' }}> · </span>
                 <span style={{ fontSize: '0.85rem', color: 'var(--muted)', fontWeight: 500 }}>
-                  {spellDetails.components?.trim() ? spellDetails.components : '—'}
+                  {displayComponents?.trim() ? displayComponents : '—'}
                 </span>
                 {damageTypeLabel ? (
                   <>
@@ -161,14 +181,14 @@ export function SpellDetailsModal(props: {
             />
 
             <div className="item-details">
-              <MarkdownContent content={spellDetails.description} />
+              <MarkdownContent content={displayDescription} />
             </div>
             {hasHigherLevel ? (
               <div className="item-details">
                 <p>
-                  <strong>Higher level</strong>
+                  <strong>{language === 'fr' ? 'Aux niveaux supérieurs' : 'Higher level'}</strong>
                 </p>
-                <MarkdownContent content={spellDetails.higherLevel} />
+                <MarkdownContent content={displayHigherLevel} />
               </div>
             ) : null}
           </>

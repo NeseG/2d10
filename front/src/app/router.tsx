@@ -14,6 +14,7 @@ import { CampaignMapEditorPage } from '../features/campaigns/pages/CampaignMapEd
 import { SessionsPage } from '../features/sessions/pages/SessionsPage'
 import { OptionsPage } from '../features/sessions/pages/OptionsPage'
 import { LiveSessionPage } from '../features/sessions/pages/LiveSessionPage'
+import { ReferentielPage } from '../features/referentiel/pages/ReferentielPage'
 
 export function AppRouter() {
   return (
@@ -39,6 +40,7 @@ export function AppRouter() {
               <Route path="/campaigns" element={<CampaignsPage />} />
               <Route path="/campaigns/:campaignId" element={<CampaignPage />} />
               <Route path="/campaigns/:campaignId/maps/:mapId/edit" element={<CampaignMapEditorPage />} />
+              <Route path="/referentiel" element={<ReferentielPage />} />
             </Route>
           </Route>
         </Route>

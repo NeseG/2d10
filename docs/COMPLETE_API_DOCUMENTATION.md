@@ -1,6 +1,6 @@
 # 📚 Documentation Complète API 2d10 - D&D Character Management System
 
-**Note :** le préfixe `/api/dnd` (proxy Open5e) n’existe plus. Référence à jour : **`/api/dnd-local`**, **`/api/dnd5e`**, **`/api/spells`**. Les données SRD importées sont chargées via les scripts `npm run import-dnd5e-*` (voir aussi [`README_DND_INTEGRATION.md`](./README_DND_INTEGRATION.md) si présent).
+**Note :** le préfixe `/api/dnd` (proxy Open5e) n’existe plus. Référence à jour : **`/api/dnd-local`**, **`/api/dnd5e`**, **`/api/spells`**, **`/api/monsters`**. Les données SRD importées sont chargées via les scripts `npm run import-dnd5e-*` (voir aussi [`README_DND_INTEGRATION.md`](./README_DND_INTEGRATION.md) si présent).
 
 **Code source des routes :** répertoire `back/routes/*-prisma.js`, montage dans `back/index-prisma.js`. WebSockets : `back/ws/session-chat.js`, `session-initiative.js`, `session-map.js`.
 
@@ -63,11 +63,17 @@
 - [Équipement importé](#équipement-importé-dnd5e)
 - [Objets magiques importés](#objets-magiques-importés-dnd5e)
 - [Sorts importés (catalogue)](#sorts-importés-catalogue-dnd5e)
+- [Monstres importés (catalogue)](#monstres-importés-catalogue-dnd5e)
 - [Copie vers personnage (admin/gm)](#copie-vers-personnage-admingm)
 
 ### ✨ Sorts applicatifs (`/api/spells`)
 - [Liste et détail](#sorts-applicatifs-api-spells)
 - [Création / mise à jour](#création-et-mise-à-jour-de-sort)
+
+### 🐉 Monstres applicatifs (`/api/monsters`)
+- [Liste et détail](#monstres-applicatifs-api-monsters)
+- [Création / mise à jour](#création-et-mise-à-jour-de-monstre-mj--admin-uniquement)
+- [Validation catalogue (admin)](#valider-un-monstre-custom-pour-le-catalogue-importé-admin)
 
 ### 🏠 Données D&D Locales
 - [Sorts locaux](#sorts-locaux)
@@ -111,8 +117,9 @@ Entrée processus : **`back/index-prisma.js`** (`npm start`, `npm run dev` dans 
 | `/api/grimoire` | `routes/grimoire-prisma.js` |
 | `/api/sessions` | `routes/sessions-prisma.js` |
 | `/api/users` | `routes/users-prisma.js` |
-| `/api/dnd5e` | `routes/dnd5e-equipment-prisma.js`, `dnd5e-magic-items-prisma.js`, `dnd5e-spells-prisma.js` (trois routeurs sur le même préfixe) |
+| `/api/dnd5e` | `routes/dnd5e-equipment-prisma.js`, `dnd5e-magic-items-prisma.js`, `dnd5e-spells-prisma.js`, `dnd5e-monsters-prisma.js` (quatre routeurs sur le même préfixe) |
 | `/api/spells` | `routes/spells-prisma.js` |
+| `/api/monsters` | `routes/monsters-prisma.js` |
 
 > **Ordre des routes :** les chemins statiques (`…/stats/overview`, etc.) sont enregistrés *avant* les routes paramétrées (`:id`, `:campaignId`) pour éviter qu’un segment littéral soit capturé comme identifiant.
 
@@ -1023,6 +1030,16 @@ DELETE /api/dnd5e/spells/:index
 
 `DELETE` : supprime une entrée du catalogue **`dnd5e_spells_import`** (rôles **admin** ou **gm**). Les sorts applicatifs (`Spell`) et entrées de grimoire déjà créés à partir de cet import ne sont pas supprimés.
 
+### Monstres importés (catalogue D&D 5e)
+
+```
+GET /api/dnd5e/monsters?limit=20&page=1&q=&type=&challenge_rating=
+GET /api/dnd5e/monsters/:slug
+DELETE /api/dnd5e/monsters/:slug
+```
+
+Alimenté par `npm run import-dnd5e-monsters` (upsert sur `slug`, table `dnd_monsters`). `DELETE` : rôles **admin** ou **gm**, ne supprime pas les monstres applicatifs (`Monster`) déjà copiés.
+
 ### Copie vers personnage (admin / gm)
 
 Toutes les routes ci-dessous : **`Authorization: Bearer`** + rôle **admin** ou **gm**.
@@ -1102,6 +1119,46 @@ Authorization: Bearer <token_admin>
 
 ---
 
+## 🐉 Monstres applicatifs (`/api/monsters`)
+
+Même pattern que les sorts applicatifs : copies issues des imports (`source: dnd5e`), monstres **custom** créés par un MJ/admin (`source: custom`), validables ensuite vers le catalogue commun.
+
+### Liste et détail
+
+```
+GET /api/monsters?q=&type=&challenge_rating=&limit=&page=
+GET /api/monsters/:id
+```
+
+### Création et mise à jour de monstre (MJ / admin uniquement)
+
+```
+POST /api/monsters
+Authorization: Bearer <admin_or_gm_token>
+```
+
+Corps minimal : `name` (obligatoire). Champs optionnels : `slug`, `size`, `type`, `subtype`, `alignment`, `armorClass`, `hitPoints`, `hitDice`, `speed`, `strength`, `dexterity`, `constitution`, `intelligence`, `wisdom`, `charisma`, `challengeRating`, `xp`, `description`, `raw`.
+
+```
+PUT /api/monsters/:id
+Authorization: Bearer <admin_or_gm_token>
+```
+
+Réservé aux rôles **admin** / **gm** (pas d'équivalent « personnage propriétaire » comme pour le grimoire — l'usage en session n'est pas encore implémenté).
+
+### Valider un monstre custom pour le catalogue « importé » (admin)
+
+Publie le monstre (`source: custom`) dans la table **`dnd_monsters`** (même base que la liste `GET /api/dnd5e/monsters`), avec un slug stable `validated-monster-<id>`, puis passe le monstre applicatif en `source: dnd5e`. Idempotent (ré-appel = mise à jour de la ligne import).
+
+```
+POST /api/monsters/:id/validate-catalog
+Authorization: Bearer <token_admin>
+```
+
+**Admin uniquement.** Réponse : `item` (monstre mis à jour), `dnd_monster` (aperçu de la ligne catalogue).
+
+---
+
 ## 🏠 Données D&D Locales (`/api/dnd-local`)
 
 Données complémentaires en base (monstres, armes, armures, vue `dnd_items`, etc.). Les réponses listes utilisent souvent `success`, `data`, `count`, `page`, `limit`.
@@ -1157,6 +1214,7 @@ GET /api/dnd-local/stats
 - **`/api/dnd-local/*`** (listes) : `success`, `data`, `count`, `page`, `limit`.
 - **`/api/dnd5e/*`** (listes paginées) : `items`, `pagination` avec `total`, `totalPages`.
 - **`/api/spells`** : `items`, `pagination` ou `item` selon la route.
+- **`/api/monsters`** : `items`, `pagination` ou `item` selon la route.
 - Les champs métier sont en **camelCase** côté Prisma (ex. `castingTime`, `higherLevel`) dans les JSON renvoyés par l’API applicative.
 
 ### Format de réponse d'erreur

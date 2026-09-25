@@ -20,6 +20,7 @@ const navItemsCore: NavItem[] = [
   { to: '/characters', label: 'Mes personnages' },
   { to: '/users', label: 'Gestion utilisateurs', roles: ['admin'] },
   { to: '/campaigns', label: 'Gestion campagnes', roles: ['admin', 'gm'] },
+  { to: '/referentiel', label: 'Référentiel', roles: ['admin', 'gm'] },
   { to: '/sessions', label: 'Gestion sessions' },
 ]
 

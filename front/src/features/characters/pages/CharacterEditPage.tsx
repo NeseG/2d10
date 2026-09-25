@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Activity, Backpack, BookMarked, Cat, Clover, Eye, ScrollText } from 'lucide-react'
+import { Activity, Backpack, BookMarked, Cat, Clover, Eye, FileDown, ScrollText } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Card } from '../../../shared/components/Card'
 import { useAuth } from '../../../app/hooks/useAuth'
@@ -11,6 +11,7 @@ import { CharacterGrimoireTab } from '../components/CharacterGrimoireTab'
 import { CharacterFeaturesTab } from '../components/CharacterFeaturesTab'
 import { CharacterNotesTab } from '../components/CharacterNotesTab'
 import { CharacterPetsTab } from '../components/CharacterPetsTab'
+import { exportCharacterSheetPdf } from '../pdf/exportCharacterSheetPdf'
 
 type CharacterTab = 'characteristics' | 'inventory' | 'grimoire' | 'features' | 'notes' | 'pets'
 
@@ -26,6 +27,7 @@ export function CharacterEditPage() {
   const [characterAvatarUrl, setCharacterAvatarUrl] = useState('')
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [exportingPdf, setExportingPdf] = useState(false)
 
   useEffect(() => {
     async function loadName() {
@@ -46,6 +48,21 @@ export function CharacterEditPage() {
     }
     void loadName()
   }, [id, token, showSnackbar])
+
+  async function handleExportPdf() {
+    if (!id || exportingPdf) return
+    setExportingPdf(true)
+    try {
+      await exportCharacterSheetPdf(id, token)
+    } catch (err) {
+      showSnackbar({
+        message: err instanceof Error ? err.message : 'Erreur lors de la génération du PDF',
+        severity: 'error',
+      })
+    } finally {
+      setExportingPdf(false)
+    }
+  }
 
   async function handleConfirmDelete() {
     if (!id) return
@@ -94,6 +111,19 @@ export function CharacterEditPage() {
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
                   <Eye size={16} aria-hidden="true" />
                   Visualiser
+                </span>
+              </button>
+              <button
+                className="btn btn-secondary"
+                type="button"
+                disabled={!id || exportingPdf}
+                onClick={() => void handleExportPdf()}
+                title="Exporter la fiche de personnage en PDF"
+                aria-label="Exporter la fiche de personnage en PDF"
+              >
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <FileDown size={16} aria-hidden="true" />
+                  {exportingPdf ? 'Génération…' : 'Exporter en PDF'}
                 </span>
               </button>
             </div>

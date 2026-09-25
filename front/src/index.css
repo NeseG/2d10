@@ -104,6 +104,27 @@ body {
   min-height: 100vh;
 }
 
+.app-shell.sidebar-collapsed {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.app-shell.sidebar-collapsed .sidebar {
+  display: none;
+}
+
+.sidebar-toggle-btn {
+  display: none;
+  margin-right: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: rgba(42, 30, 20, 0.6);
+  color: var(--text);
+  padding: 0.3rem 0.6rem;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+}
+
 @media (min-width: 901px) {
   .sidebar {
     position: sticky;
@@ -111,6 +132,10 @@ body {
     align-self: start;
     max-height: 100vh;
     max-height: 100dvh;
+  }
+
+  .sidebar-toggle-btn {
+    display: inline-block;
   }
 }
 
@@ -259,6 +284,13 @@ body {
   display: flex;
   align-items: center;
   min-width: 0;
+}
+
+.topbar-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
 }
 
 .burger-btn {
@@ -4033,4 +4065,246 @@ input[type='checkbox']:disabled {
 .theme-palette-card-desc {
   font-size: 0.78rem;
   color: var(--muted);
+}
+
+/* ── Fiche de personnage — export PDF (rendu hors-écran, couleurs fixes type parchemin) ── */
+
+.pdf-sheet {
+  color: #2b1f12;
+  font-family: 'Crimson Text', Georgia, 'Times New Roman', serif;
+}
+
+/* Chaque segment est capturé séparément (une page ou plus) à l'export PDF : voir exportCharacterSheetPdf.ts. */
+.pdf-segment {
+  width: 780px;
+  padding: 28px 32px;
+  background: #f4ecd8;
+  box-sizing: border-box;
+}
+
+.pdf-sheet h1,
+.pdf-sheet h2,
+.pdf-sheet h3 {
+  font-family: 'Cinzel', serif;
+  color: #5a1f14;
+  margin: 0;
+}
+
+.pdf-sheet-header {
+  border-bottom: 3px double #5a1f14;
+  padding-bottom: 10px;
+  margin-bottom: 14px;
+}
+
+.pdf-sheet-header h1 {
+  font-size: 1.9rem;
+}
+
+.pdf-identity-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1.1rem;
+  margin-top: 6px;
+  font-size: 0.88rem;
+}
+
+.pdf-identity-line span {
+  border-right: 1px solid #8a6a4a;
+  padding-right: 1.1rem;
+}
+
+.pdf-identity-line span:last-child {
+  border-right: none;
+}
+
+.pdf-sheet-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 18px;
+  align-items: start;
+}
+
+.pdf-col h2 {
+  font-size: 0.95rem;
+  border-bottom: 1px solid #8a6a4a;
+  padding-bottom: 3px;
+  margin-top: 12px;
+  margin-bottom: 6px;
+}
+
+.pdf-col h2:first-child {
+  margin-top: 0;
+}
+
+.pdf-ability-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.pdf-ability-box {
+  border: 1px solid #5a1f14;
+  border-radius: 6px;
+  text-align: center;
+  padding: 5px 2px;
+  background: rgba(90, 31, 20, 0.05);
+}
+
+.pdf-ability-label {
+  font-family: 'Cinzel', serif;
+  font-size: 0.65rem;
+  letter-spacing: 0.05em;
+  color: #5a1f14;
+}
+
+.pdf-ability-mod {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.pdf-ability-score {
+  font-size: 0.78rem;
+  color: #4a3520;
+}
+
+.pdf-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pdf-list-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  padding: 1px 0;
+}
+
+.pdf-list-mod {
+  min-width: 2.1rem;
+  font-weight: 600;
+  text-align: right;
+}
+
+.pdf-list-name em {
+  color: #6a5a44;
+  font-style: normal;
+  font-size: 0.75rem;
+}
+
+.pdf-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1px solid #5a1f14;
+  flex: 0 0 auto;
+  background: transparent;
+}
+
+.pdf-dot-filled {
+  background: #5a1f14;
+}
+
+.pdf-dot-double {
+  background: #5a1f14;
+  box-shadow: 0 0 0 2px rgba(90, 31, 20, 0.35);
+}
+
+.pdf-combat-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.pdf-combat-box {
+  flex: 1;
+  border: 1px solid #5a1f14;
+  border-radius: 6px;
+  text-align: center;
+  padding: 4px;
+}
+
+.pdf-combat-box-wide {
+  flex: 1;
+}
+
+.pdf-combat-label {
+  font-family: 'Cinzel', serif;
+  font-size: 0.62rem;
+  color: #5a1f14;
+}
+
+.pdf-combat-value {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.pdf-section {
+  margin-top: 16px;
+  border-top: 1px solid #8a6a4a;
+  padding-top: 10px;
+}
+
+.pdf-feature-category {
+  margin-bottom: 8px;
+}
+
+.pdf-feature-category h3 {
+  font-size: 0.85rem;
+  margin-bottom: 4px;
+}
+
+.pdf-feature {
+  margin-bottom: 5px;
+}
+
+.pdf-feature-name {
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.pdf-feature-desc {
+  font-size: 0.78rem;
+  margin: 2px 0 0;
+  color: #3a2a18;
+}
+
+.pdf-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  margin-bottom: 6px;
+}
+
+.pdf-table th,
+.pdf-table td {
+  border: 1px solid #8a6a4a;
+  padding: 2px 6px;
+  text-align: left;
+}
+
+.pdf-table th {
+  background: rgba(90, 31, 20, 0.1);
+  font-family: 'Cinzel', serif;
+  font-size: 0.68rem;
+}
+
+.pdf-purse-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  font-size: 0.82rem;
+  margin-bottom: 8px;
+}
+
+.pdf-spellcasting-line {
+  font-size: 0.85rem;
+  margin: 0 0 6px;
+}
+
+.pdf-freetext {
+  font-size: 0.82rem;
+  white-space: pre-wrap;
+  margin: 4px 0 10px;
 }

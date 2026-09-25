@@ -24,7 +24,9 @@ const usersRoutes = require('./routes/users-prisma');
 const dnd5eEquipmentRoutes = require('./routes/dnd5e-equipment-prisma');
 const dnd5eMagicItemsRoutes = require('./routes/dnd5e-magic-items-prisma');
 const dnd5eSpellsRoutes = require('./routes/dnd5e-spells-prisma');
+const dnd5eMonstersRoutes = require('./routes/dnd5e-monsters-prisma');
 const spellRoutes = require('./routes/spells-prisma');
+const monsterRoutes = require('./routes/monsters-prisma');
 
 const app = express();
 const server = http.createServer(app);
@@ -69,7 +71,9 @@ app.use('/api/users', usersRoutes);
 app.use('/api/dnd5e', dnd5eEquipmentRoutes);
 app.use('/api/dnd5e', dnd5eMagicItemsRoutes);
 app.use('/api/dnd5e', dnd5eSpellsRoutes);
+app.use('/api/dnd5e', dnd5eMonstersRoutes);
 app.use('/api/spells', spellRoutes);
+app.use('/api/monsters', monsterRoutes);
 
 attachSessionChatWss(server);
 attachSessionInitiativeWss(server);
