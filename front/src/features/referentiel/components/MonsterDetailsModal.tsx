@@ -33,6 +33,11 @@ export type MonsterDetail = {
   alignmentFr?: string | null
   speedFr?: string | null
   descriptionFr?: string | null
+  // Traduction FR des blocs d'actions/capacités (JSON `[{name, desc}]`, absente pour les monstres custom)
+  specialAbilitiesFr?: unknown
+  actionsFr?: unknown
+  reactionsFr?: unknown
+  legendaryActionsFr?: unknown
 }
 
 function abilityModifierLabel(score?: number | null): string {
@@ -40,6 +45,39 @@ function abilityModifierLabel(score?: number | null): string {
   const modifier = Math.floor((score - 10) / 2)
   return modifier >= 0 ? `+${modifier}` : String(modifier)
 }
+
+type MonsterFeatureEntry = { name: string | null; desc: string }
+
+/** Normalise un tableau `[{name, desc}]` (JSON brut dnd5eapi ou colonne `*Fr` traduite). */
+function toFeatureEntries(list: unknown): MonsterFeatureEntry[] {
+  if (!Array.isArray(list)) return []
+  const entries: MonsterFeatureEntry[] = []
+  for (const entry of list) {
+    if (!entry || typeof entry !== 'object') continue
+    const e = entry as Record<string, unknown>
+    const desc = typeof e.desc === 'string' ? e.desc.trim() : ''
+    if (!desc) continue
+    entries.push({ name: typeof e.name === 'string' ? e.name : null, desc })
+  }
+  return entries
+}
+
+/** Extrait les traits/actions du JSON brut dnd5eapi (anglais, non présents en colonnes dédiées). */
+function extractMonsterFeaturesEn(raw: unknown, key: string): MonsterFeatureEntry[] {
+  if (!raw || typeof raw !== 'object') return []
+  return toFeatureEntries((raw as Record<string, unknown>)[key])
+}
+
+function monsterFeaturesToMarkdown(entries: MonsterFeatureEntry[]): string {
+  return entries.map((e) => (e.name ? `**${e.name}.** ${e.desc}` : e.desc)).join('\n\n')
+}
+
+const MONSTER_FEATURE_SECTIONS: Array<{ key: string; frKey: keyof MonsterDetail; label: string }> = [
+  { key: 'special_abilities', frKey: 'specialAbilitiesFr', label: 'Capacités spéciales' },
+  { key: 'actions', frKey: 'actionsFr', label: 'Actions' },
+  { key: 'reactions', frKey: 'reactionsFr', label: 'Réactions' },
+  { key: 'legendary_actions', frKey: 'legendaryActionsFr', label: 'Actions légendaires' },
+]
 
 const ABILITY_FIELDS: Array<{ key: keyof MonsterDetail; label: string }> = [
   { key: 'strength', label: 'FOR' },
@@ -159,6 +197,21 @@ export function MonsterDetailsModal(props: {
             <div className="item-details">
               <MarkdownContent content={displayDescription} />
             </div>
+
+            {MONSTER_FEATURE_SECTIONS.map(({ key, frKey, label }) => {
+              const enEntries = extractMonsterFeaturesEn(monsterDetails.raw, key)
+              const frEntries = toFeatureEntries(monsterDetails[frKey])
+              const entries = language === 'fr' && frEntries.length > 0 ? frEntries : enEntries
+              if (entries.length === 0) return null
+              return (
+                <div className="item-details" key={key}>
+                  <p>
+                    <strong>{label}</strong>
+                  </p>
+                  <MarkdownContent content={monsterFeaturesToMarkdown(entries)} />
+                </div>
+              )
+            })}
           </>
         ) : null}
 

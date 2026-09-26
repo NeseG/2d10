@@ -77,7 +77,7 @@ Compte de test : `admin@2d10.com` / `admin123`.
 ## Pièges ou contraintes connus
 
 - Le suffixe `-prisma` dans les noms de fichiers (`routes/*-prisma.js`, `test-prisma-*.js`) est un **résidu historique** de la migration depuis des requêtes SQL brutes (`pg`) vers Prisma (voir `back/scripts/rollback-to-postgres.js`). Ne pas reproduire cette convention pour du nouveau code : elle n'apporte rien aujourd'hui, tout le projet est sur Prisma.
-- Le modèle `DndMonster` existe déjà dans `prisma/schema.prisma` mais, contrairement à `Dnd5eSpellImport`/`Dnd5eEquipment`/`Dnd5eMagicItem`, **il n'a pas de script d'import dédié** (`import-dnd5e-monsters.js` n'existe pas encore) — à créer pour le référentiel de monstres (branche `feature/referentiel-monstres`, voir [TODO.md](TODO.md)).
+- Le référentiel de monstres (catalogue `DndMonster` + table applicative `Monster`, script `import-dnd5e-monsters.js`, routes, page `/referentiel`, traduction FR, intégration au tracker d'initiative des sessions) est **mergé dans `main` et déployé en production** — voir [CHANGELOG.md](CHANGELOG.md) et [TODO.md](TODO.md). La traduction FR des actions/capacités de monstres (colonnes `*Fr` JSON dédiées) n'est pour l'instant qu'en dev local, pas encore déployée.
 - Le dossier `documentation/` à la racine existe mais est **vide** — ne pas y écrire par erreur en pensant que c'est `docs/`.
 - `docs/README.md` référence un `POSTMAN_GUIDE.md` qui n'existe pas sur le disque — lien mort à corriger ou fichier à créer.
 - Import SRD : nécessite un accès réseau sortant vers `https://www.dnd5eapi.co` (ou toute autre API source pour un futur import monstres).

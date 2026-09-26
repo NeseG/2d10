@@ -605,6 +605,14 @@ model DndMonster {
   speedFr       String?
   descriptionFr String?
 
+  // Traduction FR des blocs d'actions/capacités (raw JSON `[{name, desc}]`, même structure que
+  // les clés `special_abilities`/`actions`/`reactions`/`legendary_actions` de `raw`) — nulle tant
+  // que non traduite, fallback EN côté front (voir docs/decisions/0004-referentiel-bilingue-fr-en.md).
+  specialAbilitiesFr Json?
+  actionsFr          Json?
+  reactionsFr        Json?
+  legendaryActionsFr Json?
+
   @@map("dnd_monsters")
 }
 

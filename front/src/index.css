@@ -1380,6 +1380,10 @@ input[type='number'] {
   width: min(640px, 100%);
 }
 
+.modal-card.modal-card-wide {
+  width: min(900px, 100%);
+}
+
 .srd-raw-json {
   margin: 0.25rem 0 0.5rem;
   padding: 0.5rem 0.55rem;

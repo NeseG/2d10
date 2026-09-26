@@ -91,3 +91,44 @@ Un journal de session : chaque entrée est datée et résume ce qui a été fait
 
 **Points de blocage**
 - Un rate limit de session a interrompu plusieurs agents de traduction en cours de route ; la plupart avaient déjà écrit leur fichier de résultat avant l'erreur (seul un lot sur 34 a dû être relancé intégralement). Rien de bloquant à terme, juste une reprise en deux temps.
+
+---
+
+## 2026-09-25 — Commit, merge dans `main` et déploiement en production
+
+**Contexte** : l'utilisateur a demandé de relancer le Docker local, puis de committer/pusher le travail de la branche `feature/referentiel-monstres`, puis de déployer sur son serveur de production personnel (Raspberry Pi accessible en local sur `192.168.1.38`, et exposé publiquement via NAT sur `84.103.207.0`).
+
+**Ce qui a été fait**
+- Relance de `docker compose --profile full` en local (down puis up) : `db`, `backend`, `frontend`, `pgadmin` tous repartis sains.
+- Commit de l'ensemble des changements en attente (référentiel monstres, bilinguisme FR/EN, export PDF, thème, docs) sur `feature/referentiel-monstres` (commit `3c668d4`), poussé sur GitHub.
+- Merge fast-forward de `feature/referentiel-monstres` dans `main` (décision utilisateur, après clarification — le serveur de prod tourne sur `main`), poussé sur GitHub.
+- Déploiement sur le serveur de prod (SSH `gui@192.168.1.38`, accès par mot de passe le temps de l'opération — l'utilisateur a indiqué qu'il le changerait après) : `git pull origin main`, rebuild des images `back`/`web` (profil `production`), redémarrage de ces deux conteneurs uniquement avec `--no-deps` pour ne pas toucher `db`/`nginx`. `prisma db push --accept-data-loss` (comportement déjà configuré dans le `docker-entrypoint` du back, pas une décision de cette session) a appliqué les nouvelles colonnes/table sans supprimer de données existantes (15 utilisateurs toujours présents après redémarrage, vérifié dans les logs).
+- Vérification post-déploiement : `http://localhost/` (front) et `http://localhost:3000/` (API) répondent en 200 sur le serveur.
+- Diagnostic d'un accès externe en échec (`https://84.103.207.0/` → `ERR_TIMED_OUT`) : le port 80 est bien ouvert (NAT + écoute nginx confirmés, testé avec succès depuis un point externe au réseau local) ; le port 443 (HTTPS) n'est pas redirigé dans le NAT de la box, alors que l'utilisateur avait tapé l'URL en `https://`. Accès `http://84.103.207.0/` fonctionne déjà.
+
+**En cours**
+- Rien en cours côté code — l'intégration du référentiel de monstres au tracker d'initiative reste la prochaine étape fonctionnelle (voir [TODO.md](../TODO.md)).
+
+**Points de blocage**
+- Accès HTTPS externe : bloqué tant que le port 443 n'est pas ajouté à la règle NAT de la box et qu'une stratégie de certificat (nom de domaine + Let's Encrypt, ou acceptation d'un avertissement navigateur) n'est pas choisie. Non résolu à la fin de cette session, en attente de décision utilisateur.
+
+---
+
+## 2026-09-26 — Objets magiques (frontend), monstres dans l'initiative tracker, traduction des actions
+
+**Contexte** : suite de la session précédente. Trois demandes de l'utilisateur : (1) terminer le frontend du référentiel d'objets magiques (le catalogue était déjà importé/traduit, seul l'onglet manquait), (2) permettre d'ajouter un monstre au tracker d'initiative des sessions avec recherche/filtre — la prochaine étape notée dans le TODO depuis la session du 19/09, puis (3) suite à un retour utilisateur constatant l'absence des actions de monstre dans les fiches, corriger l'affichage et mettre en place leur traduction FR.
+
+**Ce qui a été fait**
+- **Référentiel d'objets magiques** : nouvel onglet « Objets » sur `/referentiel` (`ReferentielMagicItemsTab.tsx` + `MagicItemDetailsModal.tsx`), même pattern recherche/filtres/pagination/détail bilingue que Sorts/Monstres. `GET /api/dnd5e/magic-items` expose `nameFr`/`categoryNameFr`/`rarityFr` en liste, `DELETE /api/dnd5e/magic-items/:index` ajouté pour parité admin/gm.
+- **Ajout de monstre dans l'initiative** : nouveau composant `AddMonsterModal.tsx` (recherche + filtres type/CR sur `/api/dnd5e/monsters` et `/api/monsters`, quantité pour ajouter plusieurs copies numérotées d'un coup) branché sur `SessionInitiativeTrackerTab.tsx`. Chaque combattant ajouté depuis le catalogue conserve une référence au monstre d'origine (`monsterRef`, persistée dans l'état JSON de l'initiative comme le reste).
+- **Fiche monstre depuis l'initiative** : bouton « voir la fiche » (icône livre) sur les combattants ayant un `monsterRef`, ouvrant `MonsterDetailsModal` (réutilisé tel quel depuis le référentiel) — visible par tous les participants, pas seulement le MJ, car en lecture seule.
+- **Correction affichage des actions de monstre** : `MonsterDetailsModal` ne lisait jamais `special_abilities`/`actions`/`reactions`/`legendary_actions` (présents seulement dans le JSON brut `raw` de l'import dnd5eapi.co, jamais dans des colonnes dédiées) — ajout de l'extraction et du rendu Markdown de ces sections, repli silencieux si absentes (monstres personnalisés).
+- **Traduction FR des actions/capacités** : constat qu'aucune des colonnes `*Fr` existantes (décision [0004](decisions/0004-referentiel-bilingue-fr-en.md)) ne couvrait ces blocs structurés. Ajout de 4 colonnes JSON (`specialAbilitiesFr`/`actionsFr`/`reactionsFr`/`legendaryActionsFr`) sur `DndMonster`, extraction des 1503 entrées anglaises encore non traduites (334 monstres) en 9 lots via `back/scripts/extract-monster-actions-en.js`, traduction en parallèle par 9 agents dédiés partageant un même glossaire (caractéristiques, types de dégâts, états, gabarits de formules d'attaque/jet de sauvegarde, conversion pieds→mètres selon la formule déjà utilisée pour `speedFr`), normalisation a posteriori d'une incohérence terminologique (« DD » vs « DC » selon les lots — unifié sur « DC »), puis application en base via `back/scripts/apply-monster-actions-fr.js` (334/334 en succès). Fichiers de traduction intermédiaires supprimés après application (non versionnés, comme pour la traduction FR d'origine).
+- Frontend : `MonsterDetailsModal` affiche désormais ces sections traduites quand la langue active est FR, avec repli sur l'anglais sinon — partagé par le référentiel et l'initiative tracker.
+
+**En cours / limites connues**
+- Schéma et traduction des actions de monstre appliqués **en dev local uniquement** — pas encore poussés sur la base de production du Pi (décision explicite de l'utilisateur pour cette session).
+- Comme pour la traduction d'origine, les scripts d'import ne remplissent pas ces nouvelles colonnes `*Fr` : un futur ré-import de nouvelles entrées SRD les laissera non traduites jusqu'à une passe dédiée.
+
+**Points de blocage**
+- Aucun.

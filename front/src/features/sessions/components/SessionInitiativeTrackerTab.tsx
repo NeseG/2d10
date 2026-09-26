@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Eye, EyeOff } from 'lucide-react'
+import { BookOpen, Eye, EyeOff } from 'lucide-react'
 import { apiGet, apiPut, getWsApiBaseUrl } from '../../../shared/api/client'
+import { AddMonsterModal, type AddMonsterSelection, type MonsterRef } from './AddMonsterModal'
+import { MonsterDetailsModal, type MonsterDetail } from '../../referentiel/components/MonsterDetailsModal'
 
 type Combatant = {
   id: string
@@ -13,6 +15,7 @@ type Combatant = {
   notes?: string | null
   conditions?: string | null
   hidden: boolean
+  monsterRef?: MonsterRef | null
 }
 
 type StoredState = {
@@ -40,6 +43,18 @@ function makeId(): string {
   }
 }
 
+function normalizeMonsterRef(raw: unknown): MonsterRef | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Partial<{ source: string; slug: unknown; id: unknown }>
+  if (r.source === 'dnd5e' && typeof r.slug === 'string' && r.slug) {
+    return { source: 'dnd5e', slug: r.slug }
+  }
+  if (r.source === 'custom' && typeof r.id === 'number' && Number.isFinite(r.id)) {
+    return { source: 'custom', id: r.id }
+  }
+  return null
+}
+
 function normalizeState(raw: unknown): StoredState {
   const s = (raw && typeof raw === 'object' ? (raw as Partial<StoredState>) : {}) as Partial<StoredState>
   const combatants = Array.isArray(s.combatants) ? s.combatants : []
@@ -59,6 +74,7 @@ function normalizeState(raw: unknown): StoredState {
         notes: typeof c?.notes === 'string' ? c.notes : null,
         conditions: typeof c?.conditions === 'string' ? c.conditions : null,
         hidden: Boolean(c?.hidden),
+        monsterRef: normalizeMonsterRef(c?.monsterRef),
       }))
       .filter((c) => c.name.trim()),
   }
@@ -90,6 +106,10 @@ export function SessionInitiativeTrackerTab(props: {
   const [draftHp, setDraftHp] = useState('')
   const [draftMaxHp, setDraftMaxHp] = useState('')
   const [draftIsPc, setDraftIsPc] = useState(false)
+  const [addMonsterOpen, setAddMonsterOpen] = useState(false)
+  const [monsterDetailsOpen, setMonsterDetailsOpen] = useState(false)
+  const [monsterDetailsLoading, setMonsterDetailsLoading] = useState(false)
+  const [monsterDetails, setMonsterDetails] = useState<MonsterDetail | null>(null)
 
   const applyIncomingState = useCallback((state: unknown) => {
     if (!state) {
@@ -378,6 +398,42 @@ export function SessionInitiativeTrackerTab(props: {
     schedulePersist({ version: 1, round, activeId, combatants: nextCombatants })
   }
 
+  function addMonstersFromCatalog(selections: AddMonsterSelection[]) {
+    if (!canEdit || selections.length === 0) return
+    const toAdd: Combatant[] = selections.map((s) => ({
+      id: makeId(),
+      name: s.name,
+      initiative: 10,
+      ac: s.ac,
+      hp: s.hp,
+      maxHp: s.maxHp,
+      isPc: false,
+      notes: null,
+      conditions: null,
+      hidden: true,
+      monsterRef: s.monsterRef,
+    }))
+    const nextCombatants = [...combatants, ...toAdd]
+    setCombatants(nextCombatants)
+    schedulePersist({ version: 1, round, activeId, combatants: nextCombatants })
+  }
+
+  async function openMonsterDetails(ref: MonsterRef) {
+    setMonsterDetailsOpen(true)
+    setMonsterDetailsLoading(true)
+    setMonsterDetails(null)
+    try {
+      const path = ref.source === 'dnd5e' ? `/api/dnd5e/monsters/${encodeURIComponent(ref.slug)}` : `/api/monsters/${ref.id}`
+      const res = await apiGet<{ item: MonsterDetail }>(path, token)
+      setMonsterDetails(res.item)
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : 'Erreur chargement de la fiche monstre')
+      setMonsterDetailsOpen(false)
+    } finally {
+      setMonsterDetailsLoading(false)
+    }
+  }
+
   const hasActive = Boolean(activeId)
   const activeName = activeIndex >= 0 ? orderedVisible[activeIndex]?.name : null
 
@@ -486,6 +542,14 @@ export function SessionInitiativeTrackerTab(props: {
             <button
               className="btn btn-secondary btn-small"
               type="button"
+              onClick={() => setAddMonsterOpen(true)}
+              disabled={!canEdit}
+            >
+              Ajouter un monstre
+            </button>
+            <button
+              className="btn btn-secondary btn-small"
+              type="button"
               onClick={() => {
                 if (!canEdit) return
                 setCombatants([])
@@ -554,6 +618,17 @@ export function SessionInitiativeTrackerTab(props: {
                         <span className={`initiative-badge ${c.isPc ? 'initiative-badge-pc' : 'initiative-badge-npc'}`}>
                           {c.isPc ? 'PJ' : 'PNJ'}
                         </span>
+                        {c.monsterRef ? (
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-small initiative-visibility-toggle"
+                            onClick={() => void openMonsterDetails(c.monsterRef!)}
+                            title="Voir la fiche du monstre"
+                            aria-label="Voir la fiche du monstre"
+                          >
+                            <BookOpen size={16} strokeWidth={2} aria-hidden="true" />
+                          </button>
+                        ) : null}
                       </div>
                     </td>
                     <td className="initiative-col-init" data-label="Init">
@@ -650,6 +725,22 @@ export function SessionInitiativeTrackerTab(props: {
           </table>
         </div>
       )}
+
+      {canEdit ? (
+        <AddMonsterModal
+          open={addMonsterOpen}
+          token={token}
+          onClose={() => setAddMonsterOpen(false)}
+          onAdd={addMonstersFromCatalog}
+        />
+      ) : null}
+
+      <MonsterDetailsModal
+        open={monsterDetailsOpen}
+        loading={monsterDetailsLoading}
+        monsterDetails={monsterDetails}
+        onClose={() => (!monsterDetailsLoading ? setMonsterDetailsOpen(false) : null)}
+      />
     </div>
   )
 }

@@ -88,9 +88,12 @@ router.get('/magic-items', authenticateToken, async (req, res) => {
           id: true,
           index: true,
           name: true,
+          nameFr: true,
           categoryIndex: true,
           categoryName: true,
+          categoryNameFr: true,
           rarity: true,
+          rarityFr: true,
         },
       }),
       prisma.dnd5eMagicItem.count({ where }),
@@ -123,6 +126,25 @@ router.get('/magic-items/:index', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
+
+// DELETE /api/dnd5e/magic-items/:index — retire une entrée du catalogue importé (admin / gm)
+router.delete(
+  '/magic-items/:index',
+  authenticateToken,
+  requireRole(['admin', 'gm']),
+  async (req, res) => {
+    try {
+      const { index } = req.params;
+      const existing = await prisma.dnd5eMagicItem.findUnique({ where: { index } });
+      if (!existing) return res.status(404).json({ error: 'Objet magique non trouvé' });
+      await prisma.dnd5eMagicItem.delete({ where: { index } });
+      res.status(204).send();
+    } catch (error) {
+      console.error('Erreur suppression magic-item dnd5e import:', error);
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  },
+);
 
 // POST /api/dnd5e/characters/:characterId/inventory/magic-item
 // body: { magic_item_id: number, quantity?: number }

@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { BookOpen, PawPrint } from 'lucide-react'
+import { BookOpen, Gem, PawPrint } from 'lucide-react'
 import { Card } from '../../../shared/components/Card'
 import { ReferentielSpellsTab } from '../components/ReferentielSpellsTab'
 import { ReferentielMonstersTab } from '../components/ReferentielMonstersTab'
+import { ReferentielMagicItemsTab } from '../components/ReferentielMagicItemsTab'
 
-type ReferentielTab = 'spells' | 'monsters'
+type ReferentielTab = 'spells' | 'monsters' | 'magic-items'
 
 export function ReferentielPage() {
   const [activeTab, setActiveTab] = useState<ReferentielTab>('spells')
@@ -32,9 +33,21 @@ export function ReferentielPage() {
             Monstres
           </span>
         </button>
+        <button
+          className={`tab-btn ${activeTab === 'magic-items' ? 'active' : ''}`}
+          type="button"
+          onClick={() => setActiveTab('magic-items')}
+        >
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+            <Gem size={18} aria-hidden="true" />
+            Objets
+          </span>
+        </button>
       </div>
 
-      {activeTab === 'spells' ? <ReferentielSpellsTab /> : <ReferentielMonstersTab />}
+      {activeTab === 'spells' ? <ReferentielSpellsTab /> : null}
+      {activeTab === 'monsters' ? <ReferentielMonstersTab /> : null}
+      {activeTab === 'magic-items' ? <ReferentielMagicItemsTab /> : null}
     </Card>
   )
 }
