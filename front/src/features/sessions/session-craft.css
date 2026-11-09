@@ -471,3 +471,157 @@
 .session-live-page .session-tabs-primary .tab-btn svg {
   flex-shrink: 0;
 }
+
+/* ── Jets favoris + bouton dés flottant + overlay 3D ── */
+.session-dice-fav {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.session-dice-fav-remove {
+  display: inline-grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.session-dice-fav-remove:hover {
+  color: var(--rust-glow);
+  background: var(--craft-field-bg-hover);
+}
+
+.session-dice-fav-empty {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.dice-fab {
+  position: fixed;
+  right: max(1rem, env(safe-area-inset-right, 0px));
+  bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.6rem;
+  transition: bottom 0.2s var(--craft-ease);
+}
+
+.dice-fab--raised {
+  bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
+}
+
+.dice-fab-btn {
+  display: grid;
+  place-items: center;
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--rust-glow) 50%, transparent);
+  background: radial-gradient(circle at 35% 30%, var(--rust-bright), var(--rust));
+  color: var(--bone);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  transition: transform 0.15s var(--craft-ease), filter 0.15s var(--craft-ease);
+}
+
+.dice-fab-btn:hover {
+  filter: brightness(1.12);
+}
+
+.dice-fab-btn:active {
+  transform: scale(0.94);
+}
+
+.dice-fab-btn:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.dice-fab-btn:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
+}
+
+.dice-fab-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  width: min(18rem, calc(100vw - 2rem));
+  max-height: min(60vh, 26rem);
+  overflow-y: auto;
+  padding: 0.75rem;
+  border: 1px solid var(--craft-hairline);
+  border-radius: var(--craft-radius);
+  background: var(--craft-surface-raised);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+  transform-origin: bottom right;
+  animation: dice-fab-menu-in 0.16s var(--craft-ease);
+}
+
+@keyframes dice-fab-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(4px);
+  }
+}
+
+.dice-fab-favs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.dice-fab-fav {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid transparent;
+  border-radius: var(--craft-radius-sm);
+  background: var(--craft-field-bg);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dice-fab-fav:hover,
+.dice-fab-fav:focus-visible {
+  background: var(--craft-field-bg-hover);
+  border-color: var(--craft-hairline);
+}
+
+.dice-fab-fav-notation {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.dice-3d-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10040;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.dice-3d-overlay.is-visible {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dice-fab-menu {
+    animation: none;
+  }
+}
