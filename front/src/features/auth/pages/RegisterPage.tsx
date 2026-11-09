@@ -2,6 +2,7 @@ import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../../app/hooks/useAuth'
 import { useSnackbar } from '../../../app/hooks/useSnackbar'
 import { useState } from 'react'
+import { GoogleSignInButton } from '../components/GoogleSignInButton'
 
 export function RegisterPage() {
   const { registerWithCredentials, isAuthenticated } = useAuth()
@@ -75,6 +76,8 @@ export function RegisterPage() {
             {loading ? 'Création...' : 'Créer mon compte'}
           </button>
         </form>
+
+        <GoogleSignInButton text="signup_with" />
 
         <div className="login-actions">
           <Link className="btn btn-secondary" to="/login">

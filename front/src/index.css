@@ -1062,6 +1062,12 @@ tr.inventory-row-drag-over {
   min-height: 4.5rem;
 }
 
+.login-google {
+  display: flex;
+  justify-content: center;
+  margin-top: 1rem;
+}
+
 .login-actions {
   margin-top: 1rem;
   display: flex;

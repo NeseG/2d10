@@ -2,6 +2,7 @@ import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../../app/hooks/useAuth'
 import { useSnackbar } from '../../../app/hooks/useSnackbar'
 import { useState } from 'react'
+import { GoogleSignInButton } from '../components/GoogleSignInButton'
 
 export function LoginPage() {
   const { loginWithCredentials, isAuthenticated } = useAuth()
@@ -61,6 +62,8 @@ export function LoginPage() {
             {loading ? 'Connexion...' : 'Se connecter'}
           </button>
         </form>
+
+        <GoogleSignInButton text="signin_with" />
 
         <div className="login-actions">
           <Link className="btn btn-secondary" to="/register">

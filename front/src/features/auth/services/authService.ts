@@ -55,6 +55,14 @@ export async function login(payload: { email: string; password: string }) {
   }
 }
 
+export async function loginWithGoogle(credential: string) {
+  const response = await apiPost<LoginResponse>('/api/auth/google', { credential })
+  return {
+    token: response.token,
+    user: normalizeUser(response.user),
+  }
+}
+
 export async function register(payload: { username: string; email: string; password: string }) {
   const response = await apiPost<RegisterResponse>('/api/auth/register', payload)
   return {

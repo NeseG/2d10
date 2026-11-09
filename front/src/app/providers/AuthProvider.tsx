@@ -1,7 +1,7 @@
 import { createContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { AuthUser } from '../../shared/types'
-import { fetchProfile, login, register } from '../../features/auth/services/authService'
+import { fetchProfile, login, loginWithGoogle, register } from '../../features/auth/services/authService'
 
 type AuthContextValue = {
   user: AuthUser | null
@@ -9,6 +9,7 @@ type AuthContextValue = {
   isLoading: boolean
   isAuthenticated: boolean
   loginWithCredentials: (email: string, password: string) => Promise<void>
+  loginWithGoogleCredential: (credential: string) => Promise<void>
   registerWithCredentials: (username: string, email: string, password: string) => Promise<void>
   refreshProfile: () => Promise<void>
   logout: () => void
@@ -44,6 +45,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsLoading(true)
         try {
           const { token: nextToken, user: nextUser } = await login({ email, password })
+          setToken(nextToken)
+          setUser(nextUser)
+          localStorage.setItem('auth_token', nextToken)
+        } finally {
+          setIsLoading(false)
+        }
+      },
+      loginWithGoogleCredential: async (credential) => {
+        setIsLoading(true)
+        try {
+          const { token: nextToken, user: nextUser } = await loginWithGoogle(credential)
           setToken(nextToken)
           setUser(nextUser)
           localStorage.setItem('auth_token', nextToken)

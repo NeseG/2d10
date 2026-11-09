@@ -142,6 +142,82 @@ router.post('/login', async (req, res) => {
   }
 });
 
+// Connexion / inscription via Google (ID token issu de Google Identity Services)
+router.post('/google', async (req, res) => {
+  try {
+    const { credential } = req.body;
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    if (!clientId) {
+      return res.status(503).json({ error: 'Connexion Google non configurée (GOOGLE_CLIENT_ID manquant)' });
+    }
+    if (!credential || typeof credential !== 'string') {
+      return res.status(400).json({ error: 'Jeton Google manquant' });
+    }
+
+    // shortcut: tokeninfo fait la vérification de signature côté Google (1 appel réseau/connexion), passer à google-auth-library si le volume grossit
+    const verifyRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`);
+    const payload = await verifyRes.json().catch(() => ({}));
+    if (
+      !verifyRes.ok ||
+      payload.aud !== clientId ||
+      !['accounts.google.com', 'https://accounts.google.com'].includes(payload.iss) ||
+      payload.email_verified !== 'true' ||
+      !payload.email
+    ) {
+      return res.status(401).json({ error: 'Jeton Google invalide' });
+    }
+
+    const email = payload.email.toLowerCase();
+    let user = await prisma.user.findFirst({
+      where: { email: { equals: email, mode: 'insensitive' } },
+      include: { role: true }
+    });
+
+    if (user && !user.isActive) {
+      return res.status(403).json({ error: 'Compte désactivé' });
+    }
+
+    if (!user) {
+      const roleRecord = await prisma.role.findUnique({ where: { name: 'user' } });
+      if (!roleRecord) {
+        return res.status(500).json({ error: 'Rôle par défaut introuvable' });
+      }
+      const base = (payload.name || email.split('@')[0]).trim().slice(0, 40) || 'joueur';
+      let username = base;
+      for (let i = 2; await prisma.user.findUnique({ where: { username } }); i++) {
+        username = `${base}${i}`;
+      }
+      // Mot de passe aléatoire inutilisable : le compte ne se connecte que via Google
+      const passwordHash = await bcrypt.hash(require('crypto').randomBytes(32).toString('hex'), 10);
+      user = await prisma.user.create({
+        data: { username, email, passwordHash, roleId: roleRecord.id, isActive: true },
+        include: { role: true }
+      });
+    }
+
+    const token = jwt.sign(
+      { userId: user.id, email: user.email },
+      config.jwtSecret,
+      { expiresIn: config.jwtExpiresIn }
+    );
+
+    res.json({
+      message: 'Connexion réussie',
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        role_name: user.role.name,
+        created_at: user.createdAt
+      },
+      token
+    });
+  } catch (error) {
+    console.error('Erreur lors de la connexion Google:', error);
+    res.status(500).json({ error: 'Erreur serveur lors de la connexion Google' });
+  }
+});
+
 // Route pour obtenir le profil de l'utilisateur connecté
 router.get('/profile', authenticateToken, async (req, res) => {
   try {
