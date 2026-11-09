@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { Dices } from 'lucide-react'
 import { useSnackbar } from '../../../app/hooks/useSnackbar'
+import { apiGet } from '../../../shared/api/client'
 import { postSessionDiceRoll, type DiceFavorite } from '../sessionDice'
+import type { SessionDiceRollEntry } from './SessionDiceTab'
 
 const FAB_QUICK_SIDES = [4, 6, 8, 10, 12, 20, 100] as const
 
@@ -18,7 +20,22 @@ export function SessionDiceFab(props: {
   const { showSnackbar } = useSnackbar()
   const [open, setOpen] = useState(false)
   const [rolling, setRolling] = useState(false)
+  const [recent, setRecent] = useState<SessionDiceRollEntry[]>([])
+  /** Accordéon fermé par défaut ; l’état est gardé tant que la page est ouverte. */
+  const [recentOpen, setRecentOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
+
+  // Rechargé à chaque ouverture de l’accordéon : pas de polling, ni de requête s’il reste fermé.
+  useEffect(() => {
+    if (!open || !recentOpen) return
+    let cancelled = false
+    apiGet<{ rolls: SessionDiceRollEntry[] }>(`/api/sessions/${sessionId}/dice-rolls?limit=15`, token)
+      .then((res) => !cancelled && setRecent(Array.isArray(res.rolls) ? res.rolls : []))
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [open, recentOpen, sessionId, token])
 
   useEffect(() => {
     if (!open) return
@@ -88,6 +105,36 @@ export function SessionDiceFab(props: {
               </button>
             ))}
           </div>
+          <details
+            className="dice-fab-recent-details"
+            open={recentOpen}
+            onToggle={(e) => {
+              const el = e.currentTarget
+              setRecentOpen(el.open)
+              // Sur petit écran le menu défile : ramener la liste dépliée dans la vue.
+              if (el.open) requestAnimationFrame(() => el.scrollIntoView({ block: 'nearest' }))
+            }}
+          >
+            <summary className="session-dice-quick-label">Derniers jets</summary>
+            {recent.length === 0 ? (
+              <p className="session-dice-fav-empty">Aucun jet pour l’instant.</p>
+            ) : (
+              <ul className="dice-fab-recent" tabIndex={0} aria-label="Derniers jets de la session">
+                {recent.map((r) => (
+                  <li key={r.id}>
+                    <span className="dice-fab-recent-who">
+                      {r.character_name?.trim() || r.username?.trim() || `Joueur #${r.user_id}`}
+                    </span>
+                    <span className="dice-fab-recent-notation">
+                      {r.notation}
+                      {r.label ? ` · ${r.label}` : ''}
+                    </span>
+                    <strong className="dice-fab-recent-total">{r.total}</strong>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </details>
         </div>
       ) : null}
       <button
