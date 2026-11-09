@@ -1,0 +1,74 @@
+name: Build & deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Un seul déploiement à la fois ; un nouveau push attend la fin du précédent
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: front/package-lock.json
+      - name: Build front (tsc + vite)
+        working-directory: front
+        run: |
+          npm ci
+          npm run build
+      - name: Vérifier que le backend se charge
+        working-directory: back
+        run: |
+          npm ci
+          npx prisma generate
+          node -e "require('./routes/auth-prisma.js')"
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Configurer la clé SSH
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Déployer sur le VPS
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USER: ${{ secrets.DEPLOY_USER }}
+          DIR: ${{ secrets.DEPLOY_DIR }}
+        run: |
+          ssh -i ~/.ssh/id_deploy -o StrictHostKeyChecking=yes "$USER@$HOST" bash -s -- "$DIR" <<'EOF'
+          set -euo pipefail
+          cd "$1"
+          # --ff-only : échoue au lieu d'écraser des modifs locales faites sur le serveur
+          git pull --ff-only origin main
+          # db et nginx ne sont pas redémarrés : seuls l'API et le front sont reconstruits
+          docker compose --profile prod up -d --build --no-deps back web
+          docker image prune -f
+          EOF
+
+      - name: Vérifier que le site répond
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          for i in $(seq 1 30); do
+            curl -fsS -o /dev/null "https://$HOST/" && exit 0
+            sleep 5
+          done
+          echo "Le site ne répond pas après le déploiement" && exit 1
