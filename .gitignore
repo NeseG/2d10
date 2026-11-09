@@ -116,3 +116,5 @@ build/
 # Postman files (optional - you might want to keep them)
 # *.postman_collection.json
 # *.postman_environment.json
+
+graphify-out/
