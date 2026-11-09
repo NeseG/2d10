@@ -39,6 +39,8 @@ import { SessionCampaignNotesTab } from '../components/SessionCampaignNotesTab'
 import { SessionInitiativeTrackerTab } from '../components/SessionInitiativeTrackerTab'
 import { SessionMapTab } from '../components/SessionMapTab'
 import { SessionDiceTab } from '../components/SessionDiceTab'
+import { SessionDiceFab } from '../components/SessionDiceFab'
+import { resolveDiceCharacterId, useDiceFavorites } from '../sessionDice'
 import { useHeader } from '../../../app/hooks/useHeader'
 
 type JoinedSession = {
@@ -230,6 +232,8 @@ export function LiveSessionPage() {
     const n = Number.parseInt(selectedCharacterId, 10)
     return Number.isFinite(n) ? n : null
   }, [selectedCharacterId])
+
+  const { favorites: diceFavorites, saveFavorites: saveDiceFavorites } = useDiceFavorites(token)
 
   const buildInventoryTransferTargets = useCallback(
     (excludeCharacterId: string): SessionLiveInventoryTransferTarget[] => {
@@ -480,6 +484,8 @@ export function LiveSessionPage() {
                     isSessionOwner={isSessionOwner}
                     rollingCharacterId={diceRollingCharacterId}
                     diceCharacters={accessibleCharacters}
+                    favorites={diceFavorites}
+                    onFavoritesChange={saveDiceFavorites}
                     onRollingCharacterIdChange={(characterId) => {
                       setSelectedCharacterId(String(characterId))
                       const found = accessibleCharacters.find((e) => e.character_id === characterId)
@@ -714,6 +720,15 @@ export function LiveSessionPage() {
           </>
         ) : null}
       </Card>
+      {session && token && user && accessibleCharacters.length > 0 ? (
+        <SessionDiceFab
+          sessionId={session.id}
+          token={token}
+          characterId={resolveDiceCharacterId(isSessionOwner, accessibleCharacters, diceRollingCharacterId)}
+          favorites={diceFavorites}
+          raised={Boolean(showBottomCharacterDock)}
+        />
+      ) : null}
     </div>
   )
 }

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ChartNoAxesCombined, RefreshCw } from 'lucide-react'
-import { apiGet, apiPost } from '../../../shared/api/client'
+import { ChartNoAxesCombined, RefreshCw, Star, X } from 'lucide-react'
+import { apiGet } from '../../../shared/api/client'
 import { useSnackbar } from '../../../app/hooks/useSnackbar'
 import { SessionDiceLabelDistributionChart } from './SessionDiceLabelDistributionChart'
+import { postSessionDiceRoll, resolveDiceCharacterId, type DiceFavorite } from '../sessionDice'
 
 export type SessionDiceRollEntry = {
   id: number
@@ -122,6 +123,8 @@ export function SessionDiceTab(props: {
   rollingCharacterId: number | null
   diceCharacters: SessionDiceCharacterOption[]
   onRollingCharacterIdChange?: (characterId: number) => void
+  favorites: DiceFavorite[]
+  onFavoritesChange: (next: DiceFavorite[]) => Promise<void>
 }) {
   const {
     sessionId,
@@ -131,16 +134,15 @@ export function SessionDiceTab(props: {
     rollingCharacterId,
     diceCharacters,
     onRollingCharacterIdChange,
+    favorites,
+    onFavoritesChange,
   } = props
   const { showSnackbar } = useSnackbar()
 
-  const effectiveCharacterId = useMemo(() => {
-    if (isSessionOwner) {
-      const first = diceCharacters[0]?.character_id
-      return typeof first === 'number' && Number.isFinite(first) ? first : null
-    }
-    return rollingCharacterId
-  }, [isSessionOwner, diceCharacters, rollingCharacterId])
+  const effectiveCharacterId = useMemo(
+    () => resolveDiceCharacterId(isSessionOwner, diceCharacters, rollingCharacterId),
+    [isSessionOwner, diceCharacters, rollingCharacterId],
+  )
 
   const canRoll = effectiveCharacterId != null && Number.isFinite(effectiveCharacterId)
   const showCharacterPicker = !isSessionOwner && diceCharacters.length > 1
@@ -156,6 +158,8 @@ export function SessionDiceTab(props: {
   const [manualTotalDraft, setManualTotalDraft] = useState('')
   const [manualNoteKind, setManualNoteKind] = useState('')
   const [statsModalOpen, setStatsModalOpen] = useState(false)
+  /** Nom du favori en cours de création (null = formulaire fermé). */
+  const [favNameDraft, setFavNameDraft] = useState<string | null>(null)
 
   const diceStats = useMemo(() => computeDiceStats(rolls, isSessionOwner), [rolls, isSessionOwner])
 
@@ -227,11 +231,7 @@ export function SessionDiceTab(props: {
     }
     setRolling(true)
     try {
-      await apiPost(
-        `/api/sessions/${sessionId}/dice-rolls`,
-        { ...payload, character_id: effectiveCharacterId },
-        token,
-      )
+      await postSessionDiceRoll(sessionId, token, effectiveCharacterId, payload)
       await loadRolls()
     } catch (err) {
       showSnackbar({
@@ -260,6 +260,33 @@ export function SessionDiceTab(props: {
       notation,
       ...(notationNoteKind ? { label: notationNoteKind } : {}),
     })
+  }
+
+  async function saveFavorites(next: DiceFavorite[]) {
+    try {
+      await onFavoritesChange(next)
+      return true
+    } catch (err) {
+      showSnackbar({
+        message: err instanceof Error ? err.message : 'Erreur enregistrement des favoris',
+        severity: 'error',
+      })
+      return false
+    }
+  }
+
+  async function addFavorite(event: React.FormEvent) {
+    event.preventDefault()
+    const notation = notationDraft.trim()
+    const name = (favNameDraft ?? '').trim() || notation
+    if (!notation) return
+    const fav: DiceFavorite = {
+      id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      name: name.slice(0, 40),
+      notation,
+      ...(notationNoteKind ? { label: notationNoteKind } : {}),
+    }
+    if (await saveFavorites([...favorites, fav])) setFavNameDraft(null)
   }
 
   async function submitManualRoll(event: React.FormEvent) {
@@ -322,6 +349,41 @@ export function SessionDiceTab(props: {
 
       <div className="session-dice-toolbar">
         <div className="session-dice-quick">
+          <span className="session-dice-quick-label">Favoris</span>
+          {favorites.length === 0 ? (
+            <p className="session-dice-fav-empty">
+              Saisis une notation puis <Star size={12} aria-hidden="true" /> pour l’ajouter. Tes favoris sont
+              aussi accessibles depuis le bouton flottant.
+            </p>
+          ) : (
+            <div className="session-dice-quick-btns">
+              {favorites.map((f) => (
+                <span key={f.id} className="session-dice-fav">
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-small"
+                    disabled={rolling || !canRoll}
+                    title={`${f.notation}${f.label ? ` — ${f.label}` : ''}`}
+                    onClick={() => void submitRoll({ notation: f.notation, ...(f.label ? { label: f.label } : {}) })}
+                  >
+                    {f.name}
+                  </button>
+                  <button
+                    type="button"
+                    className="session-dice-fav-remove"
+                    aria-label={`Retirer le favori ${f.name}`}
+                    title="Retirer"
+                    onClick={() => void saveFavorites(favorites.filter((x) => x.id !== f.id))}
+                  >
+                    <X size={12} aria-hidden="true" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="session-dice-quick">
           <span className="session-dice-quick-label">Rapide</span>
           <div className="session-dice-quick-btns">
             {QUICK_SIDES.map((s) => (
@@ -368,7 +430,44 @@ export function SessionDiceTab(props: {
           <button className="btn btn-small" type="submit" disabled={rolling || !canRoll}>
             Lancer
           </button>
+          <button
+            type="button"
+            className="btn btn-secondary btn-small"
+            disabled={!notationDraft.trim()}
+            onClick={() => setFavNameDraft((v) => (v === null ? '' : null))}
+            title="Ajouter aux favoris"
+            aria-label="Ajouter cette notation aux favoris"
+            aria-expanded={favNameDraft !== null}
+          >
+            <Star size={16} aria-hidden="true" />
+          </button>
         </form>
+
+        {favNameDraft !== null ? (
+          <form className="session-dice-form" onSubmit={(e) => void addFavorite(e)}>
+            <label className="session-dice-field session-dice-field-grow">
+              <span>
+                Nom du favori ({notationDraft.trim()}
+                {notationNoteKind ? ` — ${notationNoteKind}` : ''})
+              </span>
+              <input
+                type="text"
+                value={favNameDraft}
+                onChange={(e) => setFavNameDraft(e.target.value)}
+                placeholder="ex. Épée longue"
+                maxLength={40}
+                autoFocus
+                autoComplete="off"
+              />
+            </label>
+            <button className="btn btn-small" type="submit">
+              Enregistrer
+            </button>
+            <button className="btn btn-secondary btn-small" type="button" onClick={() => setFavNameDraft(null)}>
+              Annuler
+            </button>
+          </form>
+        ) : null}
 
         <form className="session-dice-form session-dice-form-manual" onSubmit={(e) => void submitManualRoll(e)}>
           <h4 className="session-dice-manual-title">Enregistrer un jet réalisé</h4>
