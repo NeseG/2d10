@@ -3,6 +3,7 @@
   "short_name": "2d10",
   "description": "Personnages et campagnes D&D 5e.",
   "lang": "fr",
+  "id": "/",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
