@@ -12,7 +12,7 @@ export function ReferentielPage() {
 
   return (
     <Card title="Référentiel">
-      <div className="tabs-row">
+      <div className="tabs-row craft-tabs">
         <button
           className={`tab-btn ${activeTab === 'spells' ? 'active' : ''}`}
           type="button"

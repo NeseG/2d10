@@ -1,0 +1,258 @@
+/*
+ * Refonte ui-craft — navigation générale (sidebar, topbar, sélecteur de langue).
+ * Surcouche isolée : supprimer ce fichier + son import dans AppLayout.tsx pour revenir en arrière.
+ */
+:root {
+  --craft-ease: cubic-bezier(0.23, 1, 0.32, 1);
+  --craft-nav-surface: color-mix(in srgb, var(--bone) 6%, transparent);
+  --craft-nav-surface-strong: color-mix(in srgb, var(--bone) 10%, transparent);
+  --craft-nav-hairline: color-mix(in srgb, var(--bone) 8%, transparent);
+}
+
+/* ── Sidebar ── */
+.sidebar {
+  padding: 1rem 0.75rem;
+  border-right-color: var(--craft-nav-hairline);
+}
+
+.sidebar-title {
+  margin: 0.25rem 0.5rem 1.25rem;
+}
+
+.sidebar-nav {
+  gap: 2px;
+}
+
+.nav-link {
+  position: relative;
+  min-height: 2.5rem;
+  padding: 0 0.75rem;
+  gap: 0.7rem;
+  border-left: none;
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 0.98rem;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted);
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 150ms var(--craft-ease), color 150ms var(--craft-ease);
+}
+
+.nav-link-icon {
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+/* Le :hover de base est neutralisé, puis réactivé seulement sur les appareils à pointeur */
+.nav-link:hover {
+  background: transparent;
+  color: var(--muted);
+}
+
+@media (hover: hover) {
+  .nav-link:hover {
+    background: var(--craft-nav-surface);
+    color: var(--bone);
+  }
+}
+
+.nav-link.active,
+.nav-link.active:hover {
+  background: var(--craft-nav-surface-strong);
+  color: var(--gold);
+}
+
+/* Indicateur actif : petite pilule dorée à gauche */
+.nav-link.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 3px;
+  height: 1.1rem;
+  border-radius: 999px;
+  background: var(--gold);
+  transform: translateY(-50%);
+}
+
+.nav-link:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--gold-dim);
+}
+
+.nav-link:active {
+  transform: scale(0.98);
+}
+
+/* Point "en direct" sur Session en cours */
+.nav-link-live-dot {
+  margin-left: auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--rust-glow);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--rust-glow) 22%, transparent);
+}
+
+.sidebar-footer {
+  padding-top: 0.75rem;
+  border-top-color: var(--craft-nav-hairline);
+}
+
+.sidebar-logout {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+  border: none;
+  border-radius: 10px;
+  background: var(--craft-nav-surface);
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 0.95rem;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+@media (hover: hover) {
+  .sidebar-logout:hover {
+    background: var(--craft-nav-surface-strong);
+    color: var(--bone);
+  }
+}
+
+/* ── Topbar ── */
+.topbar {
+  min-height: 3.5rem;
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom-color: var(--craft-nav-hairline);
+  box-shadow: none;
+}
+
+.topbar-user {
+  gap: 0.5rem;
+}
+
+.burger-btn,
+.sidebar-toggle-btn {
+  width: 2.25rem;
+  height: 2.25rem;
+  margin-right: 0.25rem;
+  padding: 0;
+  place-items: center;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 150ms var(--craft-ease), color 150ms var(--craft-ease), transform 120ms var(--craft-ease);
+}
+
+.burger-btn:active,
+.sidebar-toggle-btn:active {
+  transform: scale(0.94);
+}
+
+@media (hover: hover) {
+  .burger-btn:hover,
+  .sidebar-toggle-btn:hover {
+    background: var(--craft-nav-surface);
+    color: var(--bone);
+  }
+}
+
+@media (max-width: 900px) {
+  .burger-btn {
+    display: inline-grid;
+  }
+}
+
+@media (min-width: 901px) {
+  .sidebar-toggle-btn {
+    display: inline-grid;
+  }
+}
+
+.topbar-avatar {
+  display: inline-grid;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 999px;
+  background: var(--craft-nav-surface-strong);
+  color: var(--gold);
+  font-family: 'Cinzel', serif;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.topbar .badge {
+  margin-left: 0.15rem;
+  padding: 0.1rem 0.45rem;
+  border: none;
+  border-radius: 999px;
+  background: var(--craft-nav-surface);
+  font-family: inherit;
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+}
+
+/* ── Contrôle segmenté (langue FR / EN) ── */
+.segmented-control {
+  gap: 2px !important;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--craft-nav-surface);
+  flex-wrap: nowrap;
+  overflow: visible !important;
+}
+
+.segmented-control .tab-btn {
+  min-width: 2.4rem;
+  padding: 0.25rem 0.6rem;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  transition: background-color 150ms var(--craft-ease), color 150ms var(--craft-ease);
+}
+
+.segmented-control .tab-btn:hover {
+  border: none;
+  color: var(--bone);
+}
+
+.segmented-control .tab-btn.active {
+  background: var(--craft-nav-surface-strong);
+  color: var(--gold);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+/* ── Infos session dans la topbar ── */
+.topbar-session-title {
+  font-size: 0.85rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-link,
+  .burger-btn,
+  .sidebar-toggle-btn,
+  .segmented-control .tab-btn,
+  .sidebar {
+    transition: none !important;
+  }
+}
+
+/* Mobile : on libère la place pour les infos de session */
+@media (max-width: 520px) {
+  .topbar .badge {
+    display: none;
+  }
+}

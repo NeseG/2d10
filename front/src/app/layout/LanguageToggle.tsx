@@ -4,7 +4,7 @@ export function LanguageToggle() {
   const { language, setLanguage } = useLanguage()
 
   return (
-    <div className="tabs-row" style={{ margin: 0 }} role="group" aria-label="Langue du référentiel">
+    <div className="tabs-row segmented-control" style={{ margin: 0 }} role="group" aria-label="Langue du référentiel">
       <button
         type="button"
         className={`tab-btn ${language === 'fr' ? 'active' : ''}`}

@@ -5,6 +5,9 @@ import { useEffect, useState } from 'react'
 import { HeaderProvider } from '../providers/HeaderProvider'
 import { HeaderTopbarSession } from './HeaderTopbarSession'
 import { LanguageToggle } from './LanguageToggle'
+import { Menu, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import './nav-craft.css'
+import '../theme/craft-ui.css'
 
 export function AppLayout() {
   const { user, logout } = useAuth()
@@ -52,7 +55,7 @@ export function AppLayout() {
                 aria-label="Ouvrir le menu"
                 onClick={() => setMobileMenuOpen((prev) => !prev)}
               >
-                ☰
+                <Menu size={20} aria-hidden="true" />
               </button>
               <button
                 className="sidebar-toggle-btn"
@@ -60,8 +63,9 @@ export function AppLayout() {
                 aria-label={sidebarCollapsed ? 'Afficher le menu' : 'Masquer le menu'}
                 onClick={toggleSidebar}
               >
-                {sidebarCollapsed ? '›' : '‹'}
+                {sidebarCollapsed ? <PanelLeftOpen size={18} aria-hidden="true" /> : <PanelLeftClose size={18} aria-hidden="true" />}
               </button>
+              <span className="topbar-avatar" aria-hidden="true">{(user.username.trim()[0] || '?').toUpperCase()}</span>
               <strong>{user.username}</strong> <span className="badge">{user.role}</span>
             </div>
             <div className="topbar-right">
