@@ -267,7 +267,7 @@ export function ItemDetailsModal(props: {
               disabled={loading || transferDisabled}
               onClick={onTransfer}
             >
-              Transférer
+              Donner
             </button>
           ) : null}
           <button className="btn btn-secondary" type="button" disabled={loading} onClick={onClose}>

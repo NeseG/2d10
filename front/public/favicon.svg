@@ -1,13 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="2d10">
-  <rect width="64" height="64" rx="14" fill="#6366f1"/>
-  <text
-    x="32"
-    y="40"
-    text-anchor="middle"
-    font-family="system-ui, -apple-system, 'Segoe UI', sans-serif"
-    font-size="19"
-    font-weight="800"
-    fill="#ffffff"
-    letter-spacing="-0.03em"
-  >2d10</text>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="#08060a"/>
+<path d="M256 72 L432 268 L256 440 L80 268 Z" fill="#c9a84c"/>
+<path d="M256 72 L340 300 L256 348 L172 300 Z" fill="#e8c860"/>
+<path d="M172 300 L80 268 M340 300 L432 268 M256 348 L256 440" stroke="#7a6030" stroke-width="10"/>
+<text x="256" y="296" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-weight="900" font-size="132" fill="#08060a">2</text></svg>

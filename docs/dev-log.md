@@ -132,3 +132,22 @@ Un journal de session : chaque entrée est datée et résume ce qui a été fait
 
 **Points de blocage**
 - Aucun.
+
+---
+
+## 2026-09-30 — Repos long en session live
+
+**Contexte** : demande de l'utilisateur — en tant qu'admin dans la session en cours, un bouton par personnage présent pour déclencher un repos long.
+
+**Ce qui a été fait**
+- Route `POST /api/sessions/:sessionId/characters/:characterId/long-rest` (`back/routes/sessions-prisma.js`), protégée par `checkSessionOwnership` (admin + MJ de la campagne, cohérent avec l'initiative et la carte). Vérifie que le personnage est présent dans la session ou est le familier d'un présent. En une transaction : PV = max, dés de vie += moitié du total (min 1, plafonné), `classResources = {}`, `slotsUsed = 0`, `lastLongRestAt = now`. L'état de session vit sur `CampaignCharacter` (PV/dés de vie), mis à jour aussi quand la liaison existe (pas le cas des familiers).
+- Front (`LiveSessionPage.tsx`) : bouton « Repos long » (icône lune) dans `SessionLiveCharacterHeading`, visible uniquement si `isSessionOwner`, avec confirmation. Après succès, les onglets du personnage sont remontés (clé React incrémentée) pour recharger les données.
+- Grimoire (`CharacterGrimoireTab.tsx`) : les emplacements dépensés en session ne sont stockés qu'en localStorage (`grimoire-live-slots-v2:<session>:<perso>`), donc inaccessibles au serveur. Choix : nouvelle colonne `Character.lastLongRestAt` ; le grimoire stocke le dernier horodatage vu (`…:rest`) et purge les emplacements dépensés s'il diffère. Évite de migrer tout le suivi des emplacements côté serveur.
+- Doc : CHANGELOG, TODO, `COMPLETE_API_DOCUMENTATION.md`.
+
+**En cours / limites connues**
+- Schéma à pousser (`npm run prisma:generate && npm run prisma:push`) ; fonctionnalité non testée dans l'app (typecheck front et `prisma validate` OK).
+- Pas de diffusion temps réel : un joueur avec la fiche déjà ouverte ne voit pas le repos avant rechargement, et sa sauvegarde auto peut écraser les nouvelles valeurs.
+
+**Points de blocage**
+- Aucun.

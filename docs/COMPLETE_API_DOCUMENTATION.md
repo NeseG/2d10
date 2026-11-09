@@ -979,6 +979,37 @@ Content-Type: application/json
 
 Variantes acceptées : `currentHitPoints`, `hitDiceRemaining`.
 
+### Repos long d'un personnage (MJ de la campagne / admin)
+
+```
+POST /api/sessions/:sessionId/characters/:characterId/long-rest
+Authorization: Bearer <gm_or_admin_token>
+```
+
+Le personnage doit être présent dans la session (ou être le familier d'un personnage présent). Effets, appliqués en une transaction :
+
+- PV courants = PV max (`Character` et `CampaignCharacter`) ;
+- dés de vie restants += moitié du total (min 1), plafonné au total (total lu depuis `hitDice` au format `NdX`, sinon le niveau) ;
+- `classResources` réinitialisé à `{}` (toute ressource absente vaut son maximum côté front) ;
+- `slotsUsed` remis à 0 sur tous les emplacements de sort ;
+- `lastLongRestAt` mis à jour (sert au grimoire session pour purger les emplacements dépensés stockés en localStorage).
+
+Réponse :
+
+```json
+{
+  "success": true,
+  "state": {
+    "session_id": 3,
+    "character_id": 12,
+    "current_hit_points": 24,
+    "hit_dice_remaining": 3,
+    "hit_dice_max": 3,
+    "last_long_rest_at": "2026-09-30T20:15:00.000Z"
+  }
+}
+```
+
 ### Statistiques agrégées des sessions (GM / admin)
 ```
 GET /api/sessions/stats/overview

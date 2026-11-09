@@ -135,6 +135,8 @@ model Character {
   destiny         Int      @default(3)
   /// Ressources de classe pour la session (rages, ki, inspirations bardiques…)
   classResources  Json?    @map("class_resources")
+  /// Horodatage du dernier repos long déclenché par le MJ (sert à purger les emplacements de sort dépensés côté client)
+  lastLongRestAt  DateTime? @map("last_long_rest_at")
   isActive        Boolean  @default(true)
   skills          CharacterSkill[]
   savingThrows    CharacterSavingThrow[]

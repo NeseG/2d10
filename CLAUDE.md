@@ -20,7 +20,6 @@
 │   ├── routes/*-prisma.js     # routes Express par domaine (auth, characters, campaigns, sessions, inventory, grimoire, dnd5e-*, dnd-local, ...)
 │   ├── middleware/auth.js     # vérification JWT + rôles (User/GM/Admin)
 │   ├── lib/                   # helpers (upload avatar/carte, tri inventaire, import perso JSON, accès chat session)
-│   ├── services/dndService.js # logique liée aux données D&D
 │   ├── prisma/schema.prisma   # schéma DB (~28 modèles)
 │   ├── scripts/import-dnd5e-*.js  # imports batch depuis https://www.dnd5eapi.co
 │   ├── ws/                    # gestion WebSocket (dés, initiative, chat de session)
@@ -78,6 +77,7 @@ Compte de test : `admin@2d10.com` / `admin123`.
 
 - Le suffixe `-prisma` dans les noms de fichiers (`routes/*-prisma.js`, `test-prisma-*.js`) est un **résidu historique** de la migration depuis des requêtes SQL brutes (`pg`) vers Prisma (voir `back/scripts/rollback-to-postgres.js`). Ne pas reproduire cette convention pour du nouveau code : elle n'apporte rien aujourd'hui, tout le projet est sur Prisma.
 - Le référentiel de monstres (catalogue `DndMonster` + table applicative `Monster`, script `import-dnd5e-monsters.js`, routes, page `/referentiel`, traduction FR, intégration au tracker d'initiative des sessions) est **mergé dans `main` et déployé en production** — voir [CHANGELOG.md](CHANGELOG.md) et [TODO.md](TODO.md). La traduction FR des actions/capacités de monstres (colonnes `*Fr` JSON dédiées) n'est pour l'instant qu'en dev local, pas encore déployée.
+- Session live : les emplacements de sort **dépensés** ne sont pas en base (`CharacterSpellSlot.slotsUsed` n'est pas utilisé par le grimoire session) mais en `localStorage` (`grimoire-live-slots-v2:<sessionId>:<characterId>`), donc propres à chaque navigateur. Le repos long passe par `Character.lastLongRestAt` pour que le grimoire les purge.
 - Le dossier `documentation/` à la racine existe mais est **vide** — ne pas y écrire par erreur en pensant que c'est `docs/`.
 - `docs/README.md` référence un `POSTMAN_GUIDE.md` qui n'existe pas sur le disque — lien mort à corriger ou fichier à créer.
 - Import SRD : nécessite un accès réseau sortant vers `https://www.dnd5eapi.co` (ou toute autre API source pour un futur import monstres).

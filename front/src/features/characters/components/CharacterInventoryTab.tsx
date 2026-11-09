@@ -351,7 +351,7 @@ export type SessionLiveInventoryTransferTarget = { characterId: string; label: s
 export function CharacterInventoryTab(props: {
   characterId: string
   token: string
-  /** Session live : transfert vers d’autres persos de la session (MJ : tous ; joueur : ses persos uniquement). */
+  /** Session live : don vers d’autres persos de la session (joueur : depuis ses persos ; MJ/admin : depuis tous). */
   sessionLiveSessionId?: string
   sessionLiveTransferTargets?: SessionLiveInventoryTransferTarget[]
 }) {
@@ -915,7 +915,7 @@ export function CharacterInventoryTab(props: {
       setTransferModalOpen(false)
       setTransferLine(null)
       setInventoryLoaded(false)
-      showSnackbar({ message: 'Objet transféré.', severity: 'success' })
+      showSnackbar({ message: 'Objet donné.', severity: 'success' })
     } catch (err) {
       showSnackbar({
         message: err instanceof Error ? err.message : 'Erreur transfert',
@@ -1805,7 +1805,7 @@ export function CharacterInventoryTab(props: {
           }}
         >
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-            <h3>Transférer l&apos;objet</h3>
+            <h3>Donner l&apos;objet</h3>
             <p style={{ color: 'var(--muted)', marginTop: 0 }}>
               <strong>{transferLine.name}</strong> — quantité sur cette fiche : {transferLine.quantity}
             </p>
@@ -1839,7 +1839,7 @@ export function CharacterInventoryTab(props: {
               </label>
               <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
                 <button className="btn" type="submit" disabled={transferSaving}>
-                  {transferSaving ? 'Transfert…' : 'Transférer'}
+                  {transferSaving ? 'Envoi…' : 'Donner'}
                 </button>
                 <button
                   className="btn btn-secondary"

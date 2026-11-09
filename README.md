@@ -252,7 +252,7 @@ L'API 2d10 expose de nombreux endpoints, organisés en catégories principales :
 - **Node.js** + **Express.js** - Serveur API
 - **PostgreSQL** - Base de données
 - **JWT** - Authentification
-- **Axios** - Client HTTP pour Open5e
+- **Axios** - Client HTTP des scripts d'import SRD (dnd5eapi.co)
 - **bcryptjs** - Hachage des mots de passe
 
 ### Données D&D

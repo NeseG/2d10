@@ -208,6 +208,7 @@ export function CharacterGrimoireTab(props: {
   const [characterLevel, setCharacterLevel] = useState<number | null>(null)
   const [characterClass, setCharacterClass] = useState<string>('')
   const [classResources, setClassResources] = useState<Record<string, number>>({})
+  const [lastLongRestAt, setLastLongRestAt] = useState<string | null>(null)
   const [abilityScores, setAbilityScores] = useState<Partial<Record<'strength' | 'dexterity' | 'constitution' | 'intelligence' | 'wisdom' | 'charisma', number>>>({})
 
   const [spellSlotsDraft, setSpellSlotsDraft] = useState<Record<number, { slotsMax: string }>>(() =>
@@ -334,6 +335,7 @@ export function CharacterGrimoireTab(props: {
             level?: number | null
             class?: string | null
             classResources?: Record<string, number> | null
+            lastLongRestAt?: string | null
             strength?: number | null
             dexterity?: number | null
             constitution?: number | null
@@ -364,6 +366,7 @@ export function CharacterGrimoireTab(props: {
         if (response.character?.classResources && typeof response.character.classResources === 'object') {
           setClassResources(response.character.classResources)
         }
+        setLastLongRestAt(response.character?.lastLongRestAt ?? null)
         setAbilityScores({
           strength: response.character?.strength ?? undefined,
           dexterity: response.character?.dexterity ?? undefined,
@@ -461,9 +464,22 @@ export function CharacterGrimoireTab(props: {
 
   useEffect(() => {
     if (!sessionView || !liveSlotsStorageKey) return
-    const stored = parseStoredLiveSlots(localStorage.getItem(liveSlotsStorageKey))
+    let stored = parseStoredLiveSlots(localStorage.getItem(liveSlotsStorageKey))
+    // Repos long déclenché par le MJ depuis un autre navigateur : on purge les emplacements dépensés.
+    if (lastLongRestAt) {
+      const restAckKey = `${liveSlotsStorageKey}:rest`
+      try {
+        if (localStorage.getItem(restAckKey) !== lastLongRestAt) {
+          localStorage.removeItem(liveSlotsStorageKey)
+          localStorage.setItem(restAckKey, lastLongRestAt)
+          stored = {}
+        }
+      } catch {
+        /* ignore */
+      }
+    }
     setLiveSlotSpend(normalizeLiveSlotState(stored, slotsMaxByLevel))
-  }, [sessionView, liveSlotsStorageKey, characterId, slotsMaxByLevel])
+  }, [sessionView, liveSlotsStorageKey, characterId, slotsMaxByLevel, lastLongRestAt])
 
   function toggleLiveSlot(level: number, index: number) {
     if (!liveSlotsStorageKey || level < 1 || level > 9) return

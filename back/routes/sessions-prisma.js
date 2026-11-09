@@ -681,7 +681,8 @@ router.put('/:sessionId/map/state', authenticateToken, checkSessionOwnership, as
 
 /**
  * Transfert d’une ligne d’inventaire (Item) entre deux personnages présents à la session.
- * Autorisé : MJ de la campagne, admin, ou deux personnages du même joueur.
+ * Autorisé : MJ de la campagne ou admin (depuis n’importe quel perso de la session),
+ * ou joueur propriétaire du personnage source (vers n’importe quel autre perso de la session).
  */
 router.post('/:sessionId/inventory/transfer', authenticateToken, async (req, res) => {
   try {
@@ -725,8 +726,9 @@ router.post('/:sessionId/inventory/transfer', authenticateToken, async (req, res
     ]);
     if (!fromChar || !toChar) return res.status(404).json({ error: 'Personnage non trouvé' });
 
-    const samePlayer = fromChar.userId === toChar.userId && fromChar.userId === userId;
-    if (!isSessionGm && !samePlayer) {
+    // Joueur : uniquement depuis son propre inventaire (vers n’importe quel perso de la session).
+    const ownsSource = fromChar.userId === userId;
+    if (!isSessionGm && !ownsSource) {
       return res.status(403).json({ error: 'Accès refusé' });
     }
 
@@ -1498,6 +1500,78 @@ router.put('/:sessionId/characters/:characterId/state', authenticateToken, async
     });
   } catch (error) {
     console.error("Erreur lors de la mise à jour de l'état de personnage en session:", error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Repos long (GM/Admin) : PV au max, récupération de la moitié des dés de vie (min 1),
+// ressources de classe et emplacements de sort restaurés.
+router.post('/:sessionId/characters/:characterId/long-rest', authenticateToken, checkSessionOwnership, async (req, res) => {
+  try {
+    const sessionId = parseInt(req.params.sessionId, 10);
+    const characterId = parseInt(req.params.characterId, 10);
+    if (Number.isNaN(characterId)) return res.status(400).json({ error: 'ID invalide' });
+
+    const session = await prisma.gameSession.findFirst({
+      where: { id: sessionId, isActive: true },
+      select: { campaignId: true, attendance: { select: { characterId: true } } },
+    });
+    if (!session) return res.status(404).json({ error: 'Session non trouvée' });
+
+    const character = await prisma.character.findFirst({
+      where: { id: characterId, isActive: true },
+      select: { id: true, level: true, hitPoints: true, hitDice: true, hitDiceRemaining: true, masterCharacterId: true },
+    });
+    const attendeeIds = new Set(session.attendance.map((a) => a.characterId));
+    const inSession =
+      character &&
+      (attendeeIds.has(character.id) ||
+        (character.masterCharacterId != null && attendeeIds.has(character.masterCharacterId)));
+    if (!inSession) return res.status(404).json({ error: 'Personnage non présent dans cette session' });
+
+    const campaignCharacter = await prisma.campaignCharacter.findFirst({
+      where: { campaignId: session.campaignId, characterId, isActive: true },
+      select: { hitDiceRemaining: true },
+    });
+
+    const hitDiceMaxMatch =
+      typeof character.hitDice === 'string' ? character.hitDice.trim().match(/^(\d+)\s*d\s*\d+$/i) : null;
+    const hitDiceMax = hitDiceMaxMatch ? Number.parseInt(hitDiceMaxMatch[1], 10) : (character.level ?? null);
+    const hitDiceBefore = campaignCharacter?.hitDiceRemaining ?? character.hitDiceRemaining ?? hitDiceMax;
+    const hitDiceRemaining =
+      hitDiceMax != null ? Math.min(hitDiceMax, (hitDiceBefore ?? 0) + Math.max(1, Math.floor(hitDiceMax / 2))) : null;
+    const currentHitPoints = character.hitPoints ?? null;
+    const lastLongRestAt = new Date();
+
+    await prisma.$transaction([
+      prisma.character.update({
+        where: { id: characterId },
+        data: { currentHitPoints, hitDiceRemaining, classResources: {}, lastLongRestAt },
+      }),
+      prisma.characterSpellSlot.updateMany({ where: { characterId }, data: { slotsUsed: 0 } }),
+      ...(campaignCharacter
+        ? [
+            prisma.campaignCharacter.update({
+              where: { campaignId_characterId: { campaignId: session.campaignId, characterId } },
+              data: { currentHitPoints, hitDiceRemaining },
+            }),
+          ]
+        : []),
+    ]);
+
+    res.json({
+      success: true,
+      state: {
+        session_id: sessionId,
+        character_id: characterId,
+        current_hit_points: currentHitPoints,
+        hit_dice_remaining: hitDiceRemaining,
+        hit_dice_max: hitDiceMax,
+        last_long_rest_at: lastLongRestAt.toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error('Erreur lors du repos long:', error);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });

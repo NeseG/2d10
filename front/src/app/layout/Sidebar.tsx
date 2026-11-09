@@ -35,7 +35,10 @@ export function Sidebar({ role, hasJoinedSession = false, isOpen = true, onNavig
 
   return (
     <aside className={`sidebar ${isOpen ? 'open' : ''}`}>
-      <h2 className="sidebar-title">2d10</h2>
+      <h2 className="sidebar-title">
+        <img src="/favicon.svg" alt="" className="sidebar-logo" />
+        2d10
+      </h2>
       <nav className="sidebar-nav">
         {computedItems.map((item) => (
             <NavLink

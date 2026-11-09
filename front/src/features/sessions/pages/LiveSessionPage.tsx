@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Activity,
   Backpack,
@@ -7,6 +7,7 @@ import {
   Dices,
   Map,
   MessageCircle,
+  Moon,
   ScrollText,
   Swords,
   User,
@@ -15,7 +16,7 @@ import { Link } from 'react-router-dom'
 import { Card } from '../../../shared/components/Card'
 import { useAuth } from '../../../app/hooks/useAuth'
 import { useSnackbar } from '../../../app/hooks/useSnackbar'
-import { apiGet, getApiBaseUrl } from '../../../shared/api/client'
+import { apiGet, apiPost, getApiBaseUrl } from '../../../shared/api/client'
 import {
   CharacterCharacteristicsTab,
   DEFAULT_SESSION_LIVE_ACCORDIONS,
@@ -66,8 +67,15 @@ type SessionDetail = {
   attendance?: SessionAttendance[]
 }
 
-function SessionLiveCharacterHeading(props: { characterId: string; label: string; avatarUrl?: string }) {
-  const { characterId, label, avatarUrl } = props
+function SessionLiveCharacterHeading(props: {
+  characterId: string
+  label: string
+  avatarUrl?: string
+  /** MJ/Admin uniquement : déclenche un repos long pour ce personnage. */
+  onLongRest?: () => void
+  longRestPending?: boolean
+}) {
+  const { characterId, label, avatarUrl, onLongRest, longRestPending } = props
   const resolvedAvatarUrl = avatarUrl
     ? `${getApiBaseUrl()}${avatarUrl.startsWith('/') ? avatarUrl : `/${avatarUrl}`}`
     : ''
@@ -77,6 +85,19 @@ function SessionLiveCharacterHeading(props: { characterId: string; label: string
         {resolvedAvatarUrl ? <img src={resolvedAvatarUrl} alt={`Avatar de ${label}`} /> : <span>{(label.trim()[0] || '?').toUpperCase()}</span>}
       </div>
       <h4 className="session-live-character-panel-title">{label}</h4>
+      {onLongRest ? (
+        <button
+          type="button"
+          className="session-live-character-edit-link session-live-character-rest-btn"
+          onClick={onLongRest}
+          disabled={longRestPending}
+          title="Repos long : PV au max, moitié des dés de vie, ressources et emplacements de sort restaurés"
+          aria-label={`Repos long pour ${label}`}
+        >
+          <Moon size={12} aria-hidden="true" />
+          {longRestPending ? '…' : 'Repos long'}
+        </button>
+      ) : null}
       <Link
         to={`/characters/${characterId}/edit`}
         className="session-live-character-edit-link"
@@ -214,9 +235,11 @@ export function LiveSessionPage() {
       if (!sessionDetail?.attendance || !user) return []
       const currentId = Number(excludeCharacterId)
       if (!Number.isFinite(currentId)) return []
+      // Joueur : ne peut donner que depuis son propre inventaire ; MJ/admin : depuis n’importe quel perso.
+      const source = sessionDetail.attendance.find((e) => e.character_id === currentId)
+      if (!isSessionOwner && source?.character_user_id !== user.id) return []
       return sessionDetail.attendance
         .filter((e) => e.character_id !== currentId)
-        .filter((e) => isSessionOwner || e.character_user_id === user.id)
         .map((e) => ({
           characterId: String(e.character_id),
           label: `${e.is_companion ? '· ' : ''}${(e.character_name ?? '').trim() || `Personnage #${e.character_id}`}`,
@@ -234,6 +257,32 @@ export function LiveSessionPage() {
   const [traitsAccordionByCharacterId, setTraitsAccordionByCharacterId] = useState<
     Record<string, SessionLiveTraitsAccordionState>
   >({})
+
+  /** Incrémenté après un repos long pour remonter les onglets du personnage (rechargement depuis l’API). */
+  const [restVersionByCharacterId, setRestVersionByCharacterId] = useState<Record<string, number>>({})
+  const [longRestPendingId, setLongRestPendingId] = useState<string | null>(null)
+
+  const handleLongRest = useCallback(
+    async (characterId: string, label: string) => {
+      const sessionId = session?.id
+      if (sessionId == null || !token) return
+      if (!window.confirm(`Repos long pour ${label} ?\nPV au max, moitié des dés de vie, ressources de classe et emplacements de sort restaurés.`)) return
+      setLongRestPendingId(characterId)
+      try {
+        await apiPost(`/api/sessions/${sessionId}/characters/${characterId}/long-rest`, {}, token)
+        setRestVersionByCharacterId((prev) => ({ ...prev, [characterId]: (prev[characterId] ?? 0) + 1 }))
+        showSnackbar({ message: `${label} a terminé un repos long.`, severity: 'success' })
+      } catch (err) {
+        showSnackbar({
+          message: err instanceof Error ? err.message : 'Erreur lors du repos long',
+          severity: 'error',
+        })
+      } finally {
+        setLongRestPendingId(null)
+      }
+    },
+    [session?.id, token, showSnackbar],
+  )
 
   const getSessionLiveAccordions = useCallback(
     (characterId: string) => sessionAccordionByCharacterId[characterId] ?? DEFAULT_SESSION_LIVE_ACCORDIONS,
@@ -448,7 +497,10 @@ export function LiveSessionPage() {
                             characterId={cid}
                             label={title}
                             avatarUrl={characterAvatarUrls[cid] ?? ''}
+                            onLongRest={isSessionOwner ? () => void handleLongRest(cid, title) : undefined}
+                            longRestPending={longRestPendingId === cid}
                           />
+                          <Fragment key={restVersionByCharacterId[cid] ?? 0}>
 
                           {characterSubTab === 'characteristic' ? (
                             <CharacterCharacteristicsTab
@@ -501,6 +553,7 @@ export function LiveSessionPage() {
                               characterId={cid}
                             />
                           ) : null}
+                          </Fragment>
                         </div>
                       </div>
                     )
@@ -512,7 +565,14 @@ export function LiveSessionPage() {
                     characterId={selectedCharacterId}
                     label={selectedCharacterName || 'Mon personnage'}
                     avatarUrl={characterAvatarUrls[selectedCharacterId] ?? ''}
+                    onLongRest={
+                      isSessionOwner
+                        ? () => void handleLongRest(selectedCharacterId, selectedCharacterName || 'ce personnage')
+                        : undefined
+                    }
+                    longRestPending={longRestPendingId === selectedCharacterId}
                   />
+                  <Fragment key={restVersionByCharacterId[selectedCharacterId] ?? 0}>
                   {characterSubTab === 'characteristic' ? (
                     <CharacterCharacteristicsTab
                       characterId={selectedCharacterId}
@@ -562,6 +622,7 @@ export function LiveSessionPage() {
                       characterId={selectedCharacterId}
                     />
                   ) : null}
+                  </Fragment>
                 </div>
               ) : null}
 

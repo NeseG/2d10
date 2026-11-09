@@ -4,6 +4,13 @@ Mis à jour manuellement à chaque session. Voir aussi [docs/dev-log.md](docs/de
 
 ## En cours
 
+- **Repos long en session** :
+  - ✅ Bouton « Repos long » par personnage dans la session live (MJ de la campagne / admin) — `LiveSessionPage.tsx`, route `POST /api/sessions/:sessionId/characters/:characterId/long-rest` (`back/routes/sessions-prisma.js`). PV max, moitié des dés de vie (min 1), `classResources` réinitialisé (clé absente = max), `slotsUsed` à 0, familiers inclus.
+  - ✅ Colonne `Character.lastLongRestAt` : le grimoire session compare cette date à un accusé stocké en localStorage et purge les emplacements dépensés (qui ne vivent que dans le navigateur du joueur).
+  - ⬜ Appliquer le schéma (`prisma db push`) en dev puis en production ; tester en conditions réelles (non testé dans l'app à ce stade).
+  - ⬜ Pas de synchro temps réel : un joueur dont la fiche est déjà ouverte doit recharger, sinon sa sauvegarde auto peut écraser le repos avec ses anciennes valeurs (PV, dés de vie, ressources). Piste : événement WebSocket « repos long » diffusé à toute la session.
+  - ⬜ Repos court non implémenté.
+
 - **Référentiel d'objets magiques** :
   - ✅ Nouvel onglet « Objets » sur `/referentiel` (`front/src/features/referentiel/components/ReferentielMagicItemsTab.tsx` + `MagicItemDetailsModal.tsx`), même pattern que Sorts/Monstres : recherche, filtres rareté/catégorie, pagination, détail bilingue FR/EN via `pickLang`. Le catalogue `Dnd5eMagicItem` était déjà importé/traduit (362 entrées), seul le frontend manquait.
   - ✅ `GET /api/dnd5e/magic-items` expose désormais `nameFr`/`categoryNameFr`/`rarityFr` en liste (`back/routes/dnd5e-magic-items-prisma.js`), et `DELETE /api/dnd5e/magic-items/:index` ajouté pour parité avec sorts/monstres (retrait du catalogue importé, admin/gm).
