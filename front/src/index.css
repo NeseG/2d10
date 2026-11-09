@@ -3093,11 +3093,15 @@ button.initiative-visibility-toggle {
 .session-game-split {
   display: inline-flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 0.35rem;
+  min-width: 0;
 }
 
 .session-game-split input {
   width: 4.2rem;
+  min-width: 0;
+  flex: 0 1 auto;
   text-align: center;
   padding: 0.35rem 0.35rem;
   border-radius: 2px;
@@ -3203,7 +3207,7 @@ button.initiative-visibility-toggle {
 .session-ability-name,
 .session-ability-mod,
 .session-ability-value-prof {
-  min-height: 2.5rem;
+  min-height: 2.1rem;
   display: grid;
   place-items: center;
 }
@@ -3222,8 +3226,8 @@ button.initiative-visibility-toggle {
   font-size: 1.1rem;
   background: var(--ability-mod-bg, var(--surface-input-raised));
   color: var(--bone);
-  margin: 0.24rem;
-  min-height: calc(2.5rem - 0.48rem);
+  margin: 0.2rem;
+  min-height: calc(2.1rem - 0.4rem);
   border-radius: 2px;
   border: none;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
@@ -3235,8 +3239,10 @@ button.initiative-visibility-toggle {
 }
 
 .session-ability-value-prof {
-  grid-template-rows: 1fr 1fr;
-  gap: 0.1rem;
+  grid-template-rows: auto auto;
+  align-content: center;
+  gap: 0.15rem;
+  padding: 0.2rem 0;
 }
 
 .session-ability-raw-value {
@@ -3784,10 +3790,31 @@ input[type='checkbox']:disabled {
     padding-right: 0;
   }
 
+  .session-game-row-hp,
+  .session-game-row-dice {
+    gap: 0.35rem;
+    padding: 0.4rem;
+    min-width: 0;
+  }
+
+  .session-game-row-hp strong,
+  .session-game-row-dice strong {
+    letter-spacing: 0.5px;
+  }
+
+  .session-game-split {
+    gap: 0.2rem;
+  }
+
   .session-game-split input {
-    width: 3rem;
-    min-width: 3rem;
-    padding: 0.25rem 0.2rem;
+    width: 2.4rem;
+    padding: 0.25rem 0.1rem;
+    font-size: 0.9rem;
+  }
+
+  .session-game-static-value {
+    min-width: 0;
+    white-space: nowrap;
     font-size: 0.9rem;
   }
 
