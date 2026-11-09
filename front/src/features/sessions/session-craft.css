@@ -1,0 +1,323 @@
+/*
+ * TEST ui-craft — refonte (mobile + desktop) de la fiche perso en session live.
+ * Surcouche isolée : supprimer ce fichier + son import dans LiveSessionPage.tsx pour revenir en arrière.
+ * Principes : une seule couleur d'accent (or), moins de bordures, élévation par surface,
+ * chiffres en vedette (tabular-nums), labels discrets, press-feedback ≤ 150ms, inputs 16px (pas de zoom iOS).
+ */
+@media all {
+  .session-live-page {
+    --craft-radius: 12px;
+    --craft-radius-sm: 8px;
+    --craft-surface: color-mix(in srgb, var(--panel) 70%, var(--bg));
+    --craft-surface-raised: color-mix(in srgb, var(--bone) 5%, var(--panel));
+    --craft-hairline: color-mix(in srgb, var(--bone) 8%, transparent);
+    --craft-label: color-mix(in srgb, var(--muted) 90%, var(--bone));
+    --craft-accent: var(--gold);
+    --craft-ease: cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  /* Séparateur vertical discret entre plusieurs persos */
+  .session-live-page .session-live-character-panel + .session-live-character-panel {
+    padding-left: 0.75rem;
+    border-left: 1px solid color-mix(in srgb, var(--gold) 22%, transparent);
+  }
+
+  /* ── Carte perso : sans cadre (pleine largeur en mobile, voir bas de fichier) ── */
+  .session-live-page .session-live-character-panel-inner {
+    border: none;
+    border-radius: var(--craft-radius);
+    background: transparent;
+    padding: 0.25rem 0 5.5rem;
+  }
+
+  /* ── En-tête : nom sur une ligne, actions compactes ── */
+  .session-live-page .session-live-character-title-row {
+    gap: 0.6rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .session-live-page .session-live-character-avatar {
+    width: 2.5rem;
+    height: 2.5rem;
+    border: none;
+    box-shadow: 0 0 0 1px var(--craft-hairline);
+  }
+
+  .session-live-page .session-live-character-panel-title {
+    font-size: 1.15rem;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .session-live-page .session-live-character-edit-link {
+    min-height: 2.25rem;
+    padding: 0 0.7rem;
+    border: none;
+    border-radius: 999px;
+    background: var(--craft-surface-raised);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.8rem;
+    letter-spacing: 0;
+    text-transform: none;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform 120ms var(--craft-ease), background-color 120ms var(--craft-ease);
+  }
+
+  /* Repos long en icône seule (aria-label déjà présent) pour laisser la place au nom */
+  .session-live-page .session-live-character-rest-btn {
+    width: 2.25rem;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .session-live-page .session-live-character-rest-btn svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .session-live-page .session-live-character-edit-link:active {
+    transform: scale(0.96);
+  }
+
+  /* ── Méta (classe · race · niveau) : une ligne discrète ── */
+  .session-live-page .session-character-meta-row {
+    gap: 0.75rem;
+    margin: 0 0 0.6rem;
+    padding-left: 3.1rem;
+    font-size: 0.95rem;
+  }
+
+  .session-live-page .session-character-meta-row strong {
+    font-family: inherit;
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    color: var(--craft-label);
+  }
+
+  /* ── PV / Dés de vie / CA / Maîtrise / Destin : tuiles de stats ── */
+  .session-live-page .session-game-panel {
+    gap: 0.4rem;
+  }
+
+  .session-live-page .session-game-row,
+  .session-live-page .session-game-row-hp,
+  .session-live-page .session-game-row-dice {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 0.15rem;
+    padding: 0.4rem 0.55rem;
+    border: none;
+    border-radius: var(--craft-radius-sm);
+    /* couleur propre à chaque stat (--row-color défini dans index.css) */
+    background: color-mix(in srgb, var(--row-color, var(--muted)) 12%, var(--craft-surface));
+  }
+
+  .session-live-page .session-game-row strong {
+    font-family: inherit;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: var(--row-color, var(--craft-label));
+  }
+
+  .session-live-page .session-game-split {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 0.3rem;
+    font-size: 1rem;
+  }
+
+  .session-live-page .session-game-split input,
+  .session-live-page .session-game-row-destiny input {
+    width: 2.8rem;
+    min-height: 2rem;
+    padding: 0.2rem;
+    border: none;
+    border-radius: var(--craft-radius-sm);
+    background: var(--craft-surface-raised);
+    color: var(--bone);
+    font-size: 16px; /* < 16px = zoom auto iOS au focus */
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    transition: box-shadow 120ms var(--craft-ease);
+  }
+
+  .session-live-page .session-game-split input:focus-visible,
+  .session-live-page .session-game-row-destiny input:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--craft-accent);
+  }
+
+  .session-live-page .session-game-static-value {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--craft-label);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .session-live-page .session-game-secondary-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.4rem;
+  }
+
+  .session-live-page .session-game-row-ac > span,
+  .session-live-page .session-game-row-prof > span {
+    font-family: 'Cinzel', serif;
+    font-size: 1.05rem;
+    font-weight: 700;
+    line-height: 2rem;
+    color: var(--bone);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── Ressources de classe ── */
+  .session-live-page .session-class-resources {
+    margin: 0.7rem 0 0.15rem;
+  }
+
+  .session-live-page .session-class-resource-label {
+    font-family: inherit;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+  }
+
+  .session-live-page .session-class-resource-icon {
+    width: 2.2rem;
+    height: 2.2rem;
+    border: none;
+    border-radius: var(--craft-radius-sm);
+    background: var(--craft-surface);
+    -webkit-tap-highlight-color: transparent;
+    transition: transform 120ms var(--craft-ease), opacity 150ms var(--craft-ease), background-color 150ms var(--craft-ease);
+  }
+
+  .session-live-page .session-class-resource-icon.active {
+    background: color-mix(in srgb, var(--resource-color, var(--craft-accent)) 18%, var(--craft-surface));
+  }
+
+  .session-live-page .session-class-resource-icon:active {
+    transform: scale(0.94);
+  }
+
+  /* ── Caractéristiques : 3 colonnes, modificateur en vedette, couleur unique ── */
+  .session-live-page .session-ability-title {
+    margin: 0.85rem 0 0.4rem !important;
+    font-size: 0.75rem;
+    letter-spacing: 0.12em;
+    color: var(--craft-label);
+  }
+
+  .session-live-page .session-ability-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    /* DOM = FOR,INT,DEX,SAG,CON,CHA → flux en colonnes pour lire FOR DEX CON / INT SAG CHA */
+    grid-template-rows: auto auto;
+    grid-auto-flow: column;
+    gap: 0.4rem;
+  }
+
+  .session-live-page .session-ability-item {
+    position: relative;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
+    justify-items: center;
+    padding: 0.35rem 0.2rem;
+    border: none;
+    border-radius: var(--craft-radius-sm);
+    /* couleurs par caractéristique conservées (--ability-* dans index.css) */
+    background: var(--ability-bg, var(--craft-surface));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ability-color, transparent) 35%, transparent);
+  }
+
+  .session-live-page .session-ability-name {
+    min-height: 0;
+    font-family: inherit;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--ability-color, var(--craft-label));
+  }
+
+  .session-live-page .session-ability-mod {
+    min-height: 0;
+    margin: 0 0 0.15rem;
+    background: none;
+    box-shadow: none;
+    font-size: 1.15rem;
+    line-height: 1.2;
+    color: var(--bone);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .session-live-page .session-ability-value-prof {
+    min-height: 0;
+    grid-template-rows: auto;
+    grid-auto-flow: column;
+    gap: 0.4rem;
+    padding: 0;
+  }
+
+  .session-live-page .session-ability-raw-value {
+    min-width: 1.6rem;
+    padding: 0.15rem 0.4rem;
+    border-radius: 999px;
+    background: var(--craft-surface-raised);
+    font-family: inherit;
+    font-size: 0.75rem;
+    color: var(--craft-label);
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .session-live-page .session-ability-value-prof input[type='checkbox'] {
+    width: 1.1rem;
+    height: 1.1rem;
+    accent-color: var(--craft-accent);
+  }
+
+  /* ── Accordéons (compétences, armes, consommables, items) ── */
+  .session-live-page .character-skills-accordion {
+    margin-top: 0.5rem;
+    border-radius: var(--craft-radius);
+    background: var(--craft-surface);
+  }
+
+  .session-live-page .character-skills-accordion-summary {
+    min-height: 2.6rem;
+    padding: 0 0.75rem;
+    display: flex;
+    align-items: center;
+    font-size: 0.8rem;
+    letter-spacing: 0.1em;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .session-live-page .character-skills-accordion-panel {
+    padding: 0 0.85rem 0.75rem;
+  }
+
+  .session-live-page .session-weapons-empty,
+  .session-live-page .session-consumables-empty,
+  .session-live-page .session-items-empty {
+    color: var(--craft-label);
+    font-size: 0.9rem;
+  }
+}
+
+@media (max-width: 520px) {
+  .session-live-page .session-live-character-panel {
+    flex-basis: calc(100vw - 1.7rem);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-live-page * {
+    transition: none !important;
+  }
+}
