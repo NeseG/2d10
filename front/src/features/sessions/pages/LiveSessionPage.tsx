@@ -374,10 +374,11 @@ export function LiveSessionPage() {
                   className={`tab-btn ${mainTab === 'character' ? 'active' : ''}`}
                   type="button"
                   onClick={() => setMainTab('character')}
-                  title="Character"
-                  aria-label="Character"
+                  title="Perso"
+                  aria-label="Perso"
                 >
-                  <User size={22} aria-hidden="true" />
+                  <User size={20} aria-hidden="true" />
+                  <span className="tab-btn-label">Perso</span>
                 </button>
                 <button
                   className={`tab-btn ${mainTab === 'chat' ? 'active' : ''}`}
@@ -386,7 +387,8 @@ export function LiveSessionPage() {
                   title="Chat"
                   aria-label="Chat"
                 >
-                  <MessageCircle size={22} aria-hidden="true" />
+                  <MessageCircle size={20} aria-hidden="true" />
+                  <span className="tab-btn-label">Chat</span>
                 </button>
                 <button
                   className={`tab-btn ${mainTab === 'initiative' ? 'active' : ''}`}
@@ -395,7 +397,8 @@ export function LiveSessionPage() {
                   title="Initiative"
                   aria-label="Initiative"
                 >
-                  <Swords size={22} aria-hidden="true" />
+                  <Swords size={20} aria-hidden="true" />
+                  <span className="tab-btn-label">Initiative</span>
                 </button>
                 <button
                   className={`tab-btn ${mainTab === 'map' ? 'active' : ''}`}
@@ -404,7 +407,8 @@ export function LiveSessionPage() {
                   title="Carte"
                   aria-label="Carte"
                 >
-                  <Map size={22} aria-hidden="true" />
+                  <Map size={20} aria-hidden="true" />
+                  <span className="tab-btn-label">Carte</span>
                 </button>
               </div>
 
@@ -635,10 +639,11 @@ export function LiveSessionPage() {
                     onClick={() => {
                       setCharacterSubTab('characteristic')
                     }}
-                    title="Characteristic"
-                    aria-label="Characteristic"
+                    title="Stats"
+                    aria-label="Stats"
                   >
-                    <Activity size={22} aria-hidden="true" />
+                    <Activity size={20} aria-hidden="true" />
+                  <span className="tab-btn-label">Stats</span>
                   </button>
                   <button
                     className={`tab-btn ${characterSubTab === 'inventory' ? 'active' : ''}`}
@@ -646,10 +651,11 @@ export function LiveSessionPage() {
                     onClick={() => {
                       setCharacterSubTab('inventory')
                     }}
-                    title="Inventory"
-                    aria-label="Inventory"
+                    title="Sac"
+                    aria-label="Sac"
                   >
-                    <Backpack size={22} aria-hidden="true" />
+                    <Backpack size={20} aria-hidden="true" />
+                  <span className="tab-btn-label">Sac</span>
                   </button>
                   <button
                     className={`tab-btn ${characterSubTab === 'grimoire' ? 'active' : ''}`}
@@ -657,10 +663,11 @@ export function LiveSessionPage() {
                     onClick={() => {
                       setCharacterSubTab('grimoire')
                     }}
-                    title="Grimoire"
-                    aria-label="Grimoire"
+                    title="Sorts"
+                    aria-label="Sorts"
                   >
-                    <BookMarked size={22} aria-hidden="true" />
+                    <BookMarked size={20} aria-hidden="true" />
+                  <span className="tab-btn-label">Sorts</span>
                   </button>
                   <button
                     className={`tab-btn ${characterSubTab === 'traits' ? 'active' : ''}`}
@@ -671,7 +678,8 @@ export function LiveSessionPage() {
                     title="Traits"
                     aria-label="Traits"
                   >
-                    <Clover size={22} aria-hidden="true" />
+                    <Clover size={20} aria-hidden="true" />
+                  <span className="tab-btn-label">Traits</span>
                   </button>
                   <button
                     className={`tab-btn ${characterSubTab === 'notes' ? 'active' : ''}`}
@@ -682,7 +690,8 @@ export function LiveSessionPage() {
                     title="Notes"
                     aria-label="Notes"
                   >
-                    <ScrollText size={22} aria-hidden="true" />
+                    <ScrollText size={20} aria-hidden="true" />
+                  <span className="tab-btn-label">Notes</span>
                   </button>
                   <button
                     className={`tab-btn ${characterSubTab === 'dice' ? 'active' : ''}`}
@@ -693,7 +702,8 @@ export function LiveSessionPage() {
                     title="Dés"
                     aria-label="Dés"
                   >
-                    <Dices size={22} aria-hidden="true" />
+                    <Dices size={20} aria-hidden="true" />
+                  <span className="tab-btn-label">Dés</span>
                   </button>
                 </div>
               ) : null}

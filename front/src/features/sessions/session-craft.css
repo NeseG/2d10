@@ -321,3 +321,153 @@
     transition: none !important;
   }
 }
+
+/* ══ Onglets de session (refonte ui-craft navigation) ══ */
+
+/* Onglets principaux : contrôle segmenté collant, icône + libellé */
+.session-live-page .session-tabs-primary {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 2px;
+  max-width: 34rem;
+  padding: 3px;
+  border: none;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bone) 6%, var(--panel));
+  overflow: visible;
+}
+
+.session-live-page .session-tabs-primary-sticky {
+  top: 0.4rem;
+  box-shadow: 0 6px 16px -8px rgba(0, 0, 0, 0.6);
+}
+
+.session-live-page .session-tabs-primary .tab-btn {
+  min-height: 2.5rem;
+  min-width: 0;
+  padding: 0 0.5rem;
+  gap: 0.4rem;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 150ms cubic-bezier(0.23, 1, 0.32, 1), color 150ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.session-live-page .session-tabs-primary .tab-btn.active {
+  background: color-mix(in srgb, var(--bone) 11%, var(--panel));
+  color: var(--gold);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+/* Barre d'onglets du bas : style app mobile, icône au-dessus du libellé */
+.session-live-page .session-subtabs-dock {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 2px;
+  padding: 0.35rem 0.5rem calc(0.35rem + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid color-mix(in srgb, var(--bone) 8%, transparent);
+  overflow: visible;
+}
+
+.session-live-page .session-subtabs-dock .tab-btn {
+  flex-direction: column;
+  gap: 0.15rem;
+  min-height: 3.1rem;
+  min-width: 0;
+  padding: 0.3rem 0;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 150ms cubic-bezier(0.23, 1, 0.32, 1), transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* Actif : pilule derrière l'icône (pattern iOS / Material 3) */
+.session-live-page .session-subtabs-dock .tab-btn svg {
+  box-sizing: content-box;
+  padding: 0.2rem 0.9rem;
+  border-radius: 999px;
+  transition: background-color 150ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.session-live-page .session-subtabs-dock .tab-btn.active {
+  color: var(--gold);
+}
+
+.session-live-page .session-subtabs-dock .tab-btn.active svg {
+  background: color-mix(in srgb, var(--gold) 16%, transparent);
+}
+
+.session-live-page .session-tabs-primary .tab-btn:active,
+.session-live-page .session-subtabs-dock .tab-btn:active {
+  transform: scale(0.96);
+}
+
+.session-live-page .session-tabs-primary .tab-btn:focus-visible,
+.session-live-page .session-subtabs-dock .tab-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--gold-dim);
+}
+
+@media (hover: hover) {
+  .session-live-page .session-tabs-primary .tab-btn:not(.active):hover,
+  .session-live-page .session-subtabs-dock .tab-btn:not(.active):hover {
+    color: var(--bone);
+  }
+}
+
+/* Desktop : le dock devient une pilule flottante centrée */
+@media (min-width: 901px) {
+  .session-live-page .session-subtabs-dock {
+    left: calc(250px + (100vw - 250px) / 2);
+    right: auto;
+    bottom: 1rem;
+    width: min(32rem, calc(100vw - 250px - 2rem));
+    transform: translateX(-50%);
+    padding: 0.3rem;
+    border: 1px solid color-mix(in srgb, var(--bone) 10%, transparent);
+    border-radius: 16px;
+    box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.7);
+  }
+
+  .sidebar-collapsed .session-live-page .session-subtabs-dock {
+    left: 50vw;
+    width: min(32rem, calc(100vw - 2rem));
+  }
+}
+
+@media (max-width: 520px) {
+  .session-live-page .session-tabs-primary-sticky {
+    top: 0;
+    margin: 0 0 0.5rem;
+    padding: 3px;
+  }
+
+  .session-live-page .session-subtabs-dock {
+    padding-left: 0.25rem;
+    padding-right: 0.25rem;
+  }
+
+  .session-live-page .session-subtabs-dock .tab-btn svg {
+    padding: 0.2rem 0.65rem;
+  }
+}
+
+.session-live-page .session-tabs-primary .tab-btn svg {
+  flex-shrink: 0;
+}

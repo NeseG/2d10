@@ -129,42 +129,46 @@ export function CharacterEditPage() {
             </div>
           </div>
         </div>
-        <div className="tabs-row">
+        <div className="tabs-row craft-tabs">
           <button
             className={`tab-btn ${activeTab === 'characteristics' ? 'active' : ''}`}
             type="button"
             onClick={() => setActiveTab('characteristics')}
-            title="Characteristic"
-            aria-label="Characteristic"
+            title="Stats"
+            aria-label="Stats"
           >
-            <Activity size={22} aria-hidden="true" />
+            <Activity size={20} aria-hidden="true" />
+            <span className="tab-btn-label">Stats</span>
           </button>
           <button
             className={`tab-btn ${activeTab === 'inventory' ? 'active' : ''}`}
             type="button"
             onClick={() => setActiveTab('inventory')}
-            title="Inventory"
-            aria-label="Inventory"
+            title="Sac"
+            aria-label="Sac"
           >
-            <Backpack size={22} aria-hidden="true" />
+            <Backpack size={20} aria-hidden="true" />
+            <span className="tab-btn-label">Sac</span>
           </button>
           <button
             className={`tab-btn ${activeTab === 'grimoire' ? 'active' : ''}`}
             type="button"
             onClick={() => setActiveTab('grimoire')}
-            title="Grimoire"
-            aria-label="Grimoire"
+            title="Sorts"
+            aria-label="Sorts"
           >
-            <BookMarked size={22} aria-hidden="true" />
+            <BookMarked size={20} aria-hidden="true" />
+            <span className="tab-btn-label">Sorts</span>
           </button>
           <button
             className={`tab-btn ${activeTab === 'features' ? 'active' : ''}`}
             type="button"
             onClick={() => setActiveTab('features')}
-            title="Traits"
-            aria-label="Traits"
+            title="Capacités"
+            aria-label="Capacités"
           >
-            <Clover size={22} aria-hidden="true" />
+            <Clover size={20} aria-hidden="true" />
+            <span className="tab-btn-label">Capacités</span>
           </button>
           <button
             className={`tab-btn ${activeTab === 'notes' ? 'active' : ''}`}
@@ -173,7 +177,8 @@ export function CharacterEditPage() {
             title="Notes"
             aria-label="Notes"
           >
-            <ScrollText size={22} aria-hidden="true" />
+            <ScrollText size={20} aria-hidden="true" />
+            <span className="tab-btn-label">Notes</span>
           </button>
           <button
             className={`tab-btn ${activeTab === 'pets' ? 'active' : ''}`}
@@ -182,7 +187,8 @@ export function CharacterEditPage() {
             title="Familier"
             aria-label="Familier"
           >
-            <Cat size={22} aria-hidden="true" />
+            <Cat size={20} aria-hidden="true" />
+            <span className="tab-btn-label">Familier</span>
           </button>
         </div>
 

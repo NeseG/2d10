@@ -1,0 +1,580 @@
+/*
+ * Refonte ui-craft — composants partagés : champs de saisie, boutons, modals, tableaux,
+ * accordéons, cartes de capacités, onglets de l'édition de personnage.
+ * Surcouche isolée : supprimer ce fichier + son import dans AppLayout.tsx pour revenir en arrière.
+ */
+:root {
+  --craft-ease: cubic-bezier(0.23, 1, 0.32, 1);
+  --craft-radius: 12px;
+  --craft-radius-sm: 9px;
+  --craft-hairline: color-mix(in srgb, var(--bone) 9%, transparent);
+  --craft-field-bg: color-mix(in srgb, var(--bone) 4%, var(--surface-input));
+  --craft-field-bg-hover: color-mix(in srgb, var(--bone) 7%, var(--surface-input));
+  --craft-surface: color-mix(in srgb, var(--panel) 70%, var(--bg));
+  --craft-surface-raised: color-mix(in srgb, var(--bone) 6%, var(--panel));
+  --craft-label: color-mix(in srgb, var(--muted) 85%, var(--bone));
+}
+
+/* ══ Champs de saisie ══ */
+.login-form :is(input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='range']), select, textarea),
+.feature-card-select,
+.feature-card-input,
+.feature-card-textarea,
+.grimoire-spellcasting-select,
+.inventory-search-input,
+.inventory-qty-input,
+.tab-panel :is(input[type='text'], input[type='number'], input[type='search'], input:not([type]), select, textarea),
+.modal-card :is(input[type='text'], input[type='number'], input[type='search'], input:not([type]), select, textarea) {
+  min-height: 2.6rem;
+  padding: 0.5rem 0.75rem;
+  border: none;
+  border-radius: var(--craft-radius-sm);
+  background: var(--craft-field-bg);
+  box-shadow: inset 0 0 0 1px var(--craft-hairline);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px; /* < 16px = zoom auto iOS au focus */
+  font-variant-numeric: tabular-nums;
+  transition: box-shadow 150ms var(--craft-ease), background-color 150ms var(--craft-ease);
+}
+
+@media (hover: hover) {
+  .login-form :is(input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='range']), select, textarea):hover,
+  .tab-panel :is(input[type='text'], input[type='number'], input:not([type]), select, textarea):hover,
+  .modal-card :is(input[type='text'], input[type='number'], input:not([type]), select, textarea):hover {
+    background: var(--craft-field-bg-hover);
+  }
+}
+
+.login-form :is(input, select, textarea):focus,
+.feature-card-select:focus,
+.feature-card-input:focus,
+.feature-card-textarea:focus,
+.grimoire-spellcasting-select:focus,
+.inventory-search-input:focus,
+.inventory-qty-input:focus,
+.tab-panel :is(input, select, textarea):focus,
+.modal-card :is(input, select, textarea):focus {
+  outline: none;
+  border-color: transparent;
+  box-shadow: inset 0 0 0 1px var(--gold-dim), 0 0 0 3px color-mix(in srgb, var(--gold) 18%, transparent);
+}
+
+.login-form textarea,
+.feature-card-textarea,
+.tab-panel textarea,
+.modal-card textarea {
+  min-height: 5.5rem;
+  line-height: 1.45;
+}
+
+:is(.login-form, .tab-panel, .modal-card) ::placeholder {
+  color: color-mix(in srgb, var(--muted) 75%, transparent);
+}
+
+/* Select : chevron propre à la place du rendu natif */
+:is(.login-form, .tab-panel, .modal-card) select,
+.feature-card-select,
+.grimoire-spellcasting-select {
+  appearance: none;
+  padding-right: 2.2rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237a6a5a' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.8rem center;
+}
+
+/* Cases à cocher */
+:is(.login-form, .tab-panel, .modal-card, .table) input[type='checkbox'] {
+  width: 1.15rem;
+  height: 1.15rem;
+  accent-color: var(--gold);
+  cursor: pointer;
+}
+
+/* Libellés de champs : discrets, en casse normale */
+.login-form label,
+.grimoire-spell-slot-field > span,
+.login-form .create-item-kind-label {
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: var(--craft-label);
+}
+
+.login-form {
+  gap: 0.75rem;
+}
+
+/* ══ Boutons ══ */
+.btn {
+  min-height: 2.5rem;
+  padding: 0 1rem;
+  border-radius: var(--craft-radius-sm);
+  font-family: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 150ms var(--craft-ease), color 150ms var(--craft-ease), border-color 150ms var(--craft-ease), transform 120ms var(--craft-ease);
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--gold) 30%, transparent);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  border-color: transparent;
+  background: var(--craft-surface-raised);
+  color: var(--text);
+}
+
+.btn-small {
+  min-height: 2rem;
+  padding: 0 0.7rem;
+  font-size: 0.85rem;
+}
+
+.inventory-qty-step {
+  width: 2.2rem;
+  height: 2.2rem;
+  border: none;
+  border-radius: var(--craft-radius-sm);
+  background: var(--craft-surface-raised);
+}
+
+.inventory-qty-step:active {
+  transform: scale(0.94);
+}
+
+/* ══ Modals ══ */
+.modal-backdrop {
+  background: rgba(0, 0, 0, 0.6);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  animation: craft-fade-in 180ms var(--craft-ease);
+}
+
+.modal-card {
+  border: none;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--bone) 3%, var(--panel));
+  box-shadow: 0 0 0 1px var(--craft-hairline), 0 24px 64px -12px rgba(0, 0, 0, 0.8);
+  padding: 1.25rem 1.25rem 1rem;
+  animation: craft-pop-in 200ms var(--craft-ease);
+}
+
+.modal-card h3,
+.modal-card h4 {
+  margin-top: 0;
+  font-size: 1.05rem;
+  letter-spacing: 0.04em;
+}
+
+/* Rangée d'actions en bas des modals : bouton principal à droite */
+.modal-card > div:last-child:has(> .btn) {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+/* Mobile : les modals deviennent des bottom sheets */
+@media (max-width: 520px) {
+  .modal-backdrop {
+    place-items: end stretch;
+    padding: 0;
+  }
+
+  .modal-card,
+  .modal-card.modal-card-wide,
+  .modal-card.modal-card-srd-detail {
+    width: 100%;
+    max-height: 92dvh;
+    border-radius: 18px 18px 0 0;
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+    animation: craft-sheet-up 240ms var(--craft-ease);
+  }
+
+  /* Poignée visuelle de la sheet */
+  .modal-card::before {
+    content: '';
+    display: block;
+    width: 2.5rem;
+    height: 4px;
+    margin: -0.5rem auto 0.85rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--bone) 18%, transparent);
+  }
+
+  .modal-card > div:last-child:has(> .btn) > .btn {
+    flex: 1 1 0;
+  }
+}
+
+@keyframes craft-fade-in {
+  from { opacity: 0; }
+}
+
+@keyframes craft-pop-in {
+  from { opacity: 0; transform: scale(0.96); }
+}
+
+@keyframes craft-sheet-up {
+  from { transform: translateY(100%); }
+}
+
+/* ══ Tableaux ══ */
+.table {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.table th,
+.table td {
+  padding: 0.6rem 0.65rem;
+  border-bottom: 1px solid var(--craft-hairline);
+}
+
+.table th {
+  background: transparent;
+  color: var(--craft-label);
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.table-wrap {
+  border-radius: var(--craft-radius);
+  background: var(--craft-surface);
+  box-shadow: inset 0 0 0 1px var(--craft-hairline);
+}
+
+.clickable-row td {
+  transition: background-color 120ms var(--craft-ease);
+}
+
+.clickable-row:hover td {
+  background: transparent;
+}
+
+@media (hover: hover) {
+  .clickable-row:hover td,
+  .table tbody tr:hover td {
+    background: color-mix(in srgb, var(--bone) 4%, transparent);
+  }
+}
+
+.inventory-sort-header-btn {
+  border-radius: 6px;
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--craft-label);
+}
+
+/* Mobile : tableaux en cartes */
+@media (max-width: 900px) {
+  .responsive-table tr {
+    border: none;
+    border-radius: var(--craft-radius);
+    padding: 0.7rem 0.85rem;
+    margin-bottom: 0.5rem;
+    background: var(--craft-surface);
+    box-shadow: inset 0 0 0 1px var(--craft-hairline);
+  }
+
+  /* Annule le padding de cellule des tableaux : sinon décalage façon double cadre */
+  .responsive-table td {
+    padding: 0.3rem 0;
+    border-bottom: none;
+  }
+
+  .responsive-table td::before {
+    font-family: inherit;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: var(--craft-label);
+  }
+
+  .table-wrap:has(> .responsive-table) {
+    background: transparent;
+    box-shadow: none;
+  }
+}
+
+/* ══ Accordéons ══ */
+.character-edit-page .character-skills-accordion {
+  border-radius: var(--craft-radius);
+  background: var(--craft-surface);
+}
+
+.character-edit-page .character-skills-accordion-summary {
+  min-height: 2.9rem;
+  padding: 0 0.85rem;
+  letter-spacing: 0.1em;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.character-edit-page .character-skills-accordion-panel {
+  padding: 0.25rem 0.85rem 0.85rem;
+}
+
+/* ══ Capacités (cartes mobiles) ══ */
+.feature-card {
+  border: none;
+  border-radius: var(--craft-radius);
+  background: var(--craft-surface);
+  box-shadow: inset 0 0 0 1px var(--craft-hairline);
+  padding: 0.85rem;
+}
+
+/* ══ Page d'édition : en-tête, carte et onglets ══ */
+.character-edit-page > .card {
+  border: none;
+  border-radius: 16px;
+  background: transparent;
+  padding: 0.25rem 0 1rem;
+}
+
+.character-edit-page .character-page-title {
+  font-size: 1.15rem;
+  letter-spacing: 0.04em;
+}
+
+.character-edit-page .character-page-avatar {
+  width: 3rem;
+  height: 3rem;
+  flex-basis: 3rem;
+  border: none;
+  box-shadow: 0 0 0 1px var(--craft-hairline);
+}
+
+.tabs-row.craft-tabs {
+  position: sticky;
+  top: 0.4rem;
+  z-index: 5;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 2px;
+  margin: 0.75rem 0;
+  padding: 3px;
+  border-radius: var(--craft-radius);
+  background: color-mix(in srgb, var(--bone) 6%, var(--panel));
+  box-shadow: 0 6px 16px -8px rgba(0, 0, 0, 0.6);
+  overflow: visible;
+}
+
+.craft-tabs .tab-btn {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  min-height: 3rem;
+  min-width: 0;
+  padding: 0.3rem 0;
+  border: none;
+  border-radius: var(--craft-radius-sm);
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 150ms var(--craft-ease), color 150ms var(--craft-ease), transform 120ms var(--craft-ease);
+}
+
+.craft-tabs .tab-btn svg {
+  flex-shrink: 0;
+}
+
+.craft-tabs .tab-btn.active {
+  background: color-mix(in srgb, var(--bone) 11%, var(--panel));
+  color: var(--gold);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+.craft-tabs .tab-btn:active {
+  transform: scale(0.96);
+}
+
+.craft-tabs .tab-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--gold-dim);
+}
+
+@media (hover: hover) {
+  .craft-tabs .tab-btn:not(.active):hover {
+    color: var(--bone);
+    border: none;
+  }
+}
+
+/* Desktop : libellé à côté de l'icône */
+@media (min-width: 521px) {
+  .craft-tabs .tab-btn {
+    flex-direction: row;
+    gap: 0.4rem;
+    min-height: 2.5rem;
+    font-size: 0.85rem;
+  }
+}
+
+@media (max-width: 520px) {
+  .tabs-row.craft-tabs {
+    top: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-backdrop,
+  .modal-card {
+    animation: none !important;
+  }
+
+  .btn,
+  .craft-tabs .tab-btn {
+    transition: none !important;
+  }
+}
+
+/* En-tête de l'édition : compact, actions sur une ligne */
+.character-edit-page .character-page-header {
+  align-items: flex-start;
+}
+
+.character-edit-page .character-page-header .btn {
+  min-height: 2.1rem;
+  padding: 0 0.75rem;
+  font-size: 0.85rem;
+}
+
+@media (max-width: 520px) {
+  .character-edit-page .character-page-title {
+    font-size: 1rem;
+  }
+}
+
+/* Quantités dans les tableaux : stepper compact et aligné */
+.table .inventory-qty-input {
+  width: 2.6rem;
+  min-height: 2.1rem;
+  height: 2.1rem;
+  padding: 0 0.2rem;
+}
+
+.table .inventory-qty-step {
+  width: 2.1rem;
+  height: 2.1rem;
+}
+
+/* Formulaires d'objets (modals création / édition) */
+.item-edit-form-row > span,
+.modal-card h3 + .item-edit-form-row > span {
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: var(--craft-label);
+}
+
+@media (max-width: 520px) {
+  /* Libellé au-dessus du champ : plus de place pour la saisie */
+  .item-edit-form-row,
+  .item-edit-form-inline-pair .item-edit-form-row {
+    grid-template-columns: 1fr;
+    gap: 0.3rem;
+  }
+}
+
+/* Choix Normal / Magique : contrôle segmenté */
+.create-item-kind-tabs {
+  display: inline-grid !important;
+  grid-auto-flow: column;
+  gap: 2px !important;
+  padding: 3px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bone) 6%, transparent);
+}
+
+.create-item-kind-tabs .tab-btn {
+  min-height: 2.1rem;
+  padding: 0 0.9rem;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+}
+
+.create-item-kind-tabs .tab-btn.active {
+  background: color-mix(in srgb, var(--bone) 11%, var(--panel));
+  color: var(--gold);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+/* ══ Grimoire : niveaux de sorts en cartes ══ */
+.grimoire-session-levels {
+  gap: 0.5rem;
+}
+
+.grimoire-session-level,
+.grimoire-session-level:not(:last-child) {
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--craft-radius);
+  background: var(--craft-surface);
+}
+
+.grimoire-session-level-summary {
+  min-height: 2.9rem;
+  padding: 0 0.85rem;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.grimoire-session-level-title {
+  letter-spacing: 0.1em;
+  color: var(--gold);
+}
+
+.grimoire-session-level-body {
+  padding: 0 0.85rem 0.6rem;
+}
+
+.grimoire-session-spell-list > li:not(:last-child) {
+  border-bottom-color: var(--craft-hairline);
+}
+
+.grimoire-session-level-summary::before {
+  transition: transform 150ms var(--craft-ease);
+}
