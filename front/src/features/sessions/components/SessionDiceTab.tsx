@@ -3,7 +3,15 @@ import { ChartNoAxesCombined, RefreshCw, Star, X } from 'lucide-react'
 import { apiGet } from '../../../shared/api/client'
 import { useSnackbar } from '../../../app/hooks/useSnackbar'
 import { SessionDiceLabelDistributionChart } from './SessionDiceLabelDistributionChart'
-import { postSessionDiceRoll, resolveDiceCharacterId, type DiceFavorite } from '../sessionDice'
+import {
+  DICE_3D_THEMES,
+  getDice3dTheme,
+  postSessionDiceRoll,
+  previewDice3dTheme,
+  resolveDiceCharacterId,
+  type Dice3dTheme,
+  type DiceFavorite,
+} from '../sessionDice'
 
 export type SessionDiceRollEntry = {
   id: number
@@ -20,8 +28,6 @@ export type SessionDiceRollEntry = {
   /** Jet enregistré sans tirage serveur (dés physiques, autre app). */
   is_manual?: boolean
 }
-
-const QUICK_SIDES = [4, 6, 8, 10, 12, 20, 100] as const
 
 const DICE_NOTE_OPTIONS = [
   { value: '', label: '—' },
@@ -160,6 +166,7 @@ export function SessionDiceTab(props: {
   const [statsModalOpen, setStatsModalOpen] = useState(false)
   /** Nom du favori en cours de création (null = formulaire fermé). */
   const [favNameDraft, setFavNameDraft] = useState<string | null>(null)
+  const [diceTheme, setDiceTheme] = useState<Dice3dTheme>(getDice3dTheme)
 
   const diceStats = useMemo(() => computeDiceStats(rolls, isSessionOwner), [rolls, isSessionOwner])
 
@@ -241,15 +248,6 @@ export function SessionDiceTab(props: {
     } finally {
       setRolling(false)
     }
-  }
-
-  async function quickRoll(sides: number) {
-    await submitRoll({
-      count: 1,
-      sides,
-      modifier: 0,
-      ...(notationNoteKind ? { label: notationNoteKind } : {}),
-    })
   }
 
   async function rollNotation(event: React.FormEvent) {
@@ -383,22 +381,24 @@ export function SessionDiceTab(props: {
           )}
         </div>
 
-        <div className="session-dice-quick">
-          <span className="session-dice-quick-label">Rapide</span>
-          <div className="session-dice-quick-btns">
-            {QUICK_SIDES.map((s) => (
-              <button
-                key={s}
-                type="button"
-                className="btn btn-secondary btn-small"
-                disabled={rolling || !canRoll}
-                onClick={() => void quickRoll(s)}
-              >
-                d{s}
-              </button>
+        <label className="session-dice-field session-dice-theme">
+          <span>Couleur des dés</span>
+          <select
+            value={diceTheme}
+            onChange={(e) => {
+              const theme = e.target.value as Dice3dTheme
+              setDiceTheme(theme)
+              void previewDice3dTheme(theme).catch(() => {})
+            }}
+            aria-label="Couleur des dés 3D"
+          >
+            {DICE_3D_THEMES.map((t) => (
+              <option key={t.value} value={t.value}>
+                {t.label}
+              </option>
             ))}
-          </div>
-        </div>
+          </select>
+        </label>
 
         <form className="session-dice-form" onSubmit={rollNotation}>
           <label className="session-dice-field">

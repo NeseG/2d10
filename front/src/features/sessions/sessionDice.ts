@@ -79,3 +79,52 @@ export function toPredeterminedNotation(notation: string, rolls: number[]): stri
   const units = rolls.map((v) => v % 10 || 10)
   return `${n}d100+${n}d10@${[...tens, ...units].join(',')}`
 }
+
+const THEME_STORAGE_KEY = 'dice-3d-theme'
+
+/** Palettes intégrées à dice-box-threejs ; textures servies depuis public/dice/textures. */
+export const DICE_3D_THEMES = [
+  { value: 'rust', label: '2d10 — Rouille' },
+  { value: 'fire', label: 'Feu' },
+  { value: 'ice', label: 'Glace' },
+  { value: 'lightning', label: 'Foudre' },
+  { value: 'acid', label: 'Acide' },
+  { value: 'poison', label: 'Poison' },
+  { value: 'necrotic', label: 'Nécrotique' },
+  { value: 'radiant', label: 'Radiant' },
+  { value: 'force', label: 'Force' },
+  { value: 'bloodmoon', label: 'Lune de sang' },
+  { value: 'astralsea', label: 'Mer astrale' },
+  { value: 'starynight', label: 'Nuit étoilée' },
+  { value: 'dragons', label: 'Dragons' },
+  { value: 'glitterparty', label: 'Paillettes' },
+  { value: 'coin_default', label: 'Or' },
+  { value: 'rainbow', label: 'Arc-en-ciel' },
+  { value: 'black', label: 'Noir' },
+  { value: 'white', label: 'Blanc' },
+] as const
+
+export type Dice3dTheme = (typeof DICE_3D_THEMES)[number]['value']
+
+/** Choix propre à chaque navigateur (préférence d’affichage, pas une donnée de jeu). */
+export function getDice3dTheme(): Dice3dTheme {
+  try {
+    const v = localStorage.getItem(THEME_STORAGE_KEY)
+    if (DICE_3D_THEMES.some((t) => t.value === v)) return v as Dice3dTheme
+  } catch {
+    // stockage indisponible (navigation privée…) : thème par défaut
+  }
+  return 'rust'
+}
+
+/** Enregistre le thème et le montre avec un d20 d’essai (local, rien n’est envoyé au serveur). */
+export async function previewDice3dTheme(theme: Dice3dTheme): Promise<void> {
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, theme)
+  } catch {
+    // ignoré : le thème reste actif pour cet onglet
+  }
+  const m = await import('./dice3d')
+  await m.applyDice3dTheme(theme)
+  await m.playDice3d('1d20')
+}

@@ -4,5 +4,6 @@ declare module '@3d-dice/dice-box-threejs' {
     initialize(): Promise<void>
     roll(notation: string): Promise<unknown>
     clearDice(): void
+    updateConfig(config: Record<string, unknown>): Promise<void>
   }
 }
