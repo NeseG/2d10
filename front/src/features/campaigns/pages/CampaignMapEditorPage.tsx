@@ -310,7 +310,10 @@ export function CampaignMapEditorPage() {
             onFogOp={fog.apply}
             fogShape={fogShape}
             fogBrush={fogBrush}
-            onImageSize={(w, h) => setAspect(h / w)}
+            onImageSize={(w, h) => {
+              setAspect(h / w)
+              if (Math.abs((scene.aspect ?? 0) - h / w) > 1e-4) edit({ aspect: h / w })
+            }}
             zones={scene.zones}
             onZonesChange={(next) => edit({ zones: next })}
             tool={tool}

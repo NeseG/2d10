@@ -4,6 +4,7 @@ const config = require('../config');
 const prisma = require('../lib/prisma');
 const { findSessionForChat } = require('../lib/session-chat-access');
 const { effectiveMapState } = require('../lib/map-play-state');
+const { decodeFog, visibleTokensForPlayer } = require('../lib/map-visibility');
 
 const WS_PATH = '/api/ws/session-map';
 
@@ -52,17 +53,34 @@ async function buildSessionMapPayload(sessionId) {
   };
 }
 
-/** Les joueurs ne reçoivent jamais les jetons cachés (calque MJ). */
-function filterMapPayloadForPlayer(payload) {
-  const tokens = payload?.map?.tokens_state?.tokens;
-  if (!Array.isArray(tokens)) return payload;
+// Brouillard décodé une seule fois par envoi, quel que soit le nombre de joueurs.
+const fogMasks = new WeakMap();
+
+/**
+ * Version joueur d'un état de carte : seulement les jetons qu'il voit (voir lib/map-visibility.js),
+ * sans les repères du MJ (zones nommées, fenêtres).
+ */
+function filterMapPayloadForPlayer(payload, myCharacterIds = []) {
+  const map = payload?.map;
+  if (!map) return payload;
+  const fs = map.fog_state && typeof map.fog_state === 'object' ? map.fog_state : {};
+  if (!fogMasks.has(map)) fogMasks.set(map, decodeFog(fs.fog));
+  const tokens = visibleTokensForPlayer(fs, map.tokens_state, myCharacterIds, fogMasks.get(map));
+  const { zones: _zones, ...fogForPlayer } = fs;
   return {
     ...payload,
     map: {
-      ...payload.map,
-      tokens_state: { ...payload.map.tokens_state, tokens: tokens.filter((t) => !t?.hidden) },
+      ...map,
+      fog_state: { ...fogForPlayer, walls: (Array.isArray(fs.walls) ? fs.walls : []).filter((w) => !w?.window) },
+      tokens_state: { ...(map.tokens_state ?? {}), tokens },
     },
   };
+}
+
+/** Personnages du joueur : il voit à travers leurs jetons. */
+async function playerCharacterIds(userId) {
+  const rows = await prisma.character.findMany({ where: { userId, isActive: true }, select: { id: true } });
+  return rows.map((r) => r.id);
 }
 
 async function isSessionMapOwner(sessionId, user) {
@@ -83,10 +101,10 @@ function attachSessionMapWss(server) {
     const set = rooms.get(sessionId);
     if (!set?.size) return;
     for (const entry of set) {
-      const { ws, isOwner } = entry;
+      const { ws, isOwner, characterIds } = entry;
       if (ws.readyState !== WebSocket.OPEN) continue;
       const msg = JSON.stringify(
-        payload?.type === 'map_state' && !isOwner ? filterMapPayloadForPlayer(payload) : payload,
+        payload?.type === 'map_state' && !isOwner ? filterMapPayloadForPlayer(payload, characterIds) : payload,
       );
       try {
         ws.send(msg);
@@ -156,13 +174,14 @@ function attachSessionMapWss(server) {
     const isOwner = await isSessionMapOwner(sessionId, user);
 
     if (!rooms.has(sessionId)) rooms.set(sessionId, new Set());
-    const entry = { ws, isOwner: Boolean(isOwner) };
+    // shortcut: personnages lus à la connexion ; un perso créé en cours de session n'est vu qu'après reconnexion.
+    const entry = { ws, isOwner: Boolean(isOwner), characterIds: isOwner ? [] : await playerCharacterIds(user.id) };
     rooms.get(sessionId).add(entry);
 
     // Send initial snapshot
     try {
       const payload = await buildSessionMapPayload(sessionId);
-      if (payload) ws.send(JSON.stringify(entry.isOwner ? payload : filterMapPayloadForPlayer(payload)));
+      if (payload) ws.send(JSON.stringify(entry.isOwner ? payload : filterMapPayloadForPlayer(payload, entry.characterIds)));
     } catch {
       /* ignore */
     }
@@ -208,6 +227,7 @@ module.exports = {
   buildSessionMapPayload,
   filterMapPayloadForPlayer,
   isSessionMapOwner,
+  playerCharacterIds,
   WS_PATH,
 };
 

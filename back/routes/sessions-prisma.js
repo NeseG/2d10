@@ -11,6 +11,7 @@ const {
   buildSessionMapPayload,
   filterMapPayloadForPlayer,
   isSessionMapOwner,
+  playerCharacterIds,
 } = require('../ws/session-map');
 const { findSessionForChat, getChatDisplayName, displayNamesForUserIds } = require('../lib/session-chat-access');
 const { CHAT_UPLOAD_ROOT, chatImageUploadMiddleware } = require('../lib/session-chat-upload');
@@ -593,7 +594,10 @@ router.get('/:sessionId/map', authenticateToken, async (req, res) => {
     const payload = await buildSessionMapPayload(sessionId);
     if (!payload) return res.status(404).json({ error: 'Session non trouvée' });
     const isOwner = await isSessionMapOwner(sessionId, req.user);
-    return res.json({ success: true, ...(isOwner ? payload : filterMapPayloadForPlayer(payload)) });
+    return res.json({
+      success: true,
+      ...(isOwner ? payload : filterMapPayloadForPlayer(payload, await playerCharacterIds(req.user.id))),
+    });
   } catch (error) {
     console.error('Erreur session map GET:', error);
     return res.status(500).json({ error: 'Erreur serveur' });

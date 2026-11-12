@@ -19,6 +19,8 @@ export type Scene = {
   /** Anciennes cartes : brouillard en rectangles, converti en bitmap à la première modification. */
   fogRects: MapFogRect[]
   zones: MapZone[]
+  /** Hauteur / largeur de l'image, connue une fois l'image chargée ; sert au calcul de vision côté serveur. */
+  aspect: number | null
   grid: MapGrid
   walls: MapWall[]
   lights: MapLight[]
@@ -31,6 +33,7 @@ export const EMPTY_SCENE: Scene = {
   fog: null,
   fogRects: [],
   zones: [],
+  aspect: null,
   grid: DEFAULT_GRID,
   walls: [],
   lights: [],
@@ -66,6 +69,7 @@ export function parseScene(map: CampaignMap | null | undefined): Scene {
       // Anciennes cartes : coordonnées en pixels d'un canvas 1100×650
       .map((x) => ({ ...x, x: clamp(x.x > 1 ? x.x / 1100 : x.x, 0, 1), y: clamp(x.y > 1 ? x.y / 650 : x.y, 0, 1) })),
     fog: isFogBitmap(fs.fog) ? fs.fog : null,
+    aspect: typeof fs.aspect === 'number' && Number.isFinite(fs.aspect) ? fs.aspect : null,
     zones: arr<MapZone>(fs.zones).filter((z) => z && typeof z.id === 'string' && Array.isArray(z.points) && z.points.length >= 3),
     fogRects: arr<MapFogRect>(fs.rects)
       .filter((r) => r && typeof r.id === 'string' && [r.x, r.y, r.w, r.h].every(Number.isFinite))
@@ -96,6 +100,7 @@ export const fogStateOf = (s: Scene) => ({
   fog: s.fog,
   rects: s.fog ? [] : s.fogRects,
   zones: s.zones,
+  aspect: s.aspect,
   walls: s.walls,
   lights: s.lights,
   ...s.vision,

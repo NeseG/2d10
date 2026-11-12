@@ -634,7 +634,7 @@ export function MapCanvas(props: {
         pointInPolygon(p, s.poly) &&
         (!vision.dark || dist(p, s.c) <= s.dv || lit.some((l) => dist(p, l.c) <= l.r && pointInPolygon(p, l.poly))),
     )
-  // shortcut: le masquage des jetons hors de vue est fait côté client (un joueur curieux peut lire le WebSocket) ; filtrer côté serveur si ça compte.
+  // Joueur : le serveur n'envoie déjà que les jetons visibles (back/lib/map-visibility.js) ; ce filtre garde l'affichage juste entre deux envois.
   const tokenShown = (t: MapToken) =>
     canEdit || !vision.dynamic || t.characterId != null || (box ? pointVisible(tokenCenter(t, box)) : false)
   const polyPoints = (poly: Pt[]) => poly.map((p) => `${p.x},${p.y}`).join(' ')

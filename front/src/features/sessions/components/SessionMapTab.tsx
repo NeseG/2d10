@@ -86,6 +86,8 @@ export function SessionMapTab(props: {
   const [fogShape, setFogShape] = useState<FogShape>('rect')
   const [fogBrush, setFogBrush] = useState(2)
   const [aspect, setAspect] = useState<number | null>(null)
+  // Vue joueur (MJ) : la carte telle qu'un joueur la voit ; `null` = vue de groupe, sinon le personnage choisi.
+  const [playerView, setPlayerView] = useState<{ characterId: number | null } | null>(null)
 
   // Vrai seulement après une modification locale du MJ : évite de renvoyer au serveur ce qu'il vient de nous pousser.
   const dirtyRef = useRef(false)
@@ -286,6 +288,9 @@ export function SessionMapTab(props: {
   }
 
   const canShowMap = Boolean(activeMap)
+  // En vue joueur, le MJ voit et agit comme un joueur : outils d'édition masqués, carte en lecture.
+  const editing = canEdit && !playerView
+  const pcTokens = tokens.filter((t) => t.characterId != null && !t.hidden)
   const selected = tokens.find((t) => t.id === selectedTokenId) ?? null
   const pcTokenCount = tokens.filter((t) => t.characterId != null && !t.hidden).length
 
@@ -371,15 +376,50 @@ export function SessionMapTab(props: {
           >
             Réinitialiser depuis le modèle
           </button>
+          <button
+            className={`btn${playerView ? '' : ' btn-secondary'}`}
+            type="button"
+            aria-pressed={Boolean(playerView)}
+            onClick={() => {
+              if (!playerView && tool !== 'move' && tool !== 'ruler' && tool !== 'ping') setTool('move')
+              setPlayerView(playerView ? null : { characterId: null })
+            }}
+            disabled={!canShowMap}
+            title="Voir la carte comme la voient les joueurs"
+          >
+            Vue joueur
+          </button>
+          {playerView ? (
+            <label style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
+              <span style={{ opacity: 0.8 }}>À travers</span>
+              <select
+                value={playerView.characterId ?? ''}
+                onChange={(e) => setPlayerView({ characterId: e.target.value === '' ? null : Number.parseInt(e.target.value, 10) })}
+              >
+                <option value="">Tout le groupe</option>
+                {pcTokens.map((t) => (
+                  <option key={t.id} value={t.characterId ?? ''}>
+                    {t.label || `Personnage #${t.characterId}`}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
         </div>
+      ) : null}
+
+      {playerView ? (
+        <p role="status" style={{ margin: '0 0 0.5rem', padding: '0.4rem 0.6rem', borderRadius: 8, background: 'rgba(250,204,21,0.12)', fontSize: 13 }}>
+          Vue joueur : brouillard et obscurité opaques, jetons cachés ou hors de vue masqués. Les outils d’édition reviennent en quittant ce mode.
+        </p>
       ) : null}
 
       <div style={{ ...rowStyle, marginBottom: '0.5rem' }} role="toolbar" aria-label="Outils de carte">
         {toolButton('move', 'Déplacer')}
-        {canEdit ? toolButton('tokens', 'Éditer') : null}
+        {editing ? toolButton('tokens', 'Éditer') : null}
         {toolButton('ruler', 'Règle')}
         {toolButton('ping', 'Ping')}
-        {canEdit
+        {editing
           ? [
               toolButton('template', 'Gabarit'),
               toolButton('fog_add', 'Fog'),
@@ -390,7 +430,7 @@ export function SessionMapTab(props: {
 
       {canShowMap && TOOL_HINTS[tool] ? <p style={{ margin: '0 0 0.5rem', color: 'var(--muted)', fontSize: 13 }}>{TOOL_HINTS[tool]}</p> : null}
 
-      {canEdit && canShowMap ? (
+      {editing && canShowMap ? (
         <div style={{ ...rowStyle, marginBottom: '0.75rem' }}>
           {tool === 'template' ? (
             <>
@@ -419,7 +459,7 @@ export function SessionMapTab(props: {
         </div>
       ) : null}
 
-      {canEdit && canShowMap && tool === 'tokens' ? (
+      {editing && canShowMap && tool === 'tokens' ? (
         <div className="login-form" style={{ marginTop: '0.25rem', marginBottom: '0.75rem' }}>
           <label>Édition token</label>
           {selected ? (
@@ -500,15 +540,18 @@ export function SessionMapTab(props: {
         <MapCanvas
           token={token}
           imageUrl={activeMap?.image_url ?? ''}
-          canEdit={canEdit}
-          tokens={tokens}
+          canEdit={editing}
+          tokens={playerView ? tokens.filter((t) => !t.hidden) : tokens}
           // Joueur : mise à jour locale pendant le glisser, la position finale part par onPlayerTokenMove.
           onTokensChange={(next) => (canEdit ? edit({ tokens: next }) : setScene((prev) => ({ ...prev, tokens: next })))}
           fogMask={fog.mask}
           onFogOp={fog.apply}
           fogShape={fogShape}
           fogBrush={fogBrush}
-          onImageSize={(w, h) => setAspect(h / w)}
+          onImageSize={(w, h) => {
+            setAspect(h / w)
+            if (canEdit && Math.abs((scene.aspect ?? 0) - h / w) > 1e-4) edit({ aspect: h / w })
+          }}
           zones={scene.zones}
           tool={tool}
           selectedTokenId={selectedTokenId}
@@ -527,7 +570,8 @@ export function SessionMapTab(props: {
           onTemplatesChange={(next) => edit({ templates: next })}
           templateShape={templateShape}
           vision={scene.vision}
-          myCharacterIds={myCharacterIds}
+          // Vue de groupe : aucun personnage « à soi », la vision vient de tous les PJ (comme pour un spectateur).
+          myCharacterIds={playerView ? (playerView.characterId == null ? [] : [playerView.characterId]) : myCharacterIds}
           onPlayerTokenMove={(id, x, y) => void movePlayerToken(id, x, y)}
           tokenStatus={tokenStatus}
           pings={pings}

@@ -29,6 +29,7 @@ function effectiveMapState(map) {
       walls: arr(fog.walls).map((w) => (w?.door && typeof doors[w.id] === 'boolean' ? { ...w, open: doors[w.id] } : w)),
       rects: play.rects ?? fog.rects,
       fog: play.fog !== undefined ? play.fog : (fog.fog ?? null),
+      aspect: play.aspect ?? fog.aspect,
     },
     tokens_state: { ...tok, tokens: play.tokens ?? tok.tokens, templates: play.templates ?? tok.templates },
   };
@@ -44,6 +45,8 @@ function nextPlayState(prev, fogState, tokensState) {
   if (fogState && typeof fogState === 'object') {
     next.rects = arr(fogState.rects);
     if (fogState.fog === null || isFogBitmap(fogState.fog)) next.fog = fogState.fog;
+    // Hauteur / largeur de l'image : le serveur en a besoin pour calculer la vision (lib/map-visibility.js)
+    if (Number.isFinite(fogState.aspect) && fogState.aspect > 0.05 && fogState.aspect < 20) next.aspect = fogState.aspect;
     next.doors = {};
     for (const w of arr(fogState.walls)) if (w?.door && typeof w.id === 'string') next.doors[w.id] = Boolean(w.open);
   }
