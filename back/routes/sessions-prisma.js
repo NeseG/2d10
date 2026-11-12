@@ -17,6 +17,7 @@ const { findSessionForChat, getChatDisplayName, displayNamesForUserIds } = requi
 const { CHAT_UPLOAD_ROOT, chatImageUploadMiddleware } = require('../lib/session-chat-upload');
 const { nextInventorySortOrder } = require('../lib/next-inventory-sort-order');
 const { effectiveMapState, nextPlayState, withExploration } = require('../lib/map-play-state');
+const { revealFrom } = require('../lib/map-visibility');
 const { Prisma } = require('@prisma/client');
 
 const router = express.Router();
@@ -731,6 +732,41 @@ router.delete('/:sessionId/map/explored', authenticateToken, checkSessionOwnersh
     return res.json({ success: true });
   } catch (error) {
     console.error('Erreur session map explored DELETE:', error);
+    return res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// « Révéler sa vue » : le MJ retire le brouillard dans la ligne de vue d'un jeton, qui s'ajoute à l'exploration.
+router.post('/:sessionId/map/reveal', authenticateToken, checkSessionOwnership, async (req, res) => {
+  try {
+    const sessionId = parseInt(req.params.sessionId, 10);
+    if (Number.isNaN(sessionId)) return res.status(400).json({ error: 'ID de session invalide' });
+    const tokenId = req.body?.token_id;
+    if (typeof tokenId !== 'string' || !tokenId) return res.status(400).json({ error: 'token_id requis' });
+
+    const sess = await prisma.gameSession.findFirst({
+      where: { id: sessionId, isActive: true },
+      select: { activeMapId: true, activeMap: { select: { fogState: true, tokensState: true, playState: true } } },
+    });
+    if (!sess?.activeMapId) return res.status(400).json({ error: 'Aucune map active' });
+
+    const { fog_state, tokens_state } = effectiveMapState(sess.activeMap);
+    const revealed = revealFrom(fog_state, tokens_state, tokenId);
+    if (!revealed) return res.status(400).json({ error: 'Jeton introuvable, ou carte pas encore ouverte par le MJ' });
+
+    const play = sess.activeMap.playState && typeof sess.activeMap.playState === 'object' ? sess.activeMap.playState : {};
+    await prisma.campaignMap.update({
+      where: { id: sess.activeMapId },
+      // rects vidés : d'éventuels anciens rectangles viennent d'être convertis dans la bitmap
+      data: { playState: { ...play, fog: revealed.fog, rects: [], explored: revealed.explored } },
+      select: { id: true },
+    });
+
+    const payload = await buildSessionMapPayload(sessionId);
+    if (payload) broadcastSessionMap(sessionId, payload);
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Erreur session map reveal POST:', error);
     return res.status(500).json({ error: 'Erreur serveur' });
   }
 });

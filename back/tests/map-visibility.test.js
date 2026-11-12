@@ -84,3 +84,26 @@ test('exploration dans le noir : seulement la vision dans le noir', () => {
   assert.equal(seen(0.2, 0.5), true);
   assert.equal(seen(0.6, 0.5), false);
 });
+
+test('révéler sa vue : retire le brouillard en vue, garde celui derrière le mur, alimente l’exploration', () => {
+  const { revealFrom } = require('../lib/map-visibility');
+  const grid = { size: 0.1 }; // bitmaps 80×80
+  const covered = Buffer.alloc(80 * 80, 255);
+  const fs = {
+    aspect: 1,
+    fog: { w: 80, h: 80, data: zlib.deflateSync(covered).toString('base64') },
+    walls: [{ id: 'w', x1: 0.5, y1: 0, x2: 0.5, y2: 1 }, { id: 'win', x1: 0.3, y1: 0, x2: 0.3, y2: 1, window: true }],
+  };
+  const at = (b, x, y) => decodeFog(b).px[Math.floor(y * b.h) * b.w + Math.floor(x * b.w)] > 0;
+  const r = revealFrom(fs, { grid, tokens: [tok('gob', 0.1, 0.5, { hidden: true })] }, 'gob');
+  assert.equal(at(r.fog, 0.4, 0.5), false); // révélé, à travers la fenêtre
+  assert.equal(at(r.fog, 0.8, 0.5), true); // derrière le mur : toujours couvert
+  assert.equal(at(r.explored, 0.4, 0.5), true);
+  assert.equal(at(r.explored, 0.8, 0.5), false);
+  // Anciens rectangles : convertis en bitmap au passage
+  const legacy = revealFrom({ aspect: 1, rects: [{ x: 0, y: 0, w: 1, h: 1 }], walls: [] }, { grid, tokens: [tok('pj', 0.1, 0.5)] }, 'pj');
+  assert.equal(at(legacy.fog, 0.9, 0.9), false);
+  // Ratio inconnu ou jeton absent : rien
+  assert.equal(revealFrom({ walls: [] }, { grid, tokens: [tok('pj', 0.1, 0.5)] }, 'pj'), null);
+  assert.equal(revealFrom(fs, { grid, tokens: [] }, 'pj'), null);
+});

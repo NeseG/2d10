@@ -207,4 +207,50 @@ function exploreFrom(fogState, tokensState, prev) {
   return changed ? { w, h, data: zlib.deflateSync(px).toString('base64') } : prev;
 }
 
-module.exports = { visibilityPolygon, pointInPolygon, decodeFog, visibleTokensForPlayer, exploreFrom, fogSize };
+const encode = (px, w, h) => ({ w, h, data: zlib.deflateSync(px).toString('base64') });
+
+/**
+ * « Révéler sa vue » : ligne de vue complète du jeton (murs et portes fermées, sans tenir compte de l'obscurité).
+ * Retire le brouillard dans cette zone et l'ajoute à l'exploration. Retourne null si le jeton est introuvable
+ * ou si le ratio de l'image n'est pas encore connu.
+ */
+function revealFrom(fogState, tokensState, tokenId) {
+  const fs = fogState && typeof fogState === 'object' ? fogState : {};
+  if (!Number.isFinite(fs.aspect)) return null;
+  const all = Array.isArray(tokensState?.tokens) ? tokensState.tokens : [];
+  const tok = all.find((t) => t?.id === tokenId);
+  if (!tok) return null;
+  // Jeton caché inclus : le MJ peut révéler depuis n'importe quel jeton.
+  const sc = sceneOf(fs, { ...tokensState, tokens: [{ ...tok, hidden: false }] }, null);
+  const { aspect } = sc;
+  const { sources } = visionOf({ ...sc, fs: { ...fs, dark: false } }, sc.tokens);
+  const poly = sources[0].poly;
+  const size = fogSize(sc.cell, aspect);
+
+  // Brouillard : bitmap existante, sinon anciens rectangles convertis, sinon rien à retirer.
+  let fog = decodeFog(fs.fog);
+  if (!fog && !fs.fog && Array.isArray(fs.rects) && fs.rects.length) {
+    fog = { ...size, px: Buffer.alloc(size.w * size.h) };
+    for (const r of fs.rects) {
+      const xa = Math.max(0, Math.round(r.x * fog.w));
+      const xb = Math.min(fog.w, Math.round((r.x + r.w) * fog.w));
+      for (let y = Math.max(0, Math.round(r.y * fog.h)); y < Math.min(fog.h, Math.round((r.y + r.h) * fog.h)); y++) fog.px.fill(255, y * fog.w + xa, y * fog.w + xb);
+    }
+  }
+  const fill = (m, v) =>
+    polygonSpans(poly.map((p) => ({ x: p.x * m.w, y: (p.y / aspect) * m.h })), m.w, m.h, (y, xa, xb) => m.px.fill(v, y * m.w + xa, y * m.w + xb));
+  if (fog) fill(fog, 0);
+
+  const prevExplored = decodeFog(fs.explored);
+  const explored = prevExplored && prevExplored.w === size.w && prevExplored.h === size.h
+    ? { ...prevExplored, px: Buffer.from(prevExplored.px) }
+    : { ...size, px: Buffer.alloc(size.w * size.h) };
+  fill(explored, 255);
+
+  return {
+    fog: fog ? encode(fog.px, fog.w, fog.h) : fs.fog ?? null,
+    explored: encode(explored.px, explored.w, explored.h),
+  };
+}
+
+module.exports = { visibilityPolygon, pointInPolygon, decodeFog, visibleTokensForPlayer, exploreFrom, revealFrom, fogSize };

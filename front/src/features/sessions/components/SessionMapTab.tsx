@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { apiDelete, apiGet, apiPut } from '../../../shared/api/client'
+import { apiDelete, apiGet, apiPost, apiPut } from '../../../shared/api/client'
 import { useSnackbar } from '../../../app/hooks/useSnackbar'
 import {
   MapCanvas,
@@ -227,6 +227,14 @@ export function SessionMapTab(props: {
       await apiDelete(`/api/sessions/${sessionId}/map/explored`, token)
     } catch (err) {
       showSnackbar({ message: err instanceof Error ? err.message : 'Erreur', severity: 'error' })
+    }
+  }
+
+  async function revealTokenView(tokenId: string) {
+    try {
+      await apiPost(`/api/sessions/${sessionId}/map/reveal`, { token_id: tokenId }, token)
+    } catch (err) {
+      showSnackbar({ message: err instanceof Error ? err.message : 'Révélation impossible', severity: 'error' })
     }
   }
 
@@ -533,7 +541,15 @@ export function SessionMapTab(props: {
                 {numberInput('Lumière portée (cases)', selected.light ?? 0, (v) => editToken(selected.id, { light: clamp(v, 0, 100) }), { min: 0 })}
               </div>
 
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={() => void revealTokenView(selected.id)}
+                  title="Retire le brouillard partout où ce jeton a une ligne de vue (murs et portes fermées bloquent), et l’ajoute à l’exploration"
+                >
+                  Révéler sa vue
+                </button>
                 <button className="btn btn-secondary" type="button" onClick={() => setSelectedTokenId(null)}>
                   Désélectionner
                 </button>
