@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { apiGet, apiPut, apiPutFormData } from '../../../shared/api/client'
+import { apiGet, apiPut } from '../../../shared/api/client'
 import { useSnackbar } from '../../../app/hooks/useSnackbar'
 import {
   MapCanvas,
@@ -201,19 +201,15 @@ export function SessionMapTab(props: {
     }
   }
 
-  async function saveStates() {
-    if (!canEdit) return
-    if (!activeMap) return
+  async function resetToTemplate() {
+    if (!canEdit || !activeMap) return
+    if (!window.confirm('Remettre la carte comme dans l’éditeur ? Jetons, brouillard et portes de la partie seront perdus.')) return
     try {
-      const fd = new FormData()
-      fd.append('name', activeMap.name)
-      fd.append('tokens_state', JSON.stringify(tokensStateOf(scene)))
-      fd.append('fog_state', JSON.stringify(fogStateOf(scene)))
-      await apiPutFormData(`/api/campaigns/${activeMap.campaign_id}/maps/${activeMap.id}`, fd, token)
+      await apiPut(`/api/sessions/${sessionId}/map/reset`, {}, token)
       setSyncError(null)
-      showSnackbar({ message: 'Map sauvegardée.', severity: 'success' })
+      showSnackbar({ message: 'Carte remise à l’état du modèle.', severity: 'success' })
     } catch (err) {
-      setSyncError(err instanceof Error ? err.message : 'Erreur sauvegarde map')
+      setSyncError(err instanceof Error ? err.message : 'Erreur réinitialisation map')
     }
   }
 
@@ -352,8 +348,14 @@ export function SessionMapTab(props: {
           >
             + Depuis l’initiative{missingCombatants.length ? ` (${missingCombatants.length})` : ''}
           </button>
-          <button className="btn" type="button" onClick={() => void saveStates()} disabled={!canShowMap}>
-            Sauvegarder
+          <button
+            className="btn btn-secondary"
+            type="button"
+            onClick={() => void resetToTemplate()}
+            disabled={!canShowMap || !activeMap?.has_play_state}
+            title="La partie est enregistrée automatiquement, à part de la carte préparée dans l’éditeur"
+          >
+            Réinitialiser depuis le modèle
           </button>
         </div>
       ) : null}

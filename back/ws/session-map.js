@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const config = require('../config');
 const prisma = require('../lib/prisma');
 const { findSessionForChat } = require('../lib/session-chat-access');
+const { effectiveMapState } = require('../lib/map-play-state');
 
 const WS_PATH = '/api/ws/session-map';
 
@@ -23,6 +24,7 @@ async function buildSessionMapPayload(sessionId) {
           name: true,
           fogState: true,
           tokensState: true,
+          playState: true,
           isActive: true,
         },
       },
@@ -43,8 +45,8 @@ async function buildSessionMapPayload(sessionId) {
       campaign_id: map.campaignId,
       name: map.name,
       image_url: `/api/campaigns/${map.campaignId}/maps/${map.id}/image`,
-      fog_state: map.fogState ?? null,
-      tokens_state: map.tokensState ?? null,
+      ...effectiveMapState(map),
+      has_play_state: map.playState != null,
     },
     view_state: row.mapViewState ?? null,
   };

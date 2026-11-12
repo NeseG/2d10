@@ -9,6 +9,7 @@ export type CampaignMap = {
   image_url: string
   fog_state?: unknown
   tokens_state?: unknown
+  has_play_state?: boolean // en session : la partie jouée diverge du modèle
 }
 
 export type Scene = {
