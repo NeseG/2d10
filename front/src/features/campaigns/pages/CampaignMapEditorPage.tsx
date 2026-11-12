@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Card } from '../../../shared/components/Card'
 import { apiDelete, apiGet, apiPutFormData } from '../../../shared/api/client'
@@ -6,6 +6,9 @@ import { useAuth } from '../../../app/hooks/useAuth'
 import { useSnackbar } from '../../../app/hooks/useSnackbar'
 import { MapCanvas, type MapCanvasTool, type MapToken } from '../../maps/components/MapCanvas'
 import { EMPTY_SCENE, SIZE_PRESETS, clamp, fogStateOf, parseScene, tokensStateOf, type CampaignMap, type Scene } from '../../maps/scene'
+import { FogToolbar } from '../../maps/components/FogToolbar'
+import { useFogEditor } from '../../maps/useFogEditor'
+import type { FogBitmap, FogShape } from '../../maps/fog'
 
 function uid(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -18,12 +21,16 @@ const TOOLS: [MapCanvasTool, string][] = [
   ['fog_erase', 'Gomme'],
   ['wall', 'Mur'],
   ['door', 'Porte'],
+  ['window', 'Fenêtre'],
+  ['zone', 'Zone'],
   ['light', 'Lumière'],
 ]
 
 const TOOL_HINTS: Partial<Record<MapCanvasTool, string>> = {
   wall: 'Glisser pour tracer un mur. Double-clic sur un mur pour le supprimer. Maj = sans aimant.',
   door: 'Glisser pour tracer une porte. Double-clic pour la supprimer ; hors de cet outil, cliquer sur sa pastille l’ouvre ou la ferme.',
+  window: 'Glisser pour tracer une fenêtre : simple repère pour le MJ, elle ne bloque pas la vue. Double-clic pour la supprimer.',
+  zone: 'Clic par sommet, double-clic ou clic sur le 1er sommet pour fermer, puis nommer la zone. Double-clic sur une zone pour la supprimer.',
   light: 'Cliquer pour poser une lumière, cliquer sur une lumière pour la retirer.',
 }
 
@@ -45,6 +52,9 @@ export function CampaignMapEditorPage() {
   const [tool, setTool] = useState<MapCanvasTool>('tokens')
   const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null)
   const [lightRadius, setLightRadius] = useState(8)
+  const [fogShape, setFogShape] = useState<FogShape>('rect')
+  const [fogBrush, setFogBrush] = useState(2)
+  const [aspect, setAspect] = useState<number | null>(null)
 
   const edit = (patch: Partial<Scene>) => setScene((prev) => ({ ...prev, ...patch }))
   const editGrid = (patch: Partial<Scene['grid']>) => setScene((prev) => ({ ...prev, grid: { ...prev.grid, ...patch } }))
@@ -119,6 +129,14 @@ export function CampaignMapEditorPage() {
   }
 
   const { grid } = scene
+  const fog = useFogEditor({
+    fog: scene.fog,
+    legacyRects: scene.fogRects,
+    gridSize: grid.size,
+    aspect,
+    resetKey: mapId,
+    onChange: useCallback((next: FogBitmap) => setScene((prev) => ({ ...prev, fog: next })), []),
+  })
   const selected = scene.tokens.find((t) => t.id === selectedTokenId) ?? null
   const rowStyle = { display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.75rem' } as const
   const fieldStyle = { display: 'flex', gap: '0.35rem', alignItems: 'center' } as const
@@ -192,15 +210,13 @@ export function CampaignMapEditorPage() {
 
           {tool === 'fog_add' || tool === 'fog_erase' ? (
             <div style={rowStyle}>
-              <button className="btn btn-secondary" type="button" onClick={() => edit({ fogRects: [] })} disabled={scene.fogRects.length === 0}>
-                Effacer fog
-              </button>
+              <FogToolbar fog={fog} shape={fogShape} onShapeChange={setFogShape} brush={fogBrush} onBrushChange={setFogBrush} />
             </div>
           ) : null}
-          {tool === 'wall' || tool === 'door' ? (
+          {tool === 'wall' || tool === 'door' || tool === 'window' ? (
             <div style={rowStyle}>
               <button className="btn btn-secondary" type="button" onClick={() => edit({ walls: [] })} disabled={scene.walls.length === 0}>
-                Effacer murs et portes
+                Effacer murs, portes et fenêtres
               </button>
             </div>
           ) : null}
@@ -289,9 +305,14 @@ export function CampaignMapEditorPage() {
             imageUrl={map.image_url}
             canEdit
             tokens={scene.tokens}
-            fogRects={scene.fogRects}
             onTokensChange={(next) => edit({ tokens: next })}
-            onFogRectsChange={(next) => edit({ fogRects: next })}
+            fogMask={fog.mask}
+            onFogOp={fog.apply}
+            fogShape={fogShape}
+            fogBrush={fogBrush}
+            onImageSize={(w, h) => setAspect(h / w)}
+            zones={scene.zones}
+            onZonesChange={(next) => edit({ zones: next })}
             tool={tool}
             selectedTokenId={selectedTokenId}
             onSelectedTokenIdChange={setSelectedTokenId}

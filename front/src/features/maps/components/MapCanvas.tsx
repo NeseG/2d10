@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { getApiBaseUrl } from '../../../shared/api/client'
 import { DEFAULT_GRID, gridDistance, pointInPolygon, snapTo, visibilityPolygon, type Pt, type Seg } from '../geometry'
+import type { FogMask, FogOp, FogShape } from '../fog'
 
 export type MapToken = {
   id: string
@@ -26,7 +27,10 @@ export type MapFogRect = {
 /** `size` : largeur d'une case / largeur de l'image. `ox`/`oy` : décalage en fraction de case. `unit` : mètres par case. */
 export type MapGrid = { size: number; ox: number; oy: number; unit: number; show: boolean; snap: boolean }
 
-export type MapWall = { id: string; x1: number; y1: number; x2: number; y2: number; door?: boolean; open?: boolean }
+/** `window` : repère visuel pour le MJ, sans effet sur la vision. */
+export type MapWall = { id: string; x1: number; y1: number; x2: number; y2: number; door?: boolean; open?: boolean; window?: boolean }
+/** Zone nommée préparée dans l'éditeur, révélable d'un clic en session. Points normalisés. */
+export type MapZone = { id: string; name: string; points: Pt[] }
 export type MapLight = { id: string; x: number; y: number; radius: number } // radius en cases
 export type MapTemplateShape = 'circle' | 'cone' | 'line' | 'cube'
 export type MapTemplate = { id: string; shape: MapTemplateShape; x1: number; y1: number; x2: number; y2: number }
@@ -35,8 +39,6 @@ export type MapVision = { dynamic: boolean; dark: boolean }
 export type MapPing = { id: string; x: number; y: number }
 /** État de combat affiché sur un jeton (vient du tracker d'initiative). */
 export type MapTokenStatus = { hp?: number | null; maxHp?: number | null; conditions?: string | null; active?: boolean }
-
-type Rect = { x: number; y: number; w: number; h: number }
 
 export type MapCanvasTool =
   | 'move'
@@ -48,6 +50,8 @@ export type MapCanvasTool =
   | 'template'
   | 'wall'
   | 'door'
+  | 'window'
+  | 'zone'
   | 'light'
 
 export type MapViewState = { scale: number; tx: number; ty: number }
@@ -124,9 +128,16 @@ export function MapCanvas(props: {
   width?: number
   height?: number
   tokens: MapToken[]
-  fogRects: MapFogRect[]
   onTokensChange: (next: MapToken[]) => void
-  onFogRectsChange: (next: MapFogRect[]) => void
+  fogMask?: FogMask | null
+  onFogOp?: (op: FogOp) => void
+  fogShape?: FogShape
+  /** Diamètre du pinceau, en cases. */
+  fogBrush?: number
+  /** Dimensions naturelles de l'image, dès qu'elle est chargée. */
+  onImageSize?: (w: number, h: number) => void
+  zones?: MapZone[]
+  onZonesChange?: (next: MapZone[]) => void
   tool: MapCanvasTool
   selectedTokenId: string | null
   onSelectedTokenIdChange: (id: string | null) => void
@@ -156,9 +167,14 @@ export function MapCanvas(props: {
     width = 1100,
     height = 650,
     tokens,
-    fogRects,
     onTokensChange,
-    onFogRectsChange,
+    fogMask = null,
+    onFogOp,
+    fogShape = 'rect',
+    fogBrush = 1,
+    onImageSize,
+    zones = [],
+    onZonesChange,
     tool,
     selectedTokenId,
     onSelectedTokenIdChange,
@@ -186,7 +202,9 @@ export function MapCanvas(props: {
   const imageRef = useRef<HTMLImageElement | null>(null)
   const [imageObjectUrl, setImageObjectUrl] = useState<string | null>(null)
   const [imageNaturalSize, setImageNaturalSize] = useState<{ w: number; h: number } | null>(null)
-  const [erasePreview, setErasePreview] = useState<Rect | null>(null)
+  // Brouillard en cours de tracé (pixels image) : rectangle, trait de pinceau, ou polygone (aussi pour les zones)
+  const [fogDraft, setFogDraft] = useState<{ kind: 'rect'; x1: number; y1: number; x2: number; y2: number } | { kind: 'brush'; points: Pt[] } | null>(null)
+  const [polyDraft, setPolyDraft] = useState<Pt[]>([])
   const [moveSelectedIds, setMoveSelectedIds] = useState<string[]>([])
   // Tracé en cours (règle, gabarit, mur), en pixels relatifs à l'image
   const [draft, setDraft] = useState<{ kind: 'ruler' | 'template' | 'wall'; x1: number; y1: number; x2: number; y2: number } | null>(null)
@@ -280,35 +298,6 @@ export function MapCanvas(props: {
     }
   }
 
-  function rectsIntersect(a: Rect, b: Rect): boolean {
-    return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
-  }
-
-  function subtractRect(a: Rect, b: Rect): Rect[] {
-    if (!rectsIntersect(a, b)) return [a]
-    const ax1 = a.x
-    const ay1 = a.y
-    const ax2 = a.x + a.w
-    const ay2 = a.y + a.h
-    const bx1 = b.x
-    const by1 = b.y
-    const bx2 = b.x + b.w
-    const by2 = b.y + b.h
-
-    const ix1 = Math.max(ax1, bx1)
-    const iy1 = Math.max(ay1, by1)
-    const ix2 = Math.min(ax2, bx2)
-    const iy2 = Math.min(ay2, by2)
-    if (ix2 <= ix1 || iy2 <= iy1) return [a]
-
-    const out: Rect[] = []
-    if (iy1 > ay1) out.push({ x: ax1, y: ay1, w: a.w, h: iy1 - ay1 })
-    if (iy2 < ay2) out.push({ x: ax1, y: iy2, w: a.w, h: ay2 - iy2 })
-    if (ix1 > ax1) out.push({ x: ax1, y: iy1, w: ix1 - ax1, h: iy2 - iy1 })
-    if (ix2 < ax2) out.push({ x: ix2, y: iy1, w: ax2 - ix2, h: iy2 - iy1 })
-    return out.filter((r) => r.w >= 1e-6 && r.h >= 1e-6)
-  }
-
   function getImageBox() {
     const surface = surfaceRef.current
     if (!surface) return null
@@ -376,8 +365,7 @@ export function MapCanvas(props: {
         startTx: number
         startTy: number
       }
-    | { kind: 'fog_add'; id: string; startX: number; startY: number }
-    | { kind: 'fog_erase'; startX: number; startY: number }
+    | { kind: 'fog' }
     | { kind: 'draft' }
   >(null)
 
@@ -455,6 +443,25 @@ export function MapCanvas(props: {
     )
   }
 
+  function finishPoly(points: Pt[], box: { w: number; h: number }) {
+    setPolyDraft([])
+    if (points.length < 3) return
+    const norm = points.map((q) => ({ x: q.x / box.w, y: q.y / box.h }))
+    if (tool === 'zone') {
+      const name = window.prompt('Nom de la zone', `Zone ${zones.length + 1}`)?.trim()
+      if (name) onZonesChange?.([...zones, { id: uid('zone'), name, points: norm }])
+    } else onFogOp?.({ shape: 'poly', erase: tool === 'fog_erase', points: norm })
+  }
+
+  // Changer d'outil abandonne le polygone en cours ; Échap aussi.
+  useEffect(() => setPolyDraft([]), [tool, fogShape])
+  useEffect(() => {
+    if (!polyDraft.length) return
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setPolyDraft([])
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [polyDraft.length])
+
   function onSurfacePointerDown(e: React.PointerEvent) {
     if (canStartPan(e)) {
       startPan(e)
@@ -482,17 +489,26 @@ export function MapCanvas(props: {
       onLightsChange?.([...lights, { id: uid('light'), x: clamp(p.x / p.w, 0, 1), y: clamp(p.y / p.h, 0, 1), radius: lightRadius }])
       return
     }
-    if (tool === 'template' || tool === 'wall' || tool === 'door') {
+    const isFogTool = tool === 'fog_add' || tool === 'fog_erase'
+    if (tool === 'zone' || (isFogTool && fogShape === 'poly')) {
+      // Polygone : un clic par sommet ; clic sur le premier sommet ou double-clic pour fermer, Échap pour annuler.
+      const s = snapPoint(clamp(p.x, 0, p.w), clamp(p.y, 0, p.h), p.w, e)
+      const first = polyDraft[0]
+      if (first && polyDraft.length >= 3 && Math.hypot(s.x - first.x, s.y - first.y) < 10) finishPoly(polyDraft, p)
+      else setPolyDraft([...polyDraft, s])
+      return
+    }
+    if (tool === 'template' || tool === 'wall' || tool === 'door' || tool === 'window') {
       const s = snapPoint(clamp(p.x, 0, p.w), clamp(p.y, 0, p.h), p.w, e)
       dragRef.current = { kind: 'draft' }
       setDraft({ kind: tool === 'template' ? 'template' : 'wall', x1: s.x, y1: s.y, x2: s.x, y2: s.y })
-    } else if (tool === 'fog_add') {
-      const id = uid('fog')
-      dragRef.current = { kind: 'fog_add', id, startX: p.x, startY: p.y }
-      onFogRectsChange([...fogRects, { id, x: p.x / p.w, y: p.y / p.h, w: 0, h: 0 }])
-    } else if (tool === 'fog_erase') {
-      dragRef.current = { kind: 'fog_erase', startX: p.x, startY: p.y }
-      setErasePreview({ x: p.x, y: p.y, w: 0, h: 0 })
+    } else if (isFogTool) {
+      dragRef.current = { kind: 'fog' }
+      if (fogShape === 'brush') setFogDraft({ kind: 'brush', points: [{ x: p.x, y: p.y }] })
+      else {
+        const s = snapPoint(clamp(p.x, 0, p.w), clamp(p.y, 0, p.h), p.w, e)
+        setFogDraft({ kind: 'rect', x1: s.x, y1: s.y, x2: s.x, y2: s.y })
+      }
     } else {
       return
     }
@@ -521,27 +537,15 @@ export function MapCanvas(props: {
       return
     }
 
-    if (d.kind === 'fog_add') {
-      const x2 = clamp(p.x, 0, p.w)
-      const y2 = clamp(p.y, 0, p.h)
-      const x = Math.min(d.startX, x2)
-      const y = Math.min(d.startY, y2)
-      const w = Math.abs(x2 - d.startX)
-      const h = Math.abs(y2 - d.startY)
-      onFogRectsChange(
-        fogRects.map((r) => (r.id === d.id ? { ...r, x: x / p.w, y: y / p.h, w: w / p.w, h: h / p.h } : r)),
-      )
-      return
-    }
-
-    if (d.kind === 'fog_erase') {
-      const x2 = clamp(p.x, 0, p.w)
-      const y2 = clamp(p.y, 0, p.h)
-      const x = Math.min(d.startX, x2)
-      const y = Math.min(d.startY, y2)
-      const w = Math.abs(x2 - d.startX)
-      const h = Math.abs(y2 - d.startY)
-      setErasePreview({ x, y, w, h })
+    if (d.kind === 'fog') {
+      setFogDraft((prev) => {
+        if (prev?.kind === 'brush') return { kind: 'brush', points: [...prev.points, { x: p.x, y: p.y }] }
+        if (prev?.kind === 'rect') {
+          const s = snapPoint(clamp(p.x, 0, p.w), clamp(p.y, 0, p.h), p.w, e)
+          return { ...prev, x2: s.x, y2: s.y }
+        }
+        return prev
+      })
       return
     }
 
@@ -560,27 +564,23 @@ export function MapCanvas(props: {
       if (dr && box && dr.kind !== 'ruler' && Math.hypot(dr.x2 - dr.x1, dr.y2 - dr.y1) > 4) {
         const norm = { x1: dr.x1 / box.w, y1: dr.y1 / box.h, x2: dr.x2 / box.w, y2: dr.y2 / box.h }
         if (dr.kind === 'template') onTemplatesChange?.([...templates, { id: uid('tpl'), shape: templateShape, ...norm }])
-        else onWallsChange?.([...walls, { id: uid('wall'), ...norm, ...(tool === 'door' ? { door: true, open: false } : {}) }])
+        else
+          onWallsChange?.([
+            ...walls,
+            { id: uid('wall'), ...norm, ...(tool === 'door' ? { door: true, open: false } : tool === 'window' ? { window: true } : {}) },
+          ])
       }
     }
 
-    if (d.kind === 'fog_add') {
-      onFogRectsChange(fogRects.filter((r) => !(r.id === d.id && (r.w < 0.01 || r.h < 0.01))))
-    }
-
-    if (d.kind === 'fog_erase') {
-      const er = erasePreview
-      setErasePreview(null)
-      const norm = box && er ? { x: er.x / box.w, y: er.y / box.h, w: er.w / box.w, h: er.h / box.h } : null
-      if (norm && norm.w >= 0.01 && norm.h >= 0.01) {
-        const next: MapFogRect[] = []
-        for (const r of fogRects) {
-          const parts = subtractRect(r, norm)
-          for (const p of parts) {
-            next.push({ id: uid('fog'), x: p.x, y: p.y, w: p.w, h: p.h })
-          }
-        }
-        onFogRectsChange(next)
+    if (d.kind === 'fog') {
+      const fd = fogDraft
+      setFogDraft(null)
+      const erase = tool === 'fog_erase'
+      if (fd && box && fd.kind === 'rect' && Math.abs(fd.x2 - fd.x1) > 2 && Math.abs(fd.y2 - fd.y1) > 2) {
+        onFogOp?.({ shape: 'rect', erase, x1: fd.x1 / box.w, y1: fd.y1 / box.h, x2: fd.x2 / box.w, y2: fd.y2 / box.h })
+      }
+      if (fd && box && fd.kind === 'brush') {
+        onFogOp?.({ shape: 'brush', erase, radius: (fogBrush * grid.size) / 2, points: fd.points.map((q) => ({ x: q.x / box.w, y: q.y / box.h })) })
       }
     }
 
@@ -610,7 +610,7 @@ export function MapCanvas(props: {
   let lit: { c: Pt; r: number; poly: Pt[] }[] = []
   if (box && vision.dynamic) {
     const segs: Seg[] = walls
-      .filter((w) => !(w.door && w.open))
+      .filter((w) => !w.window && !(w.door && w.open))
       .map((w) => ({ x1: w.x1 * box.w, y1: w.y1 * box.h, x2: w.x2 * box.w, y2: w.y2 * box.h }))
     const pcs = tokens.filter((t) => t.characterId != null && !t.hidden)
     const mine = pcs.filter(isMine)
@@ -638,7 +638,7 @@ export function MapCanvas(props: {
   const tokenShown = (t: MapToken) =>
     canEdit || !vision.dynamic || t.characterId != null || (box ? pointVisible(tokenCenter(t, box)) : false)
   const polyPoints = (poly: Pt[]) => poly.map((p) => `${p.x},${p.y}`).join(' ')
-  const editingWalls = canEdit && (tool === 'wall' || tool === 'door')
+  const editingWalls = canEdit && (tool === 'wall' || tool === 'door' || tool === 'window')
 
   return (
     <div
@@ -656,6 +656,12 @@ export function MapCanvas(props: {
         if (tool === 'move') setMoveSelectedIds([])
       }}
       onDoubleClick={(e) => {
+        if (polyDraft.length) {
+          const b = getImageBox()
+          // Le double-clic a déjà posé deux sommets au même endroit : on retire le doublon.
+          if (b) finishPoly(polyDraft.slice(0, -1), b)
+          return
+        }
         // Raccourci : double-clic = ping (hors outils de tracé, où il sert à supprimer)
         if (tool !== 'move' && tool !== 'tokens' && tool !== 'ruler') return
         const p = getLocalPointOnImage(e)
@@ -672,7 +678,10 @@ export function MapCanvas(props: {
         background: '#111',
         touchAction: 'none',
         userSelect: 'none',
-        cursor: tool === 'ruler' || tool === 'ping' || tool === 'template' || editingWalls || tool === 'light' ? 'crosshair' : undefined,
+        cursor:
+          tool === 'ruler' || tool === 'ping' || tool === 'template' || editingWalls || tool === 'light' || tool === 'zone' || tool === 'fog_add' || tool === 'fog_erase'
+            ? 'crosshair'
+            : undefined,
       }}
     >
       {canEdit && onViewStateChange ? (
@@ -721,6 +730,7 @@ export function MapCanvas(props: {
               const el = e.currentTarget
               if (el.naturalWidth > 1 && el.naturalHeight > 1) {
                 setImageNaturalSize({ w: el.naturalWidth, h: el.naturalHeight })
+                onImageSize?.(el.naturalWidth, el.naturalHeight)
               }
             }}
             style={{
@@ -829,25 +839,10 @@ export function MapCanvas(props: {
             })
           : null}
 
-        {/* Fog manuel */}
-        {box
-          ? fogRects.map((r) => (
-              <div
-                key={r.id}
-                style={{
-                  position: 'absolute',
-                  left: box.left + r.x * box.w,
-                  top: box.top + r.y * box.h,
-                  width: r.w * box.w,
-                  height: r.h * box.h,
-                  // Non-propriétaires (lecture seule) : fog 100% opaque
-                  background: canEdit ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,1)',
-                  outline: canEdit ? '1px solid rgba(255,255,255,0.15)' : undefined,
-                  pointerEvents: 'none',
-                }}
-              />
-            ))
-          : null}
+        {/* Brouillard (bitmap) : opaque pour les joueurs, en transparence pour le MJ */}
+        {box && fogMask ? (
+          <FogCanvas mask={fogMask} style={{ position: 'absolute', left: box.left, top: box.top, width: box.w, height: box.h, opacity: canEdit ? 0.45 : 1 }} />
+        ) : null}
 
         {/* Calque vectoriel : gabarits, murs, lumières, obscurité, règle, pings */}
         {box ? (
@@ -940,10 +935,10 @@ export function MapCanvas(props: {
                   const y1 = w.y1 * box.h
                   const x2 = w.x2 * box.w
                   const y2 = w.y2 * box.h
-                  const color = w.door ? (w.open ? '#22c55e' : '#f97316') : '#38bdf8'
+                  const color = w.window ? '#c084fc' : w.door ? (w.open ? '#22c55e' : '#f97316') : '#38bdf8'
                   return (
                     <g key={w.id}>
-                      <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={color} strokeWidth={3} strokeDasharray={w.door && w.open ? '6 5' : undefined} />
+                      <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={color} strokeWidth={3} strokeDasharray={w.window ? '2 4' : w.door && w.open ? '6 5' : undefined} />
                       {editingWalls ? (
                         <line
                           x1={x1}
@@ -986,7 +981,7 @@ export function MapCanvas(props: {
               <TemplateShape shape={templateShape} x1={draft.x1} y1={draft.y1} x2={draft.x2} y2={draft.y2} cell={cell} unit={grid.unit} />
             ) : null}
             {draft?.kind === 'wall' ? (
-              <line x1={draft.x1} y1={draft.y1} x2={draft.x2} y2={draft.y2} stroke={tool === 'door' ? '#f97316' : '#38bdf8'} strokeWidth={3} />
+              <line x1={draft.x1} y1={draft.y1} x2={draft.x2} y2={draft.y2} stroke={tool === 'door' ? '#f97316' : tool === 'window' ? '#c084fc' : '#38bdf8'} strokeWidth={3} />
             ) : null}
             {draft?.kind === 'ruler' ? (
               <g>
@@ -998,6 +993,64 @@ export function MapCanvas(props: {
                     return `${n} case${n > 1 ? 's' : ''} · ${+(n * grid.unit).toFixed(1)} m`
                   })()}
                 </text>
+              </g>
+            ) : null}
+
+            {canEdit
+              ? zones.map((z) => {
+                  const pts = z.points.map((q) => ({ x: q.x * box.w, y: q.y * box.h }))
+                  const cx = pts.reduce((a, q) => a + q.x, 0) / pts.length
+                  const cy = pts.reduce((a, q) => a + q.y, 0) / pts.length
+                  return (
+                    <g key={z.id}>
+                      <polygon
+                        points={polyPoints(pts)}
+                        fill="rgba(56,189,248,0.08)"
+                        stroke="#38bdf8"
+                        strokeDasharray="5 4"
+                        style={{ pointerEvents: tool === 'zone' ? 'auto' : 'none', cursor: 'pointer' }}
+                        onDoubleClick={(e) => {
+                          e.stopPropagation()
+                          onZonesChange?.(zones.filter((x) => x.id !== z.id))
+                        }}
+                      >
+                        <title>{tool === 'zone' ? `${z.name} — double-clic pour supprimer` : z.name}</title>
+                      </polygon>
+                      <text x={cx} y={cy} fill="#fff" fontSize={12} fontWeight={600} textAnchor="middle" stroke="#000" strokeWidth={3} paintOrder="stroke" style={{ pointerEvents: 'none' }}>
+                        {z.name}
+                      </text>
+                    </g>
+                  )
+                })
+              : null}
+
+            {fogDraft?.kind === 'rect' ? (
+              <rect
+                x={Math.min(fogDraft.x1, fogDraft.x2)}
+                y={Math.min(fogDraft.y1, fogDraft.y2)}
+                width={Math.abs(fogDraft.x2 - fogDraft.x1)}
+                height={Math.abs(fogDraft.y2 - fogDraft.y1)}
+                fill={tool === 'fog_erase' ? 'rgba(255,0,0,0.12)' : 'rgba(0,0,0,0.45)'}
+                stroke={tool === 'fog_erase' ? 'rgba(255,120,120,0.9)' : 'rgba(255,255,255,0.6)'}
+                strokeDasharray="4 3"
+              />
+            ) : null}
+            {fogDraft?.kind === 'brush' ? (
+              <polyline
+                points={polyPoints(fogDraft.points)}
+                fill="none"
+                stroke={tool === 'fog_erase' ? 'rgba(255,120,120,0.5)' : 'rgba(0,0,0,0.6)'}
+                strokeWidth={Math.max(1, fogBrush * cell)}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            ) : null}
+            {polyDraft.length ? (
+              <g>
+                <polyline points={polyPoints(polyDraft)} fill="rgba(56,189,248,0.12)" stroke="#38bdf8" strokeWidth={2} />
+                {polyDraft.map((q, i) => (
+                  <circle key={i} cx={q.x} cy={q.y} r={i === 0 ? 6 : 3} fill={i === 0 ? '#38bdf8' : '#fff'} stroke="#000" />
+                ))}
               </g>
             ) : null}
 
@@ -1013,22 +1066,21 @@ export function MapCanvas(props: {
           </svg>
         ) : null}
 
-        {/* Erase preview */}
-        {erasePreview && box ? (
-          <div
-            style={{
-              position: 'absolute',
-              left: box.left + erasePreview.x,
-              top: box.top + erasePreview.y,
-              width: erasePreview.w,
-              height: erasePreview.h,
-              background: 'rgba(255, 0, 0, 0.12)',
-              outline: '1px dashed rgba(255, 120, 120, 0.9)',
-              pointerEvents: 'none',
-            }}
-          />
-        ) : null}
       </div>
     </div>
   )
+}
+
+/** Masque de brouillard dessiné dans un canvas à sa résolution ; le navigateur le lisse à l'agrandissement. */
+function FogCanvas(props: { mask: FogMask; style: React.CSSProperties }) {
+  const ref = useRef<HTMLCanvasElement | null>(null)
+  const { mask } = props
+  useEffect(() => {
+    const ctx = ref.current?.getContext('2d')
+    if (!ctx) return
+    const img = ctx.createImageData(mask.w, mask.h)
+    for (let i = 0; i < mask.px.length; i++) img.data[i * 4 + 3] = mask.px[i]
+    ctx.putImageData(img, 0, 0)
+  }, [mask])
+  return <canvas ref={ref} width={mask.w} height={mask.h} style={{ ...props.style, pointerEvents: 'none' }} />
 }

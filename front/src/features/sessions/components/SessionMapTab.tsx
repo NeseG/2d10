@@ -22,6 +22,9 @@ import {
   type CampaignMap,
   type Scene,
 } from '../../maps/scene'
+import { FogToolbar } from '../../maps/components/FogToolbar'
+import { useFogEditor } from '../../maps/useFogEditor'
+import type { FogBitmap, FogShape } from '../../maps/fog'
 import { useSessionSocket } from '../useSessionSocket'
 
 type MapWsPayload = {
@@ -80,6 +83,9 @@ export function SessionMapTab(props: {
   const [templateShape, setTemplateShape] = useState<MapTemplateShape>('circle')
   const [pings, setPings] = useState<MapPing[]>([])
   const [initiative, setInitiative] = useState<InitiativeState>(null)
+  const [fogShape, setFogShape] = useState<FogShape>('rect')
+  const [fogBrush, setFogBrush] = useState(2)
+  const [aspect, setAspect] = useState<number | null>(null)
 
   // Vrai seulement après une modification locale du MJ : évite de renvoyer au serveur ce qu'il vient de nous pousser.
   const dirtyRef = useRef(false)
@@ -222,6 +228,14 @@ export function SessionMapTab(props: {
   }
 
   const { tokens, grid } = scene
+  const fog = useFogEditor({
+    fog: scene.fog,
+    legacyRects: scene.fogRects,
+    gridSize: grid.size,
+    aspect,
+    resetKey: activeMapId,
+    onChange: useCallback((next: FogBitmap) => edit({ fog: next }), [edit]),
+  })
   const myCharacterIds = useMemo(
     () => (currentUserId == null ? [] : characters.filter((c) => c.character_user_id === currentUserId).map((c) => c.character_id)),
     [characters, currentUserId],
@@ -395,9 +409,7 @@ export function SessionMapTab(props: {
             </>
           ) : null}
           {tool === 'fog_add' || tool === 'fog_erase' ? (
-            <button className="btn btn-secondary" type="button" onClick={() => edit({ fogRects: [] })} disabled={scene.fogRects.length === 0}>
-              Effacer fog
-            </button>
+            <FogToolbar fog={fog} shape={fogShape} onShapeChange={setFogShape} brush={fogBrush} onBrushChange={setFogBrush} zones={scene.zones} />
           ) : null}
           {scene.vision.dynamic && pcTokenCount === 0 ? (
             <span style={{ color: 'var(--muted)', fontSize: 13 }}>
@@ -490,10 +502,14 @@ export function SessionMapTab(props: {
           imageUrl={activeMap?.image_url ?? ''}
           canEdit={canEdit}
           tokens={tokens}
-          fogRects={scene.fogRects}
           // Joueur : mise à jour locale pendant le glisser, la position finale part par onPlayerTokenMove.
           onTokensChange={(next) => (canEdit ? edit({ tokens: next }) : setScene((prev) => ({ ...prev, tokens: next })))}
-          onFogRectsChange={(next) => edit({ fogRects: next })}
+          fogMask={fog.mask}
+          onFogOp={fog.apply}
+          fogShape={fogShape}
+          fogBrush={fogBrush}
+          onImageSize={(w, h) => setAspect(h / w)}
+          zones={scene.zones}
           tool={tool}
           selectedTokenId={selectedTokenId}
           onSelectedTokenIdChange={setSelectedTokenId}

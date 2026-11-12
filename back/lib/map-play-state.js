@@ -3,6 +3,18 @@
 
 const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
 const arr = (v) => (Array.isArray(v) ? v : []);
+const MAX_FOG_SIDE = 2048;
+const MAX_FOG_CHARS = 4 * 1024 * 1024;
+
+/** Brouillard en bitmap (deflate + base64, voir docs/decisions/0005) : forme vérifiée, contenu non décodé ici. */
+function isFogBitmap(b) {
+  return (
+    b && typeof b === 'object' &&
+    Number.isInteger(b.w) && Number.isInteger(b.h) &&
+    b.w > 0 && b.h > 0 && b.w <= MAX_FOG_SIDE && b.h <= MAX_FOG_SIDE &&
+    typeof b.data === 'string' && b.data.length <= MAX_FOG_CHARS && /^[A-Za-z0-9+/=]*$/.test(b.data)
+  );
+}
 
 /** Scène vue en session = modèle surchargé par la partie jouée, au format `fog_state` / `tokens_state` du front. */
 function effectiveMapState(map) {
@@ -16,6 +28,7 @@ function effectiveMapState(map) {
       ...fog,
       walls: arr(fog.walls).map((w) => (w?.door && typeof doors[w.id] === 'boolean' ? { ...w, open: doors[w.id] } : w)),
       rects: play.rects ?? fog.rects,
+      fog: play.fog !== undefined ? play.fog : (fog.fog ?? null),
     },
     tokens_state: { ...tok, tokens: play.tokens ?? tok.tokens, templates: play.templates ?? tok.templates },
   };
@@ -30,10 +43,11 @@ function nextPlayState(prev, fogState, tokensState) {
   }
   if (fogState && typeof fogState === 'object') {
     next.rects = arr(fogState.rects);
+    if (fogState.fog === null || isFogBitmap(fogState.fog)) next.fog = fogState.fog;
     next.doors = {};
     for (const w of arr(fogState.walls)) if (w?.door && typeof w.id === 'string') next.doors[w.id] = Boolean(w.open);
   }
   return next;
 }
 
-module.exports = { effectiveMapState, nextPlayState };
+module.exports = { effectiveMapState, nextPlayState, isFogBitmap };

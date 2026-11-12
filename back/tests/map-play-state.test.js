@@ -35,3 +35,14 @@ test('un envoi partiel garde le reste de la partie jouée', () => {
   // brouillard joué présent, jetons pas encore : le modèle fournit les jetons
   assert.deepEqual(effectiveMapState({ ...template, playState: first }).tokens_state.tokens, template.tokensState.tokens);
 });
+
+test('bitmap de brouillard : prise si bien formée, ignorée sinon', () => {
+  const fog = { w: 160, h: 96, data: 'eJzt' };
+  assert.deepEqual(nextPlayState(null, { fog, rects: [] }, null).fog, fog);
+  assert.equal(nextPlayState(null, { fog: { w: 99999, h: 1, data: '' } }, null).fog, undefined);
+  assert.equal(nextPlayState(null, { fog: { w: 1, h: 1, data: '<script>' } }, null).fog, undefined);
+  // sans brouillard joué, la session voit celui du modèle
+  const tpl = { fogState: { fog, walls: [] }, tokensState: {}, playState: { tokens: [] } };
+  assert.deepEqual(effectiveMapState(tpl).fog_state.fog, fog);
+  assert.equal(effectiveMapState({ ...tpl, playState: { fog: null } }).fog_state.fog, null);
+});

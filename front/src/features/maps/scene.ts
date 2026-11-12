@@ -1,5 +1,6 @@
-import type { MapFogRect, MapGrid, MapLight, MapTemplate, MapToken, MapVision, MapWall } from './components/MapCanvas'
+import type { MapFogRect, MapGrid, MapLight, MapTemplate, MapToken, MapVision, MapWall, MapZone } from './components/MapCanvas'
 import { DEFAULT_GRID } from './geometry'
+import { isFogBitmap, type FogBitmap } from './fog'
 
 /** Carte telle que renvoyée par l'API. La scène est répartie dans ses deux colonnes JSON. */
 export type CampaignMap = {
@@ -14,7 +15,10 @@ export type CampaignMap = {
 
 export type Scene = {
   tokens: MapToken[]
+  fog: FogBitmap | null
+  /** Anciennes cartes : brouillard en rectangles, converti en bitmap à la première modification. */
   fogRects: MapFogRect[]
+  zones: MapZone[]
   grid: MapGrid
   walls: MapWall[]
   lights: MapLight[]
@@ -24,7 +28,9 @@ export type Scene = {
 
 export const EMPTY_SCENE: Scene = {
   tokens: [],
+  fog: null,
   fogRects: [],
+  zones: [],
   grid: DEFAULT_GRID,
   walls: [],
   lights: [],
@@ -59,6 +65,8 @@ export function parseScene(map: CampaignMap | null | undefined): Scene {
       .filter((x) => x && typeof x.id === 'string' && Number.isFinite(x.x) && Number.isFinite(x.y))
       // Anciennes cartes : coordonnées en pixels d'un canvas 1100×650
       .map((x) => ({ ...x, x: clamp(x.x > 1 ? x.x / 1100 : x.x, 0, 1), y: clamp(x.y > 1 ? x.y / 650 : x.y, 0, 1) })),
+    fog: isFogBitmap(fs.fog) ? fs.fog : null,
+    zones: arr<MapZone>(fs.zones).filter((z) => z && typeof z.id === 'string' && Array.isArray(z.points) && z.points.length >= 3),
     fogRects: arr<MapFogRect>(fs.rects)
       .filter((r) => r && typeof r.id === 'string' && [r.x, r.y, r.w, r.h].every(Number.isFinite))
       .map((r) => ({
@@ -84,4 +92,11 @@ export function parseScene(map: CampaignMap | null | undefined): Scene {
 }
 
 export const tokensStateOf = (s: Scene) => ({ tokens: s.tokens, grid: s.grid, templates: s.templates })
-export const fogStateOf = (s: Scene) => ({ rects: s.fogRects, walls: s.walls, lights: s.lights, ...s.vision })
+export const fogStateOf = (s: Scene) => ({
+  fog: s.fog,
+  rects: s.fog ? [] : s.fogRects,
+  zones: s.zones,
+  walls: s.walls,
+  lights: s.lights,
+  ...s.vision,
+})

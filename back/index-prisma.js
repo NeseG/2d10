@@ -35,7 +35,7 @@ const port = config.port;
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '5mb' })); // brouillard des cartes en bitmap
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Initialiser la base de données avec Prisma
