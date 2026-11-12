@@ -536,7 +536,34 @@ router.delete('/:campaignId/map-folders/:folderId', authenticateToken, checkCamp
   }
 });
 
-router.get('/:campaignId/maps/:mapId/image', authenticateToken, checkCampaignOwnership, async (req, res) => {
+/** Image de carte : MJ de la campagne, ou joueur inscrit à une session où cette carte est la carte active (pas les cartes non montrées). */
+const checkMapImageAccess = async (req, res, next) => {
+  try {
+    const campaignId = parseInt(req.params.campaignId, 10);
+    const mapId = parseInt(req.params.mapId, 10);
+    if (Number.isNaN(campaignId) || Number.isNaN(mapId)) return res.status(400).json({ error: 'ID invalide' });
+    if (req.user.role_name === 'admin') return next();
+    const campaign = await findActiveCampaign(campaignId);
+    if (!campaign) return res.status(404).json({ error: 'Campagne non trouvée' });
+    if (campaign.gmId === req.user.id) return next();
+    const shown = await prisma.gameSession.findFirst({
+      where: {
+        campaignId,
+        activeMapId: mapId,
+        isActive: true,
+        attendance: { some: { character: { userId: req.user.id, isActive: true } } },
+      },
+      select: { id: true },
+    });
+    if (!shown) return res.status(403).json({ error: 'Accès refusé' });
+    next();
+  } catch (error) {
+    console.error('Erreur lors de la vérification d\'accès à l\'image de carte:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+};
+
+router.get('/:campaignId/maps/:mapId/image', authenticateToken, checkMapImageAccess, async (req, res) => {
   try {
     const campaignId = parseInt(req.params.campaignId, 10);
     const mapId = parseInt(req.params.mapId, 10);
