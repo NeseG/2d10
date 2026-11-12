@@ -35,7 +35,7 @@ const port = config.port;
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '5mb' })); // brouillard des cartes en bitmap
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Initialiser la base de données avec Prisma
@@ -76,9 +76,15 @@ app.use('/api/dnd5e', dnd5eMonstersRoutes);
 app.use('/api/spells', spellRoutes);
 app.use('/api/monsters', monsterRoutes);
 
-attachSessionChatWss(server);
-attachSessionInitiativeWss(server);
-attachSessionMapWss(server);
+const wsPaths = [
+  attachSessionChatWss,
+  attachSessionInitiativeWss,
+  attachSessionMapWss,
+].map((attach) => attach(server));
+// Chaque module ne prend que son chemin ; tout autre upgrade est fermé ici, une seule fois.
+server.on('upgrade', (request, socket) => {
+  if (!wsPaths.includes((request.url || '').split('?')[0])) socket.destroy();
+});
 
 // Route de test
 app.get('/', (req, res) => {

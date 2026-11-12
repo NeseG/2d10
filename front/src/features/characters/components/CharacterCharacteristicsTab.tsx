@@ -1543,7 +1543,7 @@ export function CharacterCharacteristicsTab(props: {
                       <thead>
                         <tr>
                           <th>Nom</th>
-                          <th>Qté</th>
+                          <th className="inventory-qty-col">Qté</th>
                           <th>Catégorie</th>
                         </tr>
                       </thead>
@@ -1570,7 +1570,7 @@ export function CharacterCharacteristicsTab(props: {
                                 <span>{c.name}</span>
                               </span>
                             </td>
-                            <td data-label="Qté" onClick={(e) => e.stopPropagation()}>
+                            <td className="inventory-qty-col" data-label="Qté" onClick={(e) => e.stopPropagation()}>
                               <div className="inventory-qty-control">
                                 <button
                                   type="button"

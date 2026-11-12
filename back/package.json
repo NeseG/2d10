@@ -4,6 +4,7 @@
   "description": "2d10 Node.js Application",
   "main": "index.js",
   "scripts": {
+    "test": "node --test tests/*.test.js",
     "start": "node index-prisma.js",
     "start:prisma": "node index-prisma.js",
     "dev": "nodemon index-prisma.js",

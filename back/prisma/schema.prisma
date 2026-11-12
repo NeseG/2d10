@@ -378,9 +378,11 @@ model CampaignMap {
   name     String
   imageKey String  @map("image_key")
 
-  // Préparation pour fog-of-war et tokens (implémentation plus tard)
+  // Modèle préparé dans l'éditeur (murs, lumières, grille, jetons et brouillard initiaux)
   fogState    Json?
   tokensState Json?
+  // Partie jouée en session (jetons, gabarits, brouillard, portes) ; null = repartir du modèle. Voir lib/map-play-state.js
+  playState   Json?
 
   activeSessions GameSession[] @relation("ActiveMap")
 

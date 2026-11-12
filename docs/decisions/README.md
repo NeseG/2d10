@@ -27,3 +27,4 @@ Pas besoin d'ADR pour des choix locaux ou réversibles sans conséquence (nom de
 
 - [0001-migration-prisma-orm.md](0001-migration-prisma-orm.md) — Migration depuis SQL brut (`pg`) vers Prisma ORM.
 - [0002-frontend-architecture-par-features.md](0002-frontend-architecture-par-features.md) — Organisation du frontend par domaine métier plutôt que par type de composant.
+- [0005-brouillard-bitmap.md](0005-brouillard-bitmap.md) — Brouillard et exploration des cartes stockés en bitmap.
