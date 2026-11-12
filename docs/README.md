@@ -15,6 +15,8 @@ Bienvenue dans la documentation complète du système 2d10 - D&D Character Manag
 ## 🎲 Guides Spécialisés
 
 - **[Guide d'intégration D&D](./README_DND_INTEGRATION.md)** - Guide d'utilisation des fonctionnalités D&D
+- **[Brouillard de guerre et vision](./FOG_OF_WAR_SPEC.md)** - Spécification du fog of war des cartes
+
 - **[Guide Postman](./POSTMAN_GUIDE.md)** - Guide d'utilisation Postman
 
 ## 🚀 Démarrage Rapide
