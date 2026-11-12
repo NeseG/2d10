@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { apiGet, apiPut } from '../../../shared/api/client'
+import { apiDelete, apiGet, apiPut } from '../../../shared/api/client'
 import { useSnackbar } from '../../../app/hooks/useSnackbar'
 import {
   MapCanvas,
@@ -23,7 +23,7 @@ import {
   type Scene,
 } from '../../maps/scene'
 import { FogToolbar } from '../../maps/components/FogToolbar'
-import { useFogEditor } from '../../maps/useFogEditor'
+import { useFogEditor, useFogMask } from '../../maps/useFogEditor'
 import type { FogBitmap, FogShape } from '../../maps/fog'
 import { useSessionSocket } from '../useSessionSocket'
 
@@ -221,6 +221,15 @@ export function SessionMapTab(props: {
     }
   }
 
+  async function forgetExploration() {
+    if (!window.confirm('Effacer tout ce que le groupe a déjà exploré sur cette carte ?')) return
+    try {
+      await apiDelete(`/api/sessions/${sessionId}/map/explored`, token)
+    } catch (err) {
+      showSnackbar({ message: err instanceof Error ? err.message : 'Erreur', severity: 'error' })
+    }
+  }
+
   async function movePlayerToken(id: string, x: number, y: number) {
     try {
       await apiPut(`/api/sessions/${sessionId}/map/tokens/${encodeURIComponent(id)}/position`, { x, y }, token)
@@ -290,6 +299,7 @@ export function SessionMapTab(props: {
   const canShowMap = Boolean(activeMap)
   // En vue joueur, le MJ voit et agit comme un joueur : outils d'édition masqués, carte en lecture.
   const editing = canEdit && !playerView
+  const exploredMask = useFogMask(scene.explored)
   const pcTokens = tokens.filter((t) => t.characterId != null && !t.hidden)
   const selected = tokens.find((t) => t.id === selectedTokenId) ?? null
   const pcTokenCount = tokens.filter((t) => t.characterId != null && !t.hidden).length
@@ -451,6 +461,17 @@ export function SessionMapTab(props: {
           {tool === 'fog_add' || tool === 'fog_erase' ? (
             <FogToolbar fog={fog} shape={fogShape} onShapeChange={setFogShape} brush={fogBrush} onBrushChange={setFogBrush} zones={scene.zones} />
           ) : null}
+          {scene.vision.dynamic ? (
+            <>
+              <label style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }} title="Coché : chaque joueur voit ce que voit tout le groupe. Décoché : seulement ce que voient ses propres personnages.">
+                <input type="checkbox" checked={scene.sharedVision} onChange={(e) => edit({ sharedVision: e.target.checked })} />
+                <span>Vision partagée</span>
+              </label>
+              <button className="btn btn-secondary btn-small" type="button" onClick={() => void forgetExploration()} disabled={!scene.explored}>
+                Oublier l’exploration
+              </button>
+            </>
+          ) : null}
           {scene.vision.dynamic && pcTokenCount === 0 ? (
             <span style={{ color: 'var(--muted)', fontSize: 13 }}>
               Vision dynamique active mais aucun jeton lié à un personnage : les joueurs ne voient rien. Lie un jeton à un personnage dans « Éditer ».
@@ -553,6 +574,8 @@ export function SessionMapTab(props: {
             if (canEdit && Math.abs((scene.aspect ?? 0) - h / w) > 1e-4) edit({ aspect: h / w })
           }}
           zones={scene.zones}
+          exploredMask={exploredMask}
+          sharedVision={scene.sharedVision}
           tool={tool}
           selectedTokenId={selectedTokenId}
           onSelectedTokenIdChange={setSelectedTokenId}

@@ -16,7 +16,7 @@ const {
 const { findSessionForChat, getChatDisplayName, displayNamesForUserIds } = require('../lib/session-chat-access');
 const { CHAT_UPLOAD_ROOT, chatImageUploadMiddleware } = require('../lib/session-chat-upload');
 const { nextInventorySortOrder } = require('../lib/next-inventory-sort-order');
-const { effectiveMapState, nextPlayState } = require('../lib/map-play-state');
+const { effectiveMapState, nextPlayState, withExploration } = require('../lib/map-play-state');
 const { Prisma } = require('@prisma/client');
 
 const router = express.Router();
@@ -673,10 +673,13 @@ router.put('/:sessionId/map/state', authenticateToken, checkSessionOwnership, as
     }
 
     // La session n'écrit que dans la partie jouée : le modèle de l'éditeur reste intact.
-    const map = await prisma.campaignMap.findUnique({ where: { id: sess.activeMapId }, select: { playState: true } });
+    const map = await prisma.campaignMap.findUnique({
+      where: { id: sess.activeMapId },
+      select: { fogState: true, tokensState: true, playState: true },
+    });
     await prisma.campaignMap.update({
       where: { id: sess.activeMapId },
-      data: { playState: nextPlayState(map?.playState, rawFog, rawTokens) },
+      data: { playState: withExploration(map, nextPlayState(map?.playState, rawFog, rawTokens)) },
       select: { id: true },
     });
 
@@ -705,6 +708,29 @@ router.put('/:sessionId/map/reset', authenticateToken, checkSessionOwnership, as
     return res.json({ success: true });
   } catch (error) {
     console.error('Erreur session map reset PUT:', error);
+    return res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Le MJ efface l'exploration de la carte active (le reste de la partie est gardé).
+router.delete('/:sessionId/map/explored', authenticateToken, checkSessionOwnership, async (req, res) => {
+  try {
+    const sessionId = parseInt(req.params.sessionId, 10);
+    if (Number.isNaN(sessionId)) return res.status(400).json({ error: 'ID de session invalide' });
+    const sess = await prisma.gameSession.findFirst({
+      where: { id: sessionId, isActive: true },
+      select: { activeMapId: true, activeMap: { select: { playState: true } } },
+    });
+    if (!sess?.activeMapId) return res.status(400).json({ error: 'Aucune map active' });
+    const play = sess.activeMap?.playState;
+    if (play && typeof play === 'object') {
+      await prisma.campaignMap.update({ where: { id: sess.activeMapId }, data: { playState: { ...play, explored: null } }, select: { id: true } });
+    }
+    const payload = await buildSessionMapPayload(sessionId);
+    if (payload) broadcastSessionMap(sessionId, payload);
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Erreur session map explored DELETE:', error);
     return res.status(500).json({ error: 'Erreur serveur' });
   }
 });
@@ -748,7 +774,10 @@ router.put('/:sessionId/map/tokens/:tokenId/position', authenticateToken, async 
     await prisma.campaignMap.update({
       where: { id: sess.activeMapId },
       data: {
-        playState: nextPlayState(sess.activeMap.playState, null, { ...state, tokens: tokens.map((t) => (t === tok ? { ...t, x, y } : t)) }),
+        playState: withExploration(
+          sess.activeMap,
+          nextPlayState(sess.activeMap.playState, null, { ...state, tokens: tokens.map((t) => (t === tok ? { ...t, x, y } : t)) }),
+        ),
       },
       select: { id: true },
     });

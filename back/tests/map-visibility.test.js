@@ -51,3 +51,36 @@ test('brouillard : bitmap et anciens rectangles', () => {
   assert.deepEqual(ids(visibleTokensForPlayer({ rects: [{ x: 0, y: 0, w: 0.5, h: 1 }] }, { tokens }, [1], null)), ['g2', 'pj']);
   assert.equal(decodeFog({ w: 2, h: 2, data: 'pas du deflate' }), null);
 });
+
+test('vision partagée : chaque joueur voit par tout le groupe', () => {
+  const tokens = [tok('a', 0.1, 0.5, { characterId: 1 }), tok('b', 0.9, 0.5, { characterId: 2 }), tok('gob', 0.8, 0.45)];
+  const fs = { dynamic: true, sharedVision: true, aspect: 1, walls: [{ id: 'w', x1: 0.5, y1: 0, x2: 0.5, y2: 1 }] };
+  assert.deepEqual(ids(visibleTokensForPlayer(fs, { tokens }, [1], null)), ['a', 'b', 'gob']);
+});
+
+test('exploration : la zone vue s’ajoute, celle derrière le mur non, et elle se cumule', () => {
+  const { exploreFrom } = require('../lib/map-visibility');
+  const fs = { dynamic: true, aspect: 1, walls: [{ id: 'w', x1: 0.5, y1: 0, x2: 0.5, y2: 1 }] };
+  const grid = { size: 0.1 }; // 80×80 px
+  const seen = (b, x, y) => decodeFog(b).px[Math.floor(y * b.h) * b.w + Math.floor(x * b.w)] > 0;
+  const first = exploreFrom(fs, { grid, tokens: [tok('pj', 0.1, 0.5, { characterId: 1 })] }, null);
+  assert.equal(seen(first, 0.3, 0.5), true);
+  assert.equal(seen(first, 0.8, 0.5), false);
+  // Le PJ passe de l'autre côté : la droite s'ajoute, la gauche reste explorée
+  const second = exploreFrom(fs, { grid, tokens: [tok('pj', 0.8, 0.5, { characterId: 1 })] }, first);
+  assert.equal(seen(second, 0.8, 0.5), true);
+  assert.equal(seen(second, 0.3, 0.5), true);
+  // Rien de neuf : même objet renvoyé (pas de réécriture)
+  assert.equal(exploreFrom(fs, { grid, tokens: [tok('pj', 0.8, 0.5, { characterId: 1 })] }, second), second);
+  // Vision dynamique inactive : on ne touche à rien
+  assert.equal(exploreFrom({ ...fs, dynamic: false }, { grid, tokens: [] }, null), null);
+});
+
+test('exploration dans le noir : seulement la vision dans le noir', () => {
+  const { exploreFrom } = require('../lib/map-visibility');
+  const fs = { dynamic: true, dark: true, aspect: 1, walls: [] };
+  const b = exploreFrom(fs, { grid: { size: 0.1 }, tokens: [tok('pj', 0.1, 0.5, { characterId: 1, darkvision: 2 })] }, null);
+  const seen = (x, y) => decodeFog(b).px[Math.floor(y * b.h) * b.w + Math.floor(x * b.w)] > 0;
+  assert.equal(seen(0.2, 0.5), true);
+  assert.equal(seen(0.6, 0.5), false);
+});

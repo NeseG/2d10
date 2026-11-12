@@ -153,6 +153,10 @@ export function MapCanvas(props: {
   onTemplatesChange?: (next: MapTemplate[]) => void
   templateShape?: MapTemplateShape
   vision?: MapVision
+  /** Zones déjà explorées par le groupe : assombries au lieu de noires. */
+  exploredMask?: FogMask | null
+  /** Vision partagée : chaque joueur voit par tous les PJ, pas seulement les siens. */
+  sharedVision?: boolean
   /** Personnages du joueur connecté : il peut déplacer leurs jetons et voit à travers eux. */
   myCharacterIds?: number[]
   onPlayerTokenMove?: (id: string, x: number, y: number) => void
@@ -191,6 +195,8 @@ export function MapCanvas(props: {
     templateShape = 'circle',
     vision = { dynamic: false, dark: false },
     myCharacterIds = [],
+    exploredMask = null,
+    sharedVision = false,
     onPlayerTokenMove,
     tokenStatus = {},
     pings = [],
@@ -615,7 +621,7 @@ export function MapCanvas(props: {
     const pcs = tokens.filter((t) => t.characterId != null && !t.hidden)
     const mine = pcs.filter(isMine)
     // Le MJ et les spectateurs voient l'aperçu de tout le groupe.
-    const viewers = !canEdit && mine.length ? mine : pcs
+    const viewers = !canEdit && mine.length && !sharedVision ? mine : pcs
     sources = viewers.map((t) => {
       const c = tokenCenter(t, box)
       return { c, poly: visibilityPolygon(c, segs, box.w, box.h), dv: (t.darkvision ?? 0) * cell }
@@ -637,6 +643,7 @@ export function MapCanvas(props: {
   // Joueur : le serveur n'envoie déjà que les jetons visibles (back/lib/map-visibility.js) ; ce filtre garde l'affichage juste entre deux envois.
   const tokenShown = (t: MapToken) =>
     canEdit || !vision.dynamic || t.characterId != null || (box ? pointVisible(tokenCenter(t, box)) : false)
+  const exploredUrl = useMemo(() => exploredDataUrl(vision.dynamic ? exploredMask : null), [exploredMask, vision.dynamic])
   const polyPoints = (poly: Pt[]) => poly.map((p) => `${p.x},${p.y}`).join(' ')
   const editingWalls = canEdit && (tool === 'wall' || tool === 'door' || tool === 'window')
 
@@ -888,6 +895,7 @@ export function MapCanvas(props: {
                   {/* Blanc = obscurité conservée, noir = zone vue */}
                   <mask id={`${svgId}-dark`} maskUnits="userSpaceOnUse" x={0} y={0} width={box.w} height={box.h}>
                     <rect width={box.w} height={box.h} fill="#fff" />
+                    {exploredUrl ? <image href={exploredUrl} width={box.w} height={box.h} preserveAspectRatio="none" /> : null}
                     {sources.map((s, i) =>
                       vision.dark ? (
                         <g key={i} clipPath={`url(#${svgId}-src-${i})`}>
@@ -1083,4 +1091,23 @@ function FogCanvas(props: { mask: FogMask; style: React.CSSProperties }) {
     ctx.putImageData(img, 0, 0)
   }, [mask])
   return <canvas ref={ref} width={mask.w} height={mask.h} style={{ ...props.style, pointerEvents: 'none' }} />
+}
+
+/**
+ * Exploration en image pour le masque SVG d'obscurité : gris là où le groupe est déjà passé.
+ * Gris 60 % = obscurité à 60 % : le décor reste lisible mais nettement assombri.
+ */
+function exploredDataUrl(mask: FogMask | null): string | null {
+  if (!mask || typeof document === 'undefined') return null
+  const canvas = document.createElement('canvas')
+  canvas.width = mask.w
+  canvas.height = mask.h
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+  const img = ctx.createImageData(mask.w, mask.h)
+  for (let i = 0; i < mask.px.length; i++) {
+    if (mask.px[i]) img.data.set([153, 153, 153, 255], i * 4)
+  }
+  ctx.putImageData(img, 0, 0)
+  return canvas.toDataURL()
 }

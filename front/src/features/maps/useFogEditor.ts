@@ -82,3 +82,19 @@ export function useFogEditor(opts: {
     clearAll: () => update((m) => m.px.fill(0)),
   }
 }
+
+/** Bitmap (brouillard, exploration…) décodée pour l'affichage seul ; null tant que le décodage n'a pas abouti. */
+export function useFogMask(bitmap: FogBitmap | null): FogMask | null {
+  const [decoded, setDecoded] = useState<{ src: string; mask: FogMask } | null>(null)
+  useEffect(() => {
+    if (!bitmap) return
+    let cancelled = false
+    decodeFog(bitmap)
+      .then((mask) => !cancelled && setDecoded({ src: bitmap.data, mask }))
+      .catch(() => !cancelled && setDecoded(null))
+    return () => {
+      cancelled = true
+    }
+  }, [bitmap])
+  return bitmap && decoded?.src === bitmap.data ? decoded.mask : null
+}
