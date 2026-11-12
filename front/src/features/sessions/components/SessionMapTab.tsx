@@ -80,6 +80,8 @@ export function SessionMapTab(props: {
   const [scene, setScene] = useState<Scene>(EMPTY_SCENE)
   const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null)
   const [viewState, setViewState] = useState<MapViewState>({ scale: 1, tx: 0, ty: 0 })
+  // Coché par le MJ : les joueurs suivent son cadrage ; sinon chacun déplace et zoome sa carte librement.
+  const [followView, setFollowView] = useState(false)
   const [templateShape, setTemplateShape] = useState<MapTemplateShape>('circle')
   const [pings, setPings] = useState<MapPing[]>([])
   const [initiative, setInitiative] = useState<InitiativeState>(null)
@@ -106,11 +108,15 @@ export function SessionMapTab(props: {
     const next = parseScene(payload.map)
     setScene(next)
     setSelectedTokenId((prev) => (prev && next.tokens.some((t) => t.id === prev) ? prev : null))
-    const vs = payload.view_state as (Partial<MapViewState> & { unit?: string }) | null | undefined
+    const vs = payload.view_state as (Partial<MapViewState> & { unit?: string; follow?: boolean }) | null | undefined
+    const follow = vs?.follow === true
+    setFollowView(follow)
     // Ancien cadrage en pixels d'écran (sans `unit`) : on ne garde que le zoom.
     const rel = vs?.unit === 'w'
-    if (vs && typeof vs === 'object') setViewState({ scale: num(vs.scale, 1), tx: rel ? num(vs.tx, 0) : 0, ty: rel ? num(vs.ty, 0) : 0 })
-  }, [])
+    // Joueur en vue libre : son cadrage reste le sien.
+    if (vs && typeof vs === 'object' && (canEdit || follow))
+      setViewState({ scale: num(vs.scale, 1), tx: rel ? num(vs.tx, 0) : 0, ty: rel ? num(vs.ty, 0) : 0 })
+  }, [canEdit])
 
   useEffect(() => {
     async function loadInitial() {
@@ -187,7 +193,7 @@ export function SessionMapTab(props: {
     if (!canEdit || !dirtyRef.current) return
     const timer = setTimeout(async () => {
       dirtyRef.current = false
-      const body = { tokens_state: tokensStateOf(scene), fog_state: fogStateOf(scene), view_state: { ...viewState, unit: 'w' } }
+      const body = { tokens_state: tokensStateOf(scene), fog_state: fogStateOf(scene), view_state: { ...viewState, unit: 'w', follow: followView } }
       const serialized = JSON.stringify(body)
       if (serialized === lastSentRef.current) return
       lastSentRef.current = serialized
@@ -199,7 +205,7 @@ export function SessionMapTab(props: {
       }
     }, 120)
     return () => clearTimeout(timer)
-  }, [canEdit, scene, viewState, sessionId, token])
+  }, [canEdit, scene, viewState, followView, sessionId, token])
 
   async function setActiveMapRemote(nextId: number | null) {
     if (!canEdit) return
@@ -471,6 +477,17 @@ export function SessionMapTab(props: {
           {tool === 'fog_add' || tool === 'fog_erase' ? (
             <FogToolbar fog={fog} shape={fogShape} onShapeChange={setFogShape} brush={fogBrush} onBrushChange={setFogBrush} zones={scene.zones} />
           ) : null}
+          <label style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }} title="Coché : les joueurs voient la carte cadrée comme toi. Décoché : chacun déplace et zoome sa carte librement.">
+            <input
+              type="checkbox"
+              checked={followView}
+              onChange={(e) => {
+                dirtyRef.current = true
+                setFollowView(e.target.checked)
+              }}
+            />
+            <span>Forcer les joueurs sur ma vue</span>
+          </label>
           {scene.vision.dynamic ? (
             <>
               <label style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }} title="Coché : chaque joueur voit ce que voit tout le groupe. Décoché : seulement ce que voient ses propres personnages.">
@@ -598,10 +615,16 @@ export function SessionMapTab(props: {
           selectedTokenId={selectedTokenId}
           onSelectedTokenIdChange={setSelectedTokenId}
           viewState={viewState}
-          onViewStateChange={(next) => {
-            dirtyRef.current = true
-            setViewState(next)
-          }}
+          onViewStateChange={
+            canEdit
+              ? (next) => {
+                  dirtyRef.current = true
+                  setViewState(next)
+                }
+              : followView
+                ? undefined
+                : setViewState
+          }
           grid={grid}
           walls={scene.walls}
           // Murs et portes se préparent dans l'éditeur de campagne ; ici le MJ ne fait qu'ouvrir/fermer les portes.

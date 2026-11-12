@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { Maximize2, Minimize2 } from 'lucide-react'
 import { getApiBaseUrl } from '../../../shared/api/client'
 import { DEFAULT_GRID, gridDistance, pointInPolygon, snapTo, visibilityPolygon, type Pt, type Seg } from '../geometry'
 import type { FogMask, FogOp, FogShape } from '../fog'
@@ -211,6 +212,29 @@ export function MapCanvas(props: {
   // `src` : taille valable seulement pour l'image affichée (évite le ratio de la carte précédente)
   const [imageNaturalSize, setImageNaturalSize] = useState<{ src: string; w: number; h: number } | null>(null)
   const naturalSize = imageNaturalSize && imageNaturalSize.src === imageObjectUrl ? imageNaturalSize : null
+  // Plein écran : API du navigateur si elle existe, sinon (iPhone) calque fixe sur toute la fenêtre
+  const fullRef = useRef<HTMLDivElement | null>(null)
+  const [full, setFull] = useState(false)
+  useEffect(() => {
+    if (!full) return
+    const onChange = () => !document.fullscreenElement && setFull(false)
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setFull(false)
+    document.addEventListener('fullscreenchange', onChange)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('fullscreenchange', onChange)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [full])
+  function toggleFull() {
+    if (full) {
+      if (document.fullscreenElement) void document.exitFullscreen().catch(() => {})
+      setFull(false)
+      return
+    }
+    setFull(true)
+    fullRef.current?.requestFullscreen?.().catch(() => {})
+  }
   // Taille de la carte à l'écran, suivie pour redessiner au redimensionnement (rotation mobile, fenêtre)
   const [surfaceSize, setSurfaceSize] = useState<{ w: number; h: number } | null>(null)
   useEffect(() => {
@@ -374,8 +398,9 @@ export function MapCanvas(props: {
   >(null)
 
   function canStartPan(e: React.PointerEvent): boolean {
-    if (!canEdit) return false
     if (!onViewStateChange) return false
+    // Joueur : glisser sur le fond avec l'outil Déplacer (seul geste possible au doigt)
+    if (!canEdit && tool === 'move' && e.button === 0) return true
     // Middle click, right click, or Alt+Left
     if (e.button === 1 || e.button === 2) return true
     if (e.button === 0 && e.altKey) return true
@@ -648,13 +673,21 @@ export function MapCanvas(props: {
   const ratio = naturalSize ? naturalSize.w / naturalSize.h : width / height
   return (
     <div
+      ref={fullRef}
+      style={
+        full
+          ? { position: 'fixed', inset: 0, zIndex: 1000, background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }
+          : undefined
+      }
+    >
+    <div
       ref={surfaceRef}
       onPointerDown={onSurfacePointerDown}
       onPointerMove={onSurfacePointerMove}
       onPointerUp={onSurfacePointerUp}
       onContextMenu={(e) => {
         // Allow right-drag pan without browser menu
-        if (canEdit && onViewStateChange) e.preventDefault()
+        if (onViewStateChange) e.preventDefault()
       }}
       onClick={() => {
         if (!canEdit) return
@@ -676,9 +709,9 @@ export function MapCanvas(props: {
       style={{
         position: 'relative',
         // Ratio de l'image, bornée en largeur et en hauteur d'écran : même cadrage pour tous, à l'échelle près
-        width: `min(100%, ${width}px, calc(75vh * ${ratio}))`,
+        width: full ? `min(100vw, calc(100dvh * ${ratio}))` : `min(100%, ${width}px, calc(75vh * ${ratio}))`,
         aspectRatio: String(ratio),
-        borderRadius: 12,
+        borderRadius: full ? 0 : 12,
         overflow: 'hidden',
         // Contour sans bordure : une bordure fausserait le ratio de la surface
         outline: '1px solid rgba(255,255,255,0.12)',
@@ -691,8 +724,9 @@ export function MapCanvas(props: {
             : undefined,
       }}
     >
-      {canEdit && onViewStateChange ? (
-        <div style={{ position: 'absolute', right: 10, top: 10, zIndex: 5, display: 'flex', gap: 6 }}>
+      <div style={{ position: 'absolute', right: 10, top: 10, zIndex: 5, display: 'flex', gap: 6 }}>
+        {onViewStateChange ? (
+          <>
           <button
             type="button"
             className="btn btn-secondary btn-small"
@@ -717,8 +751,22 @@ export function MapCanvas(props: {
           >
             +
           </button>
-        </div>
-      ) : null}
+          </>
+        ) : null}
+        <button
+          type="button"
+          className="btn btn-secondary btn-small"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation()
+            toggleFull()
+          }}
+          aria-label={full ? 'Quitter le plein écran' : 'Plein écran'}
+          title={full ? 'Quitter le plein écran' : 'Plein écran'}
+        >
+          {full ? <Minimize2 size={16} aria-hidden="true" /> : <Maximize2 size={16} aria-hidden="true" />}
+        </button>
+      </div>
 
       <div
         style={{
@@ -1075,6 +1123,7 @@ export function MapCanvas(props: {
         ) : null}
 
       </div>
+    </div>
     </div>
   )
 }
