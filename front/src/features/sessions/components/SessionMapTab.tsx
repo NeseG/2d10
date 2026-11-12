@@ -106,8 +106,10 @@ export function SessionMapTab(props: {
     const next = parseScene(payload.map)
     setScene(next)
     setSelectedTokenId((prev) => (prev && next.tokens.some((t) => t.id === prev) ? prev : null))
-    const vs = payload.view_state as Partial<MapViewState> | null | undefined
-    if (vs && typeof vs === 'object') setViewState({ scale: num(vs.scale, 1), tx: num(vs.tx, 0), ty: num(vs.ty, 0) })
+    const vs = payload.view_state as (Partial<MapViewState> & { unit?: string }) | null | undefined
+    // Ancien cadrage en pixels d'écran (sans `unit`) : on ne garde que le zoom.
+    const rel = vs?.unit === 'w'
+    if (vs && typeof vs === 'object') setViewState({ scale: num(vs.scale, 1), tx: rel ? num(vs.tx, 0) : 0, ty: rel ? num(vs.ty, 0) : 0 })
   }, [])
 
   useEffect(() => {
@@ -185,7 +187,7 @@ export function SessionMapTab(props: {
     if (!canEdit || !dirtyRef.current) return
     const timer = setTimeout(async () => {
       dirtyRef.current = false
-      const body = { tokens_state: tokensStateOf(scene), fog_state: fogStateOf(scene), view_state: viewState }
+      const body = { tokens_state: tokensStateOf(scene), fog_state: fogStateOf(scene), view_state: { ...viewState, unit: 'w' } }
       const serialized = JSON.stringify(body)
       if (serialized === lastSentRef.current) return
       lastSentRef.current = serialized

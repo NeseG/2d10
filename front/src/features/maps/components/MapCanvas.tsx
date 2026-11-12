@@ -54,6 +54,7 @@ export type MapCanvasTool =
   | 'zone'
   | 'light'
 
+/** `tx`/`ty` : décalage en fraction de la largeur de la carte, pour que MJ et joueurs aient le même cadrage quelle que soit la taille d'écran. */
 export type MapViewState = { scale: number; tx: number; ty: number }
 
 function TemplateShape(props: {
@@ -207,7 +208,18 @@ export function MapCanvas(props: {
   const surfaceRef = useRef<HTMLDivElement | null>(null)
   const imageRef = useRef<HTMLImageElement | null>(null)
   const [imageObjectUrl, setImageObjectUrl] = useState<string | null>(null)
-  const [imageNaturalSize, setImageNaturalSize] = useState<{ w: number; h: number } | null>(null)
+  // `src` : taille valable seulement pour l'image affichée (évite le ratio de la carte précédente)
+  const [imageNaturalSize, setImageNaturalSize] = useState<{ src: string; w: number; h: number } | null>(null)
+  const naturalSize = imageNaturalSize && imageNaturalSize.src === imageObjectUrl ? imageNaturalSize : null
+  // Taille de la carte à l'écran, suivie pour redessiner au redimensionnement (rotation mobile, fenêtre)
+  const [surfaceSize, setSurfaceSize] = useState<{ w: number; h: number } | null>(null)
+  useEffect(() => {
+    const el = surfaceRef.current
+    if (!el) return
+    const ro = new ResizeObserver(([entry]) => setSurfaceSize({ w: entry.contentRect.width, h: entry.contentRect.height }))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
   // Brouillard en cours de tracé (pixels image) : rectangle, trait de pinceau, ou polygone (aussi pour les zones)
   const [fogDraft, setFogDraft] = useState<{ kind: 'rect'; x1: number; y1: number; x2: number; y2: number } | { kind: 'brush'; points: Pt[] } | null>(null)
   const [polyDraft, setPolyDraft] = useState<Pt[]>([])
@@ -215,16 +227,21 @@ export function MapCanvas(props: {
   // Tracé en cours (règle, gabarit, mur), en pixels relatifs à l'image
   const [draft, setDraft] = useState<{ kind: 'ruler' | 'template' | 'wall'; x1: number; y1: number; x2: number; y2: number } | null>(null)
 
+  const sw = surfaceSize?.w ?? 0
+  // Vue en pixels de cet écran
   const vs: MapViewState = useMemo(() => {
     const s = viewState?.scale
     const tx = viewState?.tx
     const ty = viewState?.ty
     return {
       scale: typeof s === 'number' && Number.isFinite(s) ? s : 1,
-      tx: typeof tx === 'number' && Number.isFinite(tx) ? tx : 0,
-      ty: typeof ty === 'number' && Number.isFinite(ty) ? ty : 0,
+      tx: typeof tx === 'number' && Number.isFinite(tx) ? tx * sw : 0,
+      ty: typeof ty === 'number' && Number.isFinite(ty) ? ty * sw : 0,
     }
-  }, [viewState?.scale, viewState?.tx, viewState?.ty])
+  }, [viewState?.scale, viewState?.tx, viewState?.ty, sw])
+  /** Vue en pixels → fraction de largeur pour l'envoi. */
+  const emitView = (next: MapViewState) =>
+    sw > 0 && onViewStateChange?.({ scale: next.scale, tx: next.tx / sw, ty: next.ty / sw })
 
   function zoomAtCenter(nextScale: number) {
     if (!onViewStateChange) return
@@ -237,7 +254,7 @@ export function MapCanvas(props: {
     const worldY = (cy - vs.ty) / prevScale
     const nextTx = cx - worldX * nextScale
     const nextTy = cy - worldY * nextScale
-    onViewStateChange({ scale: nextScale, tx: nextTx, ty: nextTy })
+    emitView({ scale: nextScale, tx: nextTx, ty: nextTy })
   }
 
   const absoluteImageUrl = useMemo(() => {
@@ -304,29 +321,10 @@ export function MapCanvas(props: {
     }
   }
 
+  /** La surface a le ratio de l'image : la carte la remplit. Rien n'est dessiné avant de connaître ce ratio, sinon gabarits et vision seraient faux. */
   function getImageBox() {
-    const surface = surfaceRef.current
-    if (!surface) return null
-    const s = surface.getBoundingClientRect()
-
-    // Important: the map content is rendered inside a translated+scaled container (view state).
-    // All coordinates we compute here are in the *untransformed* coordinate system (scale=1).
-    // The view transform (scale/translate) is applied to the whole content wrapper so that
-    // background + tokens + fog keep relative positions and scale together.
-    const vw = s.width
-    const vh = s.height
-
-    if (imageNaturalSize && imageNaturalSize.w > 1 && imageNaturalSize.h > 1) {
-      const scale = Math.min(vw / imageNaturalSize.w, vh / imageNaturalSize.h)
-      const w = imageNaturalSize.w * scale
-      const h = imageNaturalSize.h * scale
-      const left = (vw - w) / 2
-      const top = (vh - h) / 2
-      return { left, top, w, h }
-    }
-
-    // Fallback when natural size is unknown: assume full viewport in untransformed coordinates.
-    return { left: 0, top: 0, w: vw, h: vh }
+    if (!surfaceSize || !naturalSize || surfaceSize.w <= 1 || surfaceSize.h <= 1) return null
+    return { left: 0, top: 0, w: surfaceSize.w, h: surfaceSize.h }
   }
 
   function getLocalPointOnImage(e: { clientX: number; clientY: number }) {
@@ -528,7 +526,7 @@ export function MapCanvas(props: {
       if (!onViewStateChange) return
       const dx = e.clientX - d.startClientX
       const dy = e.clientY - d.startClientY
-      onViewStateChange({ scale: vs.scale, tx: d.startTx + dx, ty: d.startTy + dy })
+      emitView({ scale: vs.scale, tx: d.startTx + dx, ty: d.startTy + dy })
       return
     }
     const p = getLocalPointOnImage(e)
@@ -647,6 +645,7 @@ export function MapCanvas(props: {
   const polyPoints = (poly: Pt[]) => poly.map((p) => `${p.x},${p.y}`).join(' ')
   const editingWalls = canEdit && (tool === 'wall' || tool === 'door' || tool === 'window')
 
+  const ratio = naturalSize ? naturalSize.w / naturalSize.h : width / height
   return (
     <div
       ref={surfaceRef}
@@ -676,12 +675,13 @@ export function MapCanvas(props: {
       }}
       style={{
         position: 'relative',
-        width: '100%',
-        maxWidth: width,
-        height,
+        // Ratio de l'image, bornée en largeur et en hauteur d'écran : même cadrage pour tous, à l'échelle près
+        width: `min(100%, ${width}px, calc(75vh * ${ratio}))`,
+        aspectRatio: String(ratio),
         borderRadius: 12,
         overflow: 'hidden',
-        border: '1px solid rgba(255,255,255,0.12)',
+        // Contour sans bordure : une bordure fausserait le ratio de la surface
+        outline: '1px solid rgba(255,255,255,0.12)',
         background: '#111',
         touchAction: 'none',
         userSelect: 'none',
@@ -736,7 +736,7 @@ export function MapCanvas(props: {
             onLoad={(e) => {
               const el = e.currentTarget
               if (el.naturalWidth > 1 && el.naturalHeight > 1) {
-                setImageNaturalSize({ w: el.naturalWidth, h: el.naturalHeight })
+                setImageNaturalSize({ src: imageObjectUrl, w: el.naturalWidth, h: el.naturalHeight })
                 onImageSize?.(el.naturalWidth, el.naturalHeight)
               }
             }}
