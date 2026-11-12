@@ -1,21 +1,47 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { apiGet, apiPut, apiPutFormData, getWsApiBaseUrl } from '../../../shared/api/client'
+import { apiGet, apiPut, apiPutFormData } from '../../../shared/api/client'
 import { useSnackbar } from '../../../app/hooks/useSnackbar'
-import { MapCanvas, type MapCanvasTool, type MapFogRect, type MapToken, type MapViewState } from '../../maps/components/MapCanvas'
-
-type CampaignMap = {
-  id: number
-  campaign_id: number
-  name: string
-  image_url: string
-  fog_state?: unknown
-  tokens_state?: unknown
-}
+import {
+  MapCanvas,
+  type MapCanvasTool,
+  type MapPing,
+  type MapTemplateShape,
+  type MapToken,
+  type MapTokenStatus,
+  type MapViewState,
+} from '../../maps/components/MapCanvas'
+import {
+  EMPTY_SCENE,
+  SIZE_PRESETS,
+  clamp,
+  fogStateOf,
+  normName,
+  num,
+  parseScene,
+  tokensStateOf,
+  type CampaignMap,
+  type Scene,
+} from '../../maps/scene'
+import { useSessionSocket } from '../useSessionSocket'
 
 type MapWsPayload = {
   type?: string
   active_map_id?: number | null
   map?: CampaignMap | null
+  view_state?: unknown
+}
+
+type SessionCharacter = { character_id: number; character_name?: string | null; character_user_id?: number | null }
+
+/** Sous-ensemble de l'état du tracker d'initiative utile à la carte. */
+type Combatant = { id: string; name: string; hp?: number | null; maxHp?: number | null; conditions?: string | null; isPc?: boolean; hidden?: boolean }
+type InitiativeState = { activeId?: string | null; combatants?: Combatant[] } | null
+
+const TOOL_HINTS: Partial<Record<MapCanvasTool, string>> = {
+  move: 'Glisser un jeton pour le déplacer. Double-clic sur la carte = ping.',
+  ruler: 'Glisser pour mesurer une distance.',
+  ping: 'Cliquer sur la carte pour attirer l’attention de la table.',
+  template: 'Glisser depuis l’origine du sort. Double-clic sur un gabarit pour le supprimer.',
 }
 
 function uid(prefix: string) {
@@ -26,12 +52,15 @@ function uid(prefix: string) {
   }
 }
 
-function clamp(n: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, n))
-}
-
-export function SessionMapTab(props: { sessionId: number; token: string; isOwner: boolean; campaignId: number | null }) {
-  const { sessionId, token, isOwner, campaignId } = props
+export function SessionMapTab(props: {
+  sessionId: number
+  token: string
+  isOwner: boolean
+  campaignId: number | null
+  currentUserId?: number | null
+  characters?: SessionCharacter[]
+}) {
+  const { sessionId, token, isOwner, campaignId, currentUserId, characters = [] } = props
   const { showSnackbar } = useSnackbar()
 
   const canEdit = isOwner
@@ -44,80 +73,33 @@ export function SessionMapTab(props: { sessionId: number; token: string; isOwner
   const [allMaps, setAllMaps] = useState<CampaignMap[]>([])
   const [mapsLoading, setMapsLoading] = useState(false)
 
-  const [tool, setTool] = useState<MapCanvasTool>('tokens')
-  const [tokens, setTokens] = useState<MapToken[]>([])
-  const [fogRects, setFogRects] = useState<MapFogRect[]>([])
+  const [tool, setTool] = useState<MapCanvasTool>(canEdit ? 'tokens' : 'move')
+  const [scene, setScene] = useState<Scene>(EMPTY_SCENE)
   const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null)
   const [viewState, setViewState] = useState<MapViewState>({ scale: 1, tx: 0, ty: 0 })
+  const [templateShape, setTemplateShape] = useState<MapTemplateShape>('circle')
+  const [pings, setPings] = useState<MapPing[]>([])
+  const [initiative, setInitiative] = useState<InitiativeState>(null)
 
-  const wsRef = useRef<WebSocket | null>(null)
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Vrai seulement après une modification locale du MJ : évite de renvoyer au serveur ce qu'il vient de nous pousser.
+  const dirtyRef = useRef(false)
   const lastSentRef = useRef<string>('')
+
+  const edit = useCallback((patch: Partial<Scene> | ((prev: Scene) => Partial<Scene>)) => {
+    dirtyRef.current = true
+    setScene((prev) => ({ ...prev, ...(typeof patch === 'function' ? patch(prev) : patch) }))
+  }, [])
+  const editToken = (id: string, patch: Partial<MapToken>) =>
+    edit((prev) => ({ tokens: prev.tokens.map((t) => (t.id === id ? { ...t, ...patch } : t)) }))
 
   const applyIncoming = useCallback((payload: MapWsPayload) => {
     setActiveMapId(typeof payload.active_map_id === 'number' ? payload.active_map_id : null)
     setActiveMap(payload.map ?? null)
-
-    const nextTokens = Array.isArray((payload.map?.tokens_state as any)?.tokens)
-      ? ((payload.map?.tokens_state as any).tokens as MapToken[])
-      : []
-    const nextFog = Array.isArray((payload.map?.fog_state as any)?.rects)
-      ? ((payload.map?.fog_state as any).rects as MapFogRect[])
-      : []
-
-    setTokens(
-      nextTokens
-        .filter((x) => x && typeof x.id === 'string' && Number.isFinite(x.x) && Number.isFinite(x.y))
-        .map((x) => ({ ...x, x: Number(x.x), y: Number(x.y) }))
-        .map((x) => ({
-          ...x,
-          x: x.x > 1 ? x.x / 1100 : x.x,
-          y: x.y > 1 ? x.y / 650 : x.y,
-        }))
-        .map((x) => ({ ...x, x: clamp(x.x, 0, 1), y: clamp(x.y, 0, 1) })),
-    )
-    setFogRects(
-      nextFog
-        .filter((r) => r && typeof r.id === 'string' && Number.isFinite(r.x) && Number.isFinite(r.y) && Number.isFinite(r.w) && Number.isFinite(r.h))
-        .map((r) => ({ ...r, x: Number(r.x), y: Number(r.y), w: Number(r.w), h: Number(r.h) }))
-        .map((r) => ({
-          ...r,
-          x: r.x > 1 ? r.x / 1100 : r.x,
-          y: r.y > 1 ? r.y / 650 : r.y,
-          w: r.w > 1 ? r.w / 1100 : r.w,
-          h: r.h > 1 ? r.h / 650 : r.h,
-        }))
-        .map((r) => ({
-          ...r,
-          x: clamp(r.x, 0, 1),
-          y: clamp(r.y, 0, 1),
-          w: clamp(r.w, 0, 1),
-          h: clamp(r.h, 0, 1),
-        })),
-    )
-
-    setSelectedTokenId(null)
-    const vs = (payload as any)?.view_state
-    if (vs && typeof vs === 'object') {
-      const scale = typeof vs.scale === 'number' && Number.isFinite(vs.scale) ? vs.scale : 1
-      const tx = typeof vs.tx === 'number' && Number.isFinite(vs.tx) ? vs.tx : 0
-      const ty = typeof vs.ty === 'number' && Number.isFinite(vs.ty) ? vs.ty : 0
-      setViewState({ scale, tx, ty })
-    }
-  }, [])
-
-  useEffect(() => {
-    return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-      if (wsRef.current) {
-        try {
-          wsRef.current.close()
-        } catch {
-          /* ignore */
-        }
-        wsRef.current = null
-      }
-    }
+    const next = parseScene(payload.map)
+    setScene(next)
+    setSelectedTokenId((prev) => (prev && next.tokens.some((t) => t.id === prev) ? prev : null))
+    const vs = payload.view_state as Partial<MapViewState> | null | undefined
+    if (vs && typeof vs === 'object') setViewState({ scale: num(vs.scale, 1), tx: num(vs.tx, 0), ty: num(vs.ty, 0) })
   }, [])
 
   useEffect(() => {
@@ -132,67 +114,45 @@ export function SessionMapTab(props: { sessionId: number; token: string; isOwner
       } finally {
         setLoading(false)
       }
+      try {
+        const res = await apiGet<{ state: InitiativeState }>(`/api/sessions/${sessionId}/initiative`, token)
+        setInitiative(res.state ?? null)
+      } catch {
+        /* pas de combat en cours : la carte marche sans */
+      }
     }
     void loadInitial()
   }, [applyIncoming, sessionId, token])
 
-  function buildWsUrl(): string {
-    const wsBase = getWsApiBaseUrl()
-    const params = new URLSearchParams({ sessionId: String(sessionId), token })
-    return `${wsBase}/api/ws/session-map?${params.toString()}`
-  }
+  const sendMapWs = useSessionSocket(
+    '/api/ws/session-map',
+    sessionId,
+    token,
+    useCallback(
+      (raw: unknown) => {
+        const data = raw as MapWsPayload & { x?: number; y?: number }
+        if (data.type === 'map_state') {
+          applyIncoming(data)
+          setSyncError(null)
+        } else if (data.type === 'map_ping' && typeof data.x === 'number' && typeof data.y === 'number') {
+          const ping = { id: uid('ping'), x: data.x, y: data.y }
+          setPings((prev) => [...prev, ping])
+          setTimeout(() => setPings((prev) => prev.filter((p) => p.id !== ping.id)), 2700)
+        }
+      },
+      [applyIncoming],
+    ),
+  )
 
-  useEffect(() => {
-    let stopped = false
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
-
-    function connect() {
-      if (stopped) return
-      try {
-        const ws = new WebSocket(buildWsUrl())
-        wsRef.current = ws
-        ws.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data as string) as MapWsPayload
-            if (data.type === 'map_state') {
-              applyIncoming(data)
-              setSyncError(null)
-            }
-          } catch {
-            /* ignore */
-          }
-        }
-        ws.onclose = () => {
-          wsRef.current = null
-          if (stopped) return
-          reconnectTimer = setTimeout(connect, 2500)
-        }
-        ws.onerror = () => {
-          try {
-            ws.close()
-          } catch {
-            /* ignore */
-          }
-        }
-      } catch {
-        if (!stopped) reconnectTimer = setTimeout(connect, 2500)
-      }
-    }
-
-    connect()
-    return () => {
-      stopped = true
-      if (reconnectTimer) clearTimeout(reconnectTimer)
-      if (wsRef.current) {
-        try {
-          wsRef.current.close()
-        } catch {
-          /* ignore */
-        }
-        wsRef.current = null
-      }
-    }
-  }, [applyIncoming, sessionId, token])
+  useSessionSocket(
+    '/api/ws/session-initiative',
+    sessionId,
+    token,
+    useCallback((raw: unknown) => {
+      const data = raw as { type?: string; state?: InitiativeState }
+      if (data.type === 'initiative_state') setInitiative(data.state ?? null)
+    }, []),
+  )
 
   useEffect(() => {
     async function loadMaps() {
@@ -212,7 +172,24 @@ export function SessionMapTab(props: { sessionId: number; token: string; isOwner
     void loadMaps()
   }, [canEdit, campaignId, token, showSnackbar])
 
-  const imageUrl = activeMap?.image_url ?? ''
+  // Synchro live du MJ : toute modification locale part au serveur (regroupée sur 120 ms), qui la rediffuse.
+  useEffect(() => {
+    if (!canEdit || !dirtyRef.current) return
+    const timer = setTimeout(async () => {
+      dirtyRef.current = false
+      const body = { tokens_state: tokensStateOf(scene), fog_state: fogStateOf(scene), view_state: viewState }
+      const serialized = JSON.stringify(body)
+      if (serialized === lastSentRef.current) return
+      lastSentRef.current = serialized
+      try {
+        await apiPut(`/api/sessions/${sessionId}/map/state`, body, token)
+        setSyncError(null)
+      } catch (err) {
+        setSyncError(err instanceof Error ? err.message : 'Erreur synchronisation map')
+      }
+    }, 120)
+    return () => clearTimeout(timer)
+  }, [canEdit, scene, viewState, sessionId, token])
 
   async function setActiveMapRemote(nextId: number | null) {
     if (!canEdit) return
@@ -230,8 +207,8 @@ export function SessionMapTab(props: { sessionId: number; token: string; isOwner
     try {
       const fd = new FormData()
       fd.append('name', activeMap.name)
-      fd.append('tokens_state', JSON.stringify({ tokens }))
-      fd.append('fog_state', JSON.stringify({ rects: fogRects }))
+      fd.append('tokens_state', JSON.stringify(tokensStateOf(scene)))
+      fd.append('fog_state', JSON.stringify(fogStateOf(scene)))
       await apiPutFormData(`/api/campaigns/${activeMap.campaign_id}/maps/${activeMap.id}`, fd, token)
       setSyncError(null)
       showSnackbar({ message: 'Map sauvegardée.', severity: 'success' })
@@ -240,218 +217,259 @@ export function SessionMapTab(props: { sessionId: number; token: string; isOwner
     }
   }
 
-  const persistLive = useCallback(
-    async (nextTokens: MapToken[], nextFog: MapFogRect[], nextView: MapViewState) => {
-      if (!canEdit) return
-      const serialized = JSON.stringify({ tokens: nextTokens, rects: nextFog, view: nextView })
-      if (serialized === lastSentRef.current) return
-      lastSentRef.current = serialized
-      try {
-        await apiPut(
-          `/api/sessions/${sessionId}/map/state`,
-          { tokens_state: { tokens: nextTokens }, fog_state: { rects: nextFog }, view_state: nextView },
-          token,
-        )
-        setSyncError(null)
-      } catch (err) {
-        setSyncError(err instanceof Error ? err.message : 'Erreur synchronisation map')
-      }
-    },
-    [canEdit, sessionId, token],
-  )
-
-  const schedulePersistLive = useCallback(
-    (nextTokens: MapToken[], nextFog: MapFogRect[], nextView: MapViewState) => {
-      if (!canEdit) return
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-      saveTimerRef.current = setTimeout(() => {
-        saveTimerRef.current = null
-        void persistLive(nextTokens, nextFog, nextView)
-      }, 120)
-    },
-    [canEdit, persistLive],
-  )
-
-  const commitPersistLive = useCallback(() => {
-    if (!canEdit) return
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current)
-      saveTimerRef.current = null
+  async function movePlayerToken(id: string, x: number, y: number) {
+    try {
+      await apiPut(`/api/sessions/${sessionId}/map/tokens/${encodeURIComponent(id)}/position`, { x, y }, token)
+    } catch (err) {
+      showSnackbar({ message: err instanceof Error ? err.message : 'Déplacement refusé', severity: 'error' })
     }
-    void persistLive(tokens, fogRects, viewState)
-  }, [canEdit, fogRects, persistLive, tokens, viewState])
+  }
+
+  const { tokens, grid } = scene
+  const myCharacterIds = useMemo(
+    () => (currentUserId == null ? [] : characters.filter((c) => c.character_user_id === currentUserId).map((c) => c.character_id)),
+    [characters, currentUserId],
+  )
+
+  // Lien jeton ↔ tracker d'initiative : par nom (le tracker n'a pas d'autre identifiant commun avec la carte).
+  const tokenStatus = useMemo(() => {
+    const byName = new Map((initiative?.combatants ?? []).map((c) => [normName(c.name), c]))
+    const out: Record<string, MapTokenStatus> = {}
+    for (const t of tokens) {
+      const c = byName.get(normName(t.label))
+      if (c) out[t.id] = { hp: c.hp, maxHp: c.maxHp, conditions: c.conditions, active: c.id === initiative?.activeId }
+    }
+    return out
+  }, [initiative, tokens])
+
+  const missingCombatants = (initiative?.combatants ?? []).filter(
+    (c) => c.name.trim() && !tokens.some((t) => normName(t.label) === normName(c.name)),
+  )
+
+  function newTokenPosition(index: number) {
+    return { x: clamp(0.1 + index * grid.size, 0, 0.9), y: 0.1 }
+  }
 
   function addToken() {
-    if (!canEdit) return
     const id = uid('tok')
-    setTokens((prev) => [
-      ...prev,
-      {
-        id,
-        label: 'Token',
-        x: clamp(0.1 + prev.length * 0.01, 0, 1),
-        y: clamp(0.1 + prev.length * 0.01, 0, 1),
-        color: '#7c3aed',
-        size: 36 / 1100,
-      },
-    ])
+    edit((prev) => ({
+      tokens: [...prev.tokens, { id, label: 'Token', ...newTokenPosition(prev.tokens.length), color: '#7c3aed', size: prev.grid.size }],
+    }))
     setSelectedTokenId(id)
   }
 
-  function deleteToken(id: string) {
-    if (!canEdit) return
-    setTokens((prev) => prev.filter((t) => t.id !== id))
-    setSelectedTokenId((prev) => (prev === id ? null : prev))
+  function addTokensFromInitiative() {
+    edit((prev) => ({
+      tokens: [
+        ...prev.tokens,
+        ...missingCombatants.map((c, i) => ({
+          id: uid('tok'),
+          label: c.name,
+          ...newTokenPosition(prev.tokens.length + i),
+          color: c.isPc ? '#2563eb' : '#b91c1c',
+          size: prev.grid.size,
+          hidden: Boolean(c.hidden),
+          characterId: characters.find((ch) => normName(ch.character_name) === normName(c.name))?.character_id ?? null,
+        })),
+      ],
+    }))
   }
 
   const canShowMap = Boolean(activeMap)
+  const selected = tokens.find((t) => t.id === selectedTokenId) ?? null
+  const pcTokenCount = tokens.filter((t) => t.characterId != null && !t.hidden).length
 
-  const ownerControls = useMemo(() => {
-    if (!canEdit) return null
-    return (
-      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-        <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          <span style={{ opacity: 0.8 }}>Map active</span>
-          <select
-            value={activeMapId ?? ''}
-            disabled={mapsLoading}
-            onChange={(e) => {
-              const raw = e.target.value
-              const next = raw === '' ? null : Number.parseInt(raw, 10)
-              void setActiveMapRemote(Number.isFinite(next as number) ? (next as number) : null)
-            }}
-          >
-            <option value="">— Aucune —</option>
-            {allMaps.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <button className={`btn${tool === 'move' ? '' : ' btn-secondary'}`} type="button" onClick={() => setTool('move')} disabled={!canShowMap}>
-          Déplacer
-        </button>
-        <button className={`btn${tool === 'tokens' ? '' : ' btn-secondary'}`} type="button" onClick={() => setTool('tokens')} disabled={!canShowMap}>
-          Éditer
-        </button>
-        <button className={`btn${tool === 'fog_add' ? '' : ' btn-secondary'}`} type="button" onClick={() => setTool('fog_add')} disabled={!canShowMap}>
-          Fog
-        </button>
-        <button className={`btn${tool === 'fog_erase' ? '' : ' btn-secondary'}`} type="button" onClick={() => setTool('fog_erase')} disabled={!canShowMap}>
-          Gomme
-        </button>
-        <button
-          className="btn"
-          type="button"
-          onClick={() => {
-            setTool('tokens')
-            addToken()
-          }}
-          disabled={!canShowMap}
-        >
-          + Token
-        </button>
-        <button className="btn btn-secondary" type="button" onClick={() => setFogRects([])} disabled={!canShowMap || (tool !== 'fog_add' && tool !== 'fog_erase')}>
-          Effacer fog
-        </button>
-        <button className="btn" type="button" onClick={() => void saveStates()} disabled={!canShowMap}>
-          Sauvegarder
-        </button>
-      </div>
-    )
-  }, [activeMapId, allMaps, canEdit, canShowMap, mapsLoading, saveStates, tool])
+  const toolButton = (t: MapCanvasTool, label: string) => (
+    <button key={t} className={`btn${tool === t ? '' : ' btn-secondary'}`} type="button" onClick={() => setTool(t)} disabled={!canShowMap} aria-pressed={tool === t}>
+      {label}
+    </button>
+  )
+  const rowStyle = { display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' } as const
+  const numberInput = (label: string, value: number, onChange: (v: number) => void, opts: { min?: number; max?: number; step?: number } = {}) => (
+    <label style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
+      <span style={{ opacity: 0.8 }}>{label}</span>
+      <input
+        type="number"
+        style={{ width: 80 }}
+        value={value}
+        {...opts}
+        onChange={(e) => {
+          const v = Number.parseFloat(e.target.value)
+          if (Number.isFinite(v)) onChange(v)
+        }}
+      />
+    </label>
+  )
+  const checkbox = (label: string, checked: boolean, onChange: (v: boolean) => void, disabled = false) => (
+    <label style={{ display: 'flex', gap: '0.35rem', alignItems: 'center', opacity: disabled ? 0.5 : 1 }}>
+      <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
+      <span>{label}</span>
+    </label>
+  )
 
   return (
     <div>
       {loading ? <p>Chargement…</p> : null}
       {syncError ? <p style={{ margin: 0, color: 'var(--muted)' }}>Sync: {syncError}</p> : null}
-      {ownerControls ? <div style={{ marginBottom: '0.75rem' }}>{ownerControls}</div> : null}
+
+      {canEdit ? (
+        <div style={{ ...rowStyle, marginBottom: '0.5rem' }}>
+          <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <span style={{ opacity: 0.8 }}>Map active</span>
+            <select
+              value={activeMapId ?? ''}
+              disabled={mapsLoading}
+              onChange={(e) => {
+                const next = e.target.value === '' ? null : Number.parseInt(e.target.value, 10)
+                void setActiveMapRemote(Number.isFinite(next as number) ? next : null)
+              }}
+            >
+              <option value="">— Aucune —</option>
+              {allMaps.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            className="btn"
+            type="button"
+            onClick={() => {
+              setTool('tokens')
+              addToken()
+            }}
+            disabled={!canShowMap}
+          >
+            + Token
+          </button>
+          <button
+            className="btn btn-secondary"
+            type="button"
+            onClick={addTokensFromInitiative}
+            disabled={!canShowMap || missingCombatants.length === 0}
+            title="Crée un jeton par combattant du tracker d’initiative qui n’en a pas encore"
+          >
+            + Depuis l’initiative{missingCombatants.length ? ` (${missingCombatants.length})` : ''}
+          </button>
+          <button className="btn" type="button" onClick={() => void saveStates()} disabled={!canShowMap}>
+            Sauvegarder
+          </button>
+        </div>
+      ) : null}
+
+      <div style={{ ...rowStyle, marginBottom: '0.5rem' }} role="toolbar" aria-label="Outils de carte">
+        {toolButton('move', 'Déplacer')}
+        {canEdit ? toolButton('tokens', 'Éditer') : null}
+        {toolButton('ruler', 'Règle')}
+        {toolButton('ping', 'Ping')}
+        {canEdit
+          ? [
+              toolButton('template', 'Gabarit'),
+              toolButton('fog_add', 'Fog'),
+              toolButton('fog_erase', 'Gomme'),
+            ]
+          : null}
+      </div>
+
+      {canShowMap && TOOL_HINTS[tool] ? <p style={{ margin: '0 0 0.5rem', color: 'var(--muted)', fontSize: 13 }}>{TOOL_HINTS[tool]}</p> : null}
+
+      {canEdit && canShowMap ? (
+        <div style={{ ...rowStyle, marginBottom: '0.75rem' }}>
+          {tool === 'template' ? (
+            <>
+              <label style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
+                <span style={{ opacity: 0.8 }}>Forme</span>
+                <select value={templateShape} onChange={(e) => setTemplateShape(e.target.value as MapTemplateShape)}>
+                  <option value="circle">Sphère / cercle</option>
+                  <option value="cone">Cône</option>
+                  <option value="line">Ligne</option>
+                  <option value="cube">Cube</option>
+                </select>
+              </label>
+              <button className="btn btn-secondary" type="button" onClick={() => edit({ templates: [] })} disabled={scene.templates.length === 0}>
+                Effacer les gabarits
+              </button>
+            </>
+          ) : null}
+          {tool === 'fog_add' || tool === 'fog_erase' ? (
+            <button className="btn btn-secondary" type="button" onClick={() => edit({ fogRects: [] })} disabled={scene.fogRects.length === 0}>
+              Effacer fog
+            </button>
+          ) : null}
+          {scene.vision.dynamic && pcTokenCount === 0 ? (
+            <span style={{ color: 'var(--muted)', fontSize: 13 }}>
+              Vision dynamique active mais aucun jeton lié à un personnage : les joueurs ne voient rien. Lie un jeton à un personnage dans « Éditer ».
+            </span>
+          ) : null}
+        </div>
+      ) : null}
 
       {canEdit && canShowMap && tool === 'tokens' ? (
         <div className="login-form" style={{ marginTop: '0.25rem', marginBottom: '0.75rem' }}>
           <label>Édition token</label>
-          {selectedTokenId ? (
+          {selected ? (
             <>
-              <label htmlFor="session-map-token-label">Label</label>
-              <input
-                id="session-map-token-label"
-                type="text"
-                value={tokens.find((t) => t.id === selectedTokenId)?.label ?? ''}
+              <label htmlFor="session-map-token-label">Nom (identique à celui du tracker d’initiative pour afficher PV et tour)</label>
+              <input id="session-map-token-label" type="text" value={selected.label ?? ''} onChange={(e) => editToken(selected.id, { label: e.target.value })} />
+
+              <label htmlFor="session-map-token-character">Personnage lié (son joueur peut déplacer le jeton et voit à travers lui)</label>
+              <select
+                id="session-map-token-character"
+                value={selected.characterId ?? ''}
                 onChange={(e) => {
-                  const v = e.target.value
-                  setTokens((prev) => prev.map((t) => (t.id === selectedTokenId ? { ...t, label: v } : t)))
+                  const id = e.target.value === '' ? null : Number.parseInt(e.target.value, 10)
+                  const name = characters.find((c) => c.character_id === id)?.character_name
+                  editToken(selected.id, { characterId: id, ...(name && (!selected.label || selected.label === 'Token') ? { label: name } : {}) })
                 }}
-              />
+              >
+                <option value="">— Aucun (PNJ / monstre) —</option>
+                {characters.map((c) => (
+                  <option key={c.character_id} value={c.character_id}>
+                    {(c.character_name ?? '').trim() || `Personnage #${c.character_id}`}
+                  </option>
+                ))}
+              </select>
 
               <label htmlFor="session-map-token-color">Couleur</label>
-              <input
-                id="session-map-token-color"
-                type="color"
-                value={tokens.find((t) => t.id === selectedTokenId)?.color ?? '#7c3aed'}
-                onChange={(e) => {
-                  const v = e.target.value
-                  setTokens((prev) => prev.map((t) => (t.id === selectedTokenId ? { ...t, color: v } : t)))
-                }}
-              />
+              <input id="session-map-token-color" type="color" value={selected.color ?? '#7c3aed'} onChange={(e) => editToken(selected.id, { color: e.target.value })} />
 
               <label htmlFor="session-map-token-size">Taille</label>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, opacity: 0.85 }}>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-small"
-                  onClick={() => setTokens((prev) => prev.map((t) => (t.id === selectedTokenId ? { ...t, size: 0.015 } : t)))}
-                >
-                  Minuscule
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-small"
-                  onClick={() => setTokens((prev) => prev.map((t) => (t.id === selectedTokenId ? { ...t, size: 0.03 } : t)))}
-                >
-                  Petit
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-small"
-                  onClick={() => setTokens((prev) => prev.map((t) => (t.id === selectedTokenId ? { ...t, size: 0.05 } : t)))}
-                >
-                  Moyen
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-small"
-                  onClick={() => setTokens((prev) => prev.map((t) => (t.id === selectedTokenId ? { ...t, size: 0.08 } : t)))}
-                >
-                  Grand
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-small"
-                  onClick={() => setTokens((prev) => prev.map((t) => (t.id === selectedTokenId ? { ...t, size: 0.11 } : t)))}
-                >
-                  Très grand
-                </button>
+              <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                {SIZE_PRESETS.map(([label, cells]) => (
+                  <button key={label} type="button" className="btn btn-secondary btn-small" onClick={() => editToken(selected.id, { size: cells * grid.size })}>
+                    {label}
+                  </button>
+                ))}
               </div>
               <input
                 id="session-map-token-size"
                 type="range"
                 min={0.01}
-                max={0.12}
+                max={0.4}
                 step={0.002}
-                value={tokens.find((t) => t.id === selectedTokenId)?.size ?? 36 / 1100}
-                onChange={(e) => {
-                  const v = Number.parseFloat(e.target.value)
-                  setTokens((prev) => prev.map((t) => (t.id === selectedTokenId ? { ...t, size: v } : t)))
-                }}
+                value={selected.size ?? 36 / 1100}
+                onChange={(e) => editToken(selected.id, { size: Number.parseFloat(e.target.value) })}
               />
+
+              <div style={rowStyle}>
+                {checkbox('Caché aux joueurs', Boolean(selected.hidden), (v) => editToken(selected.id, { hidden: v }))}
+                {numberInput('Vision dans le noir (cases)', selected.darkvision ?? 0, (v) => editToken(selected.id, { darkvision: clamp(v, 0, 100) }), { min: 0 })}
+                {numberInput('Lumière portée (cases)', selected.light ?? 0, (v) => editToken(selected.id, { light: clamp(v, 0, 100) }), { min: 0 })}
+              </div>
 
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <button className="btn btn-secondary" type="button" onClick={() => setSelectedTokenId(null)}>
                   Désélectionner
                 </button>
-                <button className="btn btn-secondary" type="button" onClick={() => deleteToken(selectedTokenId)}>
+                <button
+                  className="btn btn-secondary"
+                  type="button"
+                  onClick={() => {
+                    edit((prev) => ({ tokens: prev.tokens.filter((t) => t.id !== selected.id) }))
+                    setSelectedTokenId(null)
+                  }}
+                >
                   Supprimer
                 </button>
               </div>
@@ -467,31 +485,37 @@ export function SessionMapTab(props: { sessionId: number; token: string; isOwner
       {!loading && canShowMap ? (
         <MapCanvas
           token={token}
-          imageUrl={imageUrl}
+          imageUrl={activeMap?.image_url ?? ''}
           canEdit={canEdit}
           tokens={tokens}
-          fogRects={fogRects}
-          onTokensChange={(next) => {
-            setTokens(next)
-            schedulePersistLive(next, fogRects, viewState)
-          }}
-          onFogRectsChange={(next) => {
-            setFogRects(next)
-            schedulePersistLive(tokens, next, viewState)
-          }}
+          fogRects={scene.fogRects}
+          // Joueur : mise à jour locale pendant le glisser, la position finale part par onPlayerTokenMove.
+          onTokensChange={(next) => (canEdit ? edit({ tokens: next }) : setScene((prev) => ({ ...prev, tokens: next })))}
+          onFogRectsChange={(next) => edit({ fogRects: next })}
           tool={tool}
-          onToolChange={setTool}
           selectedTokenId={selectedTokenId}
           onSelectedTokenIdChange={setSelectedTokenId}
           viewState={viewState}
           onViewStateChange={(next) => {
+            dirtyRef.current = true
             setViewState(next)
-            schedulePersistLive(tokens, fogRects, next)
           }}
-          onCommit={commitPersistLive}
+          grid={grid}
+          walls={scene.walls}
+          // Murs et portes se préparent dans l'éditeur de campagne ; ici le MJ ne fait qu'ouvrir/fermer les portes.
+          onWallsChange={(next) => edit({ walls: next })}
+          lights={scene.lights}
+          templates={scene.templates}
+          onTemplatesChange={(next) => edit({ templates: next })}
+          templateShape={templateShape}
+          vision={scene.vision}
+          myCharacterIds={myCharacterIds}
+          onPlayerTokenMove={(id, x, y) => void movePlayerToken(id, x, y)}
+          tokenStatus={tokenStatus}
+          pings={pings}
+          onPing={(x, y) => sendMapWs({ type: 'ping', x, y })}
         />
       ) : null}
     </div>
   )
 }
-

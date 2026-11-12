@@ -440,6 +440,8 @@ export function LiveSessionPage() {
                     token={token}
                     isOwner={isSessionOwner}
                     campaignId={sessionDetail?.campaign_id ?? null}
+                    currentUserId={user?.id ?? null}
+                    characters={sessionDetail?.attendance ?? []}
                   />
                 </div>
               ) : null}

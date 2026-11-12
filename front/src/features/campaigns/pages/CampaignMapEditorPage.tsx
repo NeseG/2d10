@@ -1,26 +1,30 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Card } from '../../../shared/components/Card'
 import { apiDelete, apiGet, apiPutFormData } from '../../../shared/api/client'
 import { useAuth } from '../../../app/hooks/useAuth'
 import { useSnackbar } from '../../../app/hooks/useSnackbar'
-import { MapCanvas, type MapCanvasTool, type MapFogRect, type MapToken } from '../../maps/components/MapCanvas'
-
-type CampaignMap = {
-  id: number
-  campaign_id: number
-  name: string
-  image_url: string
-  fog_state?: unknown
-  tokens_state?: unknown
-}
+import { MapCanvas, type MapCanvasTool, type MapToken } from '../../maps/components/MapCanvas'
+import { EMPTY_SCENE, SIZE_PRESETS, clamp, fogStateOf, parseScene, tokensStateOf, type CampaignMap, type Scene } from '../../maps/scene'
 
 function uid(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
-function clamp(n: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, n))
+const TOOLS: [MapCanvasTool, string][] = [
+  ['move', 'Déplacer'],
+  ['tokens', 'Éditer'],
+  ['fog_add', 'Fog'],
+  ['fog_erase', 'Gomme'],
+  ['wall', 'Mur'],
+  ['door', 'Porte'],
+  ['light', 'Lumière'],
+]
+
+const TOOL_HINTS: Partial<Record<MapCanvasTool, string>> = {
+  wall: 'Glisser pour tracer un mur. Double-clic sur un mur pour le supprimer. Maj = sans aimant.',
+  door: 'Glisser pour tracer une porte. Double-clic pour la supprimer ; hors de cet outil, cliquer sur sa pastille l’ouvre ou la ferme.',
+  light: 'Cliquer pour poser une lumière, cliquer sur une lumière pour la retirer.',
 }
 
 export function CampaignMapEditorPage() {
@@ -37,22 +41,15 @@ export function CampaignMapEditorPage() {
   const [map, setMap] = useState<CampaignMap | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
 
-  const [tokens, setTokens] = useState<MapToken[]>([])
-  const [fogRects, setFogRects] = useState<MapFogRect[]>([])
+  const [scene, setScene] = useState<Scene>(EMPTY_SCENE)
   const [tool, setTool] = useState<MapCanvasTool>('tokens')
   const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null)
+  const [lightRadius, setLightRadius] = useState(8)
 
-  const imageUrl = map?.image_url ?? ''
-
-  const normalizedTokensState = useMemo(() => {
-    if (!map) return null
-    return map.tokens_state
-  }, [map])
-
-  const normalizedFogState = useMemo(() => {
-    if (!map) return null
-    return map.fog_state
-  }, [map])
+  const edit = (patch: Partial<Scene>) => setScene((prev) => ({ ...prev, ...patch }))
+  const editGrid = (patch: Partial<Scene['grid']>) => setScene((prev) => ({ ...prev, grid: { ...prev.grid, ...patch } }))
+  const editToken = (id: string, patch: Partial<MapToken>) =>
+    setScene((prev) => ({ ...prev, tokens: prev.tokens.map((t) => (t.id === id ? { ...t, ...patch } : t)) }))
 
   useEffect(() => {
     async function load() {
@@ -61,49 +58,7 @@ export function CampaignMapEditorPage() {
       try {
         const res = await apiGet<{ success: boolean; map: CampaignMap }>(`/api/campaigns/${campaignId}/maps/${mapId}`, token)
         setMap(res.map)
-
-        const t = Array.isArray((res.map.tokens_state as any)?.tokens) ? ((res.map.tokens_state as any).tokens as MapToken[]) : []
-        const f = Array.isArray((res.map.fog_state as any)?.rects) ? ((res.map.fog_state as any).rects as MapFogRect[]) : []
-        // Best-effort legacy compat:
-        // - if coords are >1, treat them as pixels in the previous implementation and normalize against the surface size.
-        setTokens(
-          t
-            .filter((x) => x && typeof x.id === 'string' && Number.isFinite(x.x) && Number.isFinite(x.y))
-            .map((x) => ({ ...x, x: Number(x.x), y: Number(x.y) }))
-            .map((x) => ({
-              ...x,
-              x: x.x > 1 ? x.x / 1100 : x.x,
-              y: x.y > 1 ? x.y / 650 : x.y,
-            }))
-            .map((x) => ({ ...x, x: clamp(x.x, 0, 1), y: clamp(x.y, 0, 1) })),
-        )
-        setFogRects(
-          f
-            .filter(
-              (r) =>
-                r &&
-                typeof r.id === 'string' &&
-                Number.isFinite(r.x) &&
-                Number.isFinite(r.y) &&
-                Number.isFinite(r.w) &&
-                Number.isFinite(r.h),
-            )
-            .map((r) => ({ ...r, x: Number(r.x), y: Number(r.y), w: Number(r.w), h: Number(r.h) }))
-            .map((r) => ({
-              ...r,
-              x: r.x > 1 ? r.x / 1100 : r.x,
-              y: r.y > 1 ? r.y / 650 : r.y,
-              w: r.w > 1 ? r.w / 1100 : r.w,
-              h: r.h > 1 ? r.h / 650 : r.h,
-            }))
-            .map((r) => ({
-              ...r,
-              x: clamp(r.x, 0, 1),
-              y: clamp(r.y, 0, 1),
-              w: clamp(r.w, 0, 1),
-              h: clamp(r.h, 0, 1),
-            })),
-        )
+        setScene(parseScene(res.map))
       } catch (err) {
         showSnackbar({
           message: err instanceof Error ? err.message : 'Erreur chargement carte',
@@ -123,8 +78,8 @@ export function CampaignMapEditorPage() {
     try {
       const fd = new FormData()
       fd.append('name', map.name)
-      fd.append('tokens_state', JSON.stringify({ tokens }))
-      fd.append('fog_state', JSON.stringify({ rects: fogRects }))
+      fd.append('tokens_state', JSON.stringify(tokensStateOf(scene)))
+      fd.append('fog_state', JSON.stringify(fogStateOf(scene)))
       await apiPutFormData(`/api/campaigns/${campaignId}/maps/${mapId}`, fd, token)
       showSnackbar({ message: 'Carte sauvegardée.', severity: 'success' })
     } catch (err) {
@@ -153,24 +108,41 @@ export function CampaignMapEditorPage() {
 
   function addToken() {
     const id = uid('tok')
-    setTokens((prev) => [
+    setScene((prev) => ({
       ...prev,
-      {
-        id,
-        label: 'Token',
-        x: clamp(0.1 + prev.length * 0.01, 0, 1),
-        y: clamp(0.1 + prev.length * 0.01, 0, 1),
-        color: '#7c3aed',
-        size: 36 / 1100,
-      },
-    ])
+      tokens: [
+        ...prev.tokens,
+        { id, label: 'Token', x: clamp(0.1 + prev.tokens.length * prev.grid.size, 0, 0.9), y: 0.1, color: '#7c3aed', size: prev.grid.size },
+      ],
+    }))
     setSelectedTokenId(id)
   }
 
-  function deleteToken(id: string) {
-    setTokens((prev) => prev.filter((t) => t.id !== id))
-    setSelectedTokenId((prev) => (prev === id ? null : prev))
-  }
+  const { grid } = scene
+  const selected = scene.tokens.find((t) => t.id === selectedTokenId) ?? null
+  const rowStyle = { display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.75rem' } as const
+  const fieldStyle = { display: 'flex', gap: '0.35rem', alignItems: 'center' } as const
+  const numberField = (label: string, value: number, onChange: (v: number) => void, opts: { min?: number; max?: number; step?: number } = {}) => (
+    <label style={fieldStyle}>
+      <span style={{ opacity: 0.8 }}>{label}</span>
+      <input
+        type="number"
+        style={{ width: 80 }}
+        value={value}
+        {...opts}
+        onChange={(e) => {
+          const v = Number.parseFloat(e.target.value)
+          if (Number.isFinite(v)) onChange(v)
+        }}
+      />
+    </label>
+  )
+  const checkbox = (label: string, checked: boolean, onChange: (v: boolean) => void, disabled = false) => (
+    <label style={{ ...fieldStyle, opacity: disabled ? 0.5 : 1 }}>
+      <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
+      <span>{label}</span>
+    </label>
+  )
 
   return (
     <Card title="Édition de carte">
@@ -198,13 +170,12 @@ export function CampaignMapEditorPage() {
       {loading ? <p>Chargement…</p> : null}
       {!loading && map ? (
         <>
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
-            <button className={`btn${tool === 'move' ? '' : ' btn-secondary'}`} type="button" onClick={() => setTool('move')}>
-              Déplacer
-            </button>
-            <button className={`btn${tool === 'tokens' ? '' : ' btn-secondary'}`} type="button" onClick={() => setTool('tokens')}>
-              Éditer
-            </button>
+          <div style={rowStyle} role="toolbar" aria-label="Outils de carte">
+            {TOOLS.map(([t, label]) => (
+              <button key={t} className={`btn${tool === t ? '' : ' btn-secondary'}`} type="button" onClick={() => setTool(t)} aria-pressed={tool === t}>
+                {label}
+              </button>
+            ))}
             <button
               className="btn"
               type="button"
@@ -215,107 +186,93 @@ export function CampaignMapEditorPage() {
             >
               + Token
             </button>
-            <button className={`btn${tool === 'fog_add' ? '' : ' btn-secondary'}`} type="button" onClick={() => setTool('fog_add')}>
-              Fog
-            </button>
-            <button className={`btn${tool === 'fog_erase' ? '' : ' btn-secondary'}`} type="button" onClick={() => setTool('fog_erase')}>
-              Gomme
-            </button>
-            <button className="btn btn-secondary" type="button" onClick={() => setFogRects([])} disabled={tool !== 'fog_add' && tool !== 'fog_erase'}>
-              Effacer fog
-            </button>
+          </div>
+
+          {TOOL_HINTS[tool] ? <p style={{ margin: '0 0 0.5rem', color: 'var(--muted)', fontSize: 13 }}>{TOOL_HINTS[tool]}</p> : null}
+
+          {tool === 'fog_add' || tool === 'fog_erase' ? (
+            <div style={rowStyle}>
+              <button className="btn btn-secondary" type="button" onClick={() => edit({ fogRects: [] })} disabled={scene.fogRects.length === 0}>
+                Effacer fog
+              </button>
+            </div>
+          ) : null}
+          {tool === 'wall' || tool === 'door' ? (
+            <div style={rowStyle}>
+              <button className="btn btn-secondary" type="button" onClick={() => edit({ walls: [] })} disabled={scene.walls.length === 0}>
+                Effacer murs et portes
+              </button>
+            </div>
+          ) : null}
+          {tool === 'light' ? (
+            <div style={rowStyle}>
+              {numberField('Rayon (cases)', lightRadius, (v) => setLightRadius(clamp(v, 1, 60)), { min: 1, max: 60 })}
+              <button className="btn btn-secondary" type="button" onClick={() => edit({ lights: [] })} disabled={scene.lights.length === 0}>
+                Effacer les lumières
+              </button>
+            </div>
+          ) : null}
+
+          <div style={rowStyle}>
+            <strong>Grille</strong>
+            {checkbox('Afficher', grid.show, (v) => editGrid({ show: v }))}
+            {checkbox('Aimanter', grid.snap, (v) => editGrid({ snap: v }))}
+            {numberField('Cases en largeur', +(1 / grid.size).toFixed(2), (v) => editGrid({ size: 1 / clamp(v, 2, 200) }), { min: 2, max: 200, step: 0.5 })}
+            {numberField('Mètres par case', grid.unit, (v) => editGrid({ unit: clamp(v, 0.1, 1000) }), { min: 0.1, step: 0.5 })}
+            {(['ox', 'oy'] as const).map((k) => (
+              <label key={k} style={fieldStyle}>
+                <span style={{ opacity: 0.8 }}>Décalage {k === 'ox' ? 'X' : 'Y'}</span>
+                <input type="range" min={0} max={1} step={0.01} value={grid[k]} onChange={(e) => editGrid({ [k]: Number.parseFloat(e.target.value) })} />
+              </label>
+            ))}
+          </div>
+
+          <div style={rowStyle}>
+            <strong>Vision en session</strong>
+            {checkbox('Vision dynamique (les murs bloquent la vue des joueurs)', scene.vision.dynamic, (v) => edit({ vision: { ...scene.vision, dynamic: v } }))}
+            {checkbox('Obscurité (seules les lumières éclairent)', scene.vision.dark, (v) => edit({ vision: { ...scene.vision, dark: v } }), !scene.vision.dynamic)}
           </div>
 
           {tool === 'tokens' ? (
             <div className="login-form" style={{ marginTop: '0.25rem', marginBottom: '0.75rem' }}>
               <label>Édition token</label>
-              {selectedTokenId ? (
+              {selected ? (
                 <>
                   <label htmlFor="map-token-label">Label</label>
-                  <input
-                    id="map-token-label"
-                    type="text"
-                    value={tokens.find((t) => t.id === selectedTokenId)?.label ?? ''}
-                    onChange={(e) => {
-                      const v = e.target.value
-                      setTokens((prev) => prev.map((t) => (t.id === selectedTokenId ? { ...t, label: v } : t)))
-                    }}
-                  />
+                  <input id="map-token-label" type="text" value={selected.label ?? ''} onChange={(e) => editToken(selected.id, { label: e.target.value })} />
 
                   <label htmlFor="map-token-color">Couleur</label>
-                  <input
-                    id="map-token-color"
-                    type="color"
-                    value={tokens.find((t) => t.id === selectedTokenId)?.color ?? '#7c3aed'}
-                    onChange={(e) => {
-                      const v = e.target.value
-                      setTokens((prev) => prev.map((t) => (t.id === selectedTokenId ? { ...t, color: v } : t)))
-                    }}
-                  />
+                  <input id="map-token-color" type="color" value={selected.color ?? '#7c3aed'} onChange={(e) => editToken(selected.id, { color: e.target.value })} />
 
                   <label htmlFor="map-token-size">Taille</label>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, opacity: 0.85 }}>
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-small"
-                      onClick={() => setTokens((prev) => prev.map((t) => (t.id === selectedTokenId ? { ...t, size: 0.015 } : t)))}
-                    >
-                      Minuscule
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-small"
-                      onClick={() => setTokens((prev) => prev.map((t) => (t.id === selectedTokenId ? { ...t, size: 0.03 } : t)))}
-                    >
-                      Petit
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-small"
-                      onClick={() => setTokens((prev) => prev.map((t) => (t.id === selectedTokenId ? { ...t, size: 0.05 } : t)))}
-                    >
-                      Moyen
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-small"
-                      onClick={() => setTokens((prev) => prev.map((t) => (t.id === selectedTokenId ? { ...t, size: 0.08 } : t)))}
-                    >
-                      Grand
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-small"
-                      onClick={() => setTokens((prev) => prev.map((t) => (t.id === selectedTokenId ? { ...t, size: 0.11 } : t)))}
-                    >
-                      Très grand
-                    </button>
+                  <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                    {SIZE_PRESETS.map(([label, cells]) => (
+                      <button key={label} type="button" className="btn btn-secondary btn-small" onClick={() => editToken(selected.id, { size: cells * grid.size })}>
+                        {label}
+                      </button>
+                    ))}
                   </div>
                   <input
                     id="map-token-size"
                     type="range"
                     min={0.01}
-                    max={0.12}
+                    max={0.4}
                     step={0.002}
-                    value={tokens.find((t) => t.id === selectedTokenId)?.size ?? 36 / 1100}
-                    onChange={(e) => {
-                      const v = Number.parseFloat(e.target.value)
-                      setTokens((prev) => prev.map((t) => (t.id === selectedTokenId ? { ...t, size: v } : t)))
-                    }}
+                    value={selected.size ?? 36 / 1100}
+                    onChange={(e) => editToken(selected.id, { size: Number.parseFloat(e.target.value) })}
                   />
 
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button
-                      className="btn btn-secondary"
-                      type="button"
-                      onClick={() => setSelectedTokenId(null)}
-                    >
+                    <button className="btn btn-secondary" type="button" onClick={() => setSelectedTokenId(null)}>
                       Désélectionner
                     </button>
                     <button
                       className="btn btn-secondary"
                       type="button"
-                      onClick={() => deleteToken(selectedTokenId)}
+                      onClick={() => {
+                        edit({ tokens: scene.tokens.filter((t) => t.id !== selected.id) })
+                        setSelectedTokenId(null)
+                      }}
                     >
                       Supprimer
                     </button>
@@ -329,30 +286,28 @@ export function CampaignMapEditorPage() {
 
           <MapCanvas
             token={token}
-            imageUrl={imageUrl}
+            imageUrl={map.image_url}
             canEdit
-            tokens={tokens}
-            fogRects={fogRects}
-            onTokensChange={(next) => setTokens(next)}
-            onFogRectsChange={(next) => setFogRects(next)}
+            tokens={scene.tokens}
+            fogRects={scene.fogRects}
+            onTokensChange={(next) => edit({ tokens: next })}
+            onFogRectsChange={(next) => edit({ fogRects: next })}
             tool={tool}
-            onToolChange={setTool}
             selectedTokenId={selectedTokenId}
             onSelectedTokenIdChange={setSelectedTokenId}
+            grid={grid}
+            walls={scene.walls}
+            onWallsChange={(next) => edit({ walls: next })}
+            lights={scene.lights}
+            onLightsChange={(next) => edit({ lights: next })}
+            lightRadius={lightRadius}
+            templates={scene.templates}
+            // Pas d'aperçu de l'obscurité ici : elle dépend des jetons de PJ, placés en session.
           />
 
           <details style={{ marginTop: '0.75rem' }}>
             <summary>Debug état</summary>
-            <pre style={{ whiteSpace: 'pre-wrap' }}>
-              {JSON.stringify(
-                {
-                  tokens_state: normalizedTokensState,
-                  fog_state: normalizedFogState,
-                },
-                null,
-                2,
-              )}
-            </pre>
+            <pre style={{ whiteSpace: 'pre-wrap' }}>{JSON.stringify({ tokens_state: tokensStateOf(scene), fog_state: fogStateOf(scene) }, null, 2)}</pre>
           </details>
         </>
       ) : null}

@@ -36,10 +36,8 @@ function attachSessionChatWss(server) {
       socket.destroy();
       return;
     }
-    if (pathname !== WS_PATH) {
-      socket.destroy();
-      return;
-    }
+    // Pas notre chemin : un autre module le traite (les inconnus sont fermés dans index-prisma.js).
+    if (pathname !== WS_PATH) return;
 
     wss.handleUpgrade(request, socket, head, (ws) => {
       wss.emit('connection', ws, request);
@@ -99,6 +97,7 @@ function attachSessionChatWss(server) {
     });
     ws.on('error', () => {});
   });
+  return WS_PATH;
 }
 
 function broadcastSessionChat(sessionId, payload) {

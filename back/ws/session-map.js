@@ -50,6 +50,29 @@ async function buildSessionMapPayload(sessionId) {
   };
 }
 
+/** Les joueurs ne reçoivent jamais les jetons cachés (calque MJ). */
+function filterMapPayloadForPlayer(payload) {
+  const tokens = payload?.map?.tokens_state?.tokens;
+  if (!Array.isArray(tokens)) return payload;
+  return {
+    ...payload,
+    map: {
+      ...payload.map,
+      tokens_state: { ...payload.map.tokens_state, tokens: tokens.filter((t) => !t?.hidden) },
+    },
+  };
+}
+
+async function isSessionMapOwner(sessionId, user) {
+  if (user.role_name === 'admin') return true;
+  if (user.role_name !== 'gm') return false;
+  const row = await prisma.gameSession.findFirst({
+    where: { id: sessionId, isActive: true, campaign: { isActive: true, gmId: user.id } },
+    select: { id: true },
+  });
+  return Boolean(row);
+}
+
 function attachSessionMapWss(server) {
   const wss = new WebSocket.Server({ noServer: true });
   const rooms = new Map(); // sessionId -> Set<{ ws, isOwner }>
@@ -57,10 +80,12 @@ function attachSessionMapWss(server) {
   broadcastImpl = (sessionId, payload) => {
     const set = rooms.get(sessionId);
     if (!set?.size) return;
-    const msg = JSON.stringify(payload);
     for (const entry of set) {
-      const { ws } = entry;
+      const { ws, isOwner } = entry;
       if (ws.readyState !== WebSocket.OPEN) continue;
+      const msg = JSON.stringify(
+        payload?.type === 'map_state' && !isOwner ? filterMapPayloadForPlayer(payload) : payload,
+      );
       try {
         ws.send(msg);
       } catch {
@@ -78,10 +103,8 @@ function attachSessionMapWss(server) {
       socket.destroy();
       return;
     }
-    if (pathname !== WS_PATH) {
-      socket.destroy();
-      return;
-    }
+    // Pas notre chemin : un autre module le traite (les inconnus sont fermés dans index-prisma.js).
+    if (pathname !== WS_PATH) return;
 
     wss.handleUpgrade(request, socket, head, (ws) => {
       wss.emit('connection', ws, request);
@@ -128,13 +151,7 @@ function attachSessionMapWss(server) {
       return;
     }
 
-    const isOwner =
-      user.role_name === 'admin' ||
-      (user.role_name === 'gm' &&
-        (await prisma.gameSession.findFirst({
-          where: { id: sessionId, isActive: true, campaign: { isActive: true, gmId: user.id } },
-          select: { id: true },
-        })));
+    const isOwner = await isSessionMapOwner(sessionId, user);
 
     if (!rooms.has(sessionId)) rooms.set(sessionId, new Set());
     const entry = { ws, isOwner: Boolean(isOwner) };
@@ -143,10 +160,29 @@ function attachSessionMapWss(server) {
     // Send initial snapshot
     try {
       const payload = await buildSessionMapPayload(sessionId);
-      if (payload) ws.send(JSON.stringify(payload));
+      if (payload) ws.send(JSON.stringify(entry.isOwner ? payload : filterMapPayloadForPlayer(payload)));
     } catch {
       /* ignore */
     }
+
+    // Ping : éphémère, relayé à toute la salle (rien en base).
+    let lastPingAt = 0;
+    ws.on('message', (raw) => {
+      if (raw.length > 200) return;
+      let msg;
+      try {
+        msg = JSON.parse(raw.toString());
+      } catch {
+        return;
+      }
+      if (msg?.type !== 'ping') return;
+      const { x, y } = msg;
+      if (typeof x !== 'number' || typeof y !== 'number' || !(x >= 0 && x <= 1 && y >= 0 && y <= 1)) return;
+      const now = Date.now();
+      if (now - lastPingAt < 400) return;
+      lastPingAt = now;
+      broadcastImpl(sessionId, { type: 'map_ping', x, y, user_id: user.id });
+    });
 
     ws.on('close', () => {
       const set = rooms.get(sessionId);
@@ -157,6 +193,7 @@ function attachSessionMapWss(server) {
     });
     ws.on('error', () => {});
   });
+  return WS_PATH;
 }
 
 function broadcastSessionMap(sessionId, payload) {
@@ -167,6 +204,8 @@ module.exports = {
   attachSessionMapWss,
   broadcastSessionMap,
   buildSessionMapPayload,
+  filterMapPayloadForPlayer,
+  isSessionMapOwner,
   WS_PATH,
 };
 

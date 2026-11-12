@@ -6,7 +6,12 @@ const prisma = require('../lib/prisma');
 const { authenticateToken, requireRole } = require('../middleware/auth');
 const { broadcastSessionChat } = require('../ws/session-chat');
 const { broadcastSessionInitiative } = require('../ws/session-initiative');
-const { broadcastSessionMap, buildSessionMapPayload } = require('../ws/session-map');
+const {
+  broadcastSessionMap,
+  buildSessionMapPayload,
+  filterMapPayloadForPlayer,
+  isSessionMapOwner,
+} = require('../ws/session-map');
 const { findSessionForChat, getChatDisplayName, displayNamesForUserIds } = require('../lib/session-chat-access');
 const { CHAT_UPLOAD_ROOT, chatImageUploadMiddleware } = require('../lib/session-chat-upload');
 const { nextInventorySortOrder } = require('../lib/next-inventory-sort-order');
@@ -585,7 +590,8 @@ router.get('/:sessionId/map', authenticateToken, async (req, res) => {
 
     const payload = await buildSessionMapPayload(sessionId);
     if (!payload) return res.status(404).json({ error: 'Session non trouvée' });
-    return res.json({ success: true, ...payload });
+    const isOwner = await isSessionMapOwner(sessionId, req.user);
+    return res.json({ success: true, ...(isOwner ? payload : filterMapPayloadForPlayer(payload)) });
   } catch (error) {
     console.error('Erreur session map GET:', error);
     return res.status(500).json({ error: 'Erreur serveur' });
@@ -675,6 +681,57 @@ router.put('/:sessionId/map/state', authenticateToken, checkSessionOwnership, as
     return res.json({ success: true });
   } catch (error) {
     console.error('Erreur session map state PUT:', error);
+    return res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Un joueur déplace le jeton lié à l'un de ses personnages (le MJ passe par /map/state).
+router.put('/:sessionId/map/tokens/:tokenId/position', authenticateToken, async (req, res) => {
+  try {
+    const sessionId = parseInt(req.params.sessionId, 10);
+    if (Number.isNaN(sessionId)) return res.status(400).json({ error: 'ID de session invalide' });
+    const { x, y } = req.body || {};
+    if (typeof x !== 'number' || typeof y !== 'number' || !(x >= 0 && x <= 1 && y >= 0 && y <= 1)) {
+      return res.status(400).json({ error: 'Position invalide' });
+    }
+
+    const access = await findSessionForChat(sessionId, req.user);
+    if (!access) return res.status(404).json({ error: 'Session non trouvée' });
+
+    const sess = await prisma.gameSession.findFirst({
+      where: { id: sessionId, isActive: true },
+      select: { activeMapId: true, activeMap: { select: { tokensState: true } } },
+    });
+    if (!sess?.activeMapId) return res.status(400).json({ error: 'Aucune map active' });
+
+    const state = sess.activeMap?.tokensState;
+    const tokens = Array.isArray(state?.tokens) ? state.tokens : [];
+    const tok = tokens.find((t) => t?.id === req.params.tokenId);
+    if (!tok || tok.hidden) return res.status(404).json({ error: 'Jeton non trouvé' });
+
+    const isOwner = await isSessionMapOwner(sessionId, req.user);
+    if (!isOwner) {
+      const mine =
+        Number.isInteger(tok.characterId) &&
+        (await prisma.character.findFirst({
+          where: { id: tok.characterId, userId: req.user.id, isActive: true },
+          select: { id: true },
+        }));
+      if (!mine) return res.status(403).json({ error: 'Ce jeton ne vous appartient pas' });
+    }
+
+    // shortcut: lecture-modification-écriture du JSON, une écriture MJ simultanée peut l'écraser ; passer à une table de jetons si ça gêne.
+    await prisma.campaignMap.update({
+      where: { id: sess.activeMapId },
+      data: { tokensState: { ...state, tokens: tokens.map((t) => (t === tok ? { ...t, x, y } : t)) } },
+      select: { id: true },
+    });
+
+    const payload = await buildSessionMapPayload(sessionId);
+    if (payload) broadcastSessionMap(sessionId, payload);
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Erreur session map token position PUT:', error);
     return res.status(500).json({ error: 'Erreur serveur' });
   }
 });
