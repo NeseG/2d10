@@ -184,6 +184,32 @@ router.put('/:characterId/reorder', authenticateToken, checkCharacterOwnership, 
   }
 });
 
+/** Vue « sac » : place des lignes sur des cases précises (sortOrder = n° de case, les trous sont permis). */
+router.put('/:characterId/slots', authenticateToken, checkCharacterOwnership, async (req, res) => {
+  try {
+    const characterId = parseInt(req.params.characterId, 10);
+    const slots = Array.isArray(req.body?.slots) ? req.body.slots : null;
+    if (!slots || slots.length === 0 || slots.length > 50) {
+      return res.status(400).json({ error: 'slots doit être un tableau non vide' });
+    }
+    const parsed = slots.map((s) => ({ id: Number(s?.id), slot: Number(s?.slot) }));
+    if (parsed.some((s) => !Number.isInteger(s.id) || s.id <= 0 || !Number.isInteger(s.slot) || s.slot < 0 || s.slot > 9999)) {
+      return res.status(400).json({ error: 'Case invalide' });
+    }
+    const owned = await prisma.inventory.count({ where: { characterId, id: { in: parsed.map((s) => s.id) } } });
+    if (owned !== new Set(parsed.map((s) => s.id)).size) {
+      return res.status(400).json({ error: 'ID d’inventaire inconnu pour ce personnage' });
+    }
+    await prisma.$transaction(
+      parsed.map((s) => prisma.inventory.update({ where: { id: s.id }, data: { sortOrder: s.slot } })),
+    );
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Erreur lors du placement dans le sac:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 router.post('/:characterId/items', authenticateToken, checkCharacterOwnership, async (req, res) => {
   try {
     const characterId = parseInt(req.params.characterId, 10);

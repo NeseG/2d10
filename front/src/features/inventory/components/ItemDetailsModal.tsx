@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react'
+import { itemImageSrc } from '../../../shared/inventory/itemIcons'
 import { MarkdownContent } from '../../../shared/components/MarkdownContent'
 import { translateItemCategory, translateItemSubcategory, translateItemType } from '../../../shared/inventory/itemDisplayLabels'
 
@@ -137,8 +139,15 @@ export function ItemDetailsModal(props: {
   /** Session live : ouvre le flux de transfert vers un autre personnage (inventaire). */
   onTransfer?: () => void
   transferDisabled?: boolean
+  /** Ligne d'inventaire : case « Équipé » (absente si non fourni). */
+  equipped?: boolean
+  onToggleEquipped?: (next: boolean) => void
+  equipDisabled?: boolean
+  /** Ligne d'inventaire : contrôle de quantité (−, saisie, +). */
+  quantityControl?: ReactNode
 }) {
   const { open, loading, itemDetails, onClose, onEdit, editDisabled, onTransfer, transferDisabled } = props
+  const { equipped, onToggleEquipped, equipDisabled, quantityControl } = props
 
   if (!open) return null
 
@@ -151,7 +160,7 @@ export function ItemDetailsModal(props: {
             <div className="item-details-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
               {itemDetails.imageUrl ? (
-                <img src={itemDetails.imageUrl} alt="" style={{ width: 56, height: 56, objectFit: 'contain', flex: '0 0 auto' }} />
+                <img src={itemImageSrc(itemDetails.imageUrl)} alt="" style={{ width: 56, height: 56, objectFit: 'contain', flex: '0 0 auto' }} />
               ) : null}
               <div>
                 <div className="item-details-header-name" style={{ fontSize: '1.12rem' }}>
@@ -260,7 +269,23 @@ export function ItemDetailsModal(props: {
           </>
         ) : null}
 
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.75rem' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', marginTop: '0.75rem' }}>
+          {quantityControl ? (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+              Qté {quantityControl}
+            </span>
+          ) : null}
+          {onToggleEquipped ? (
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', marginRight: 'auto' }}>
+              <input
+                type="checkbox"
+                checked={Boolean(equipped)}
+                disabled={loading || equipDisabled}
+                onChange={(e) => onToggleEquipped(e.target.checked)}
+              />
+              Équipé
+            </label>
+          ) : null}
           {onEdit ? (
             <button className="btn" type="button" disabled={loading || editDisabled} onClick={onEdit}>
               Éditer

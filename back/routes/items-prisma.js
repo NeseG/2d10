@@ -1,6 +1,8 @@
 const express = require('express');
 const prisma = require('../lib/prisma');
 const { authenticateToken, requireAdmin, requireRole } = require('../middleware/auth');
+const { ICON_PATHS, iconUrl } = require('../lib/item-icons');
+const { itemImageUploadMiddleware } = require('../lib/image-upload');
 
 function isItemPrivilegedUser(user) {
   return user?.role_name === 'admin' || user?.role_name === 'gm';
@@ -101,6 +103,17 @@ router.get('/', authenticateToken, async (req, res) => {
 });
 
 // Obtenir un objet par ID
+// Icônes proposées dans le sélecteur d'image d'objet (avant /:id).
+router.get('/icons', authenticateToken, (_req, res) => {
+  res.json({ icons: ICON_PATHS.map((path) => ({ path, url: iconUrl(path) })) });
+});
+
+// Image importée par un utilisateur pour un objet : renvoie l'URL à mettre dans imageUrl.
+router.post('/images', authenticateToken, itemImageUploadMiddleware, (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Image manquante' });
+  res.status(201).json({ url: `/uploads/item-images/${req.file.filename}` });
+});
+
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
@@ -254,10 +267,14 @@ router.post('/:id/validate-catalog', authenticateToken, requireAdmin, async (req
   }
 });
 
-/** null/'' = pas d'image ; sinon URL https courte (affichée en <img src>). */
+/** null/'' = pas d'image ; sinon URL https courte ou image importée (affichée en <img src>). */
 function isValidImageUrl(value) {
   if (value == null || value === '') return true;
-  return typeof value === 'string' && value.length <= 500 && /^https:\/\/[^\s"'<>]+$/.test(value);
+  return (
+    typeof value === 'string' &&
+    value.length <= 500 &&
+    (/^https:\/\/[^\s"'<>]+$/.test(value) || /^\/uploads\/item-images\/[\w.-]+$/.test(value))
+  );
 }
 
 // Créer un nouvel objet — tout utilisateur authentifié (index toujours auto-généré hors admin/gm)
@@ -287,7 +304,7 @@ router.post('/', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Nom requis' });
     }
     if (!isValidImageUrl(imageUrl)) {
-      return res.status(400).json({ error: 'imageUrl invalide (URL https attendue)' });
+      return res.status(400).json({ error: 'imageUrl invalide (URL https ou image importée attendue)' });
     }
 
     // `index` est unique globalement. Admin/GM peuvent proposer un index ; les joueurs : toujours auto.
@@ -410,7 +427,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
     if (stealthDisadvantage !== undefined) data.stealthDisadvantage = stealthDisadvantage != null ? Boolean(stealthDisadvantage) : null;
     if (properties !== undefined) data.properties = properties;
     if (imageUrl !== undefined) {
-      if (!isValidImageUrl(imageUrl)) return res.status(400).json({ error: 'imageUrl invalide (URL https attendue)' });
+      if (!isValidImageUrl(imageUrl)) return res.status(400).json({ error: 'imageUrl invalide (URL https ou image importée attendue)' });
       data.imageUrl = imageUrl || null;
     }
     if (raw !== undefined && privileged) data.raw = raw;

@@ -4,7 +4,7 @@ const fs = require('fs/promises');
 const path = require('path');
 const prisma = require('../lib/prisma');
 const { authenticateToken, requireRole } = require('../middleware/auth');
-const { TOKEN_LIBRARY_ROOT, tokenImageUploadMiddleware, tokenImageUrl } = require('../lib/token-library-upload');
+const { TOKEN_LIBRARY_ROOT, tokenImageUploadMiddleware, tokenImageUrl } = require('../lib/image-upload');
 
 const router = express.Router();
 const SIZES = new Set(['tiny', 'small', 'medium', 'large', 'huge', 'gargantuan']);

@@ -1,5 +1,6 @@
 import React from 'react'
 import { ItemIconPickerModal } from './ItemIconPickerModal'
+import { itemImageSrc } from '../../../shared/inventory/itemIcons'
 
 const WEAPON_PROPERTIES = [
   'Ammunition',
@@ -228,7 +229,7 @@ export function ItemEditModal(props: {
             <span>Image</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
               {form.imageUrl ? (
-                <img src={form.imageUrl} alt="" style={{ width: 48, height: 48, objectFit: 'contain' }} />
+                <img src={itemImageSrc(form.imageUrl)} alt="" style={{ width: 48, height: 48, objectFit: 'contain' }} />
               ) : null}
               <button type="button" className="btn btn-secondary btn-small" disabled={loading || busy} onClick={() => setIconPickerOpen(true)}>
                 {form.imageUrl ? 'Changer' : 'Choisir une image'}

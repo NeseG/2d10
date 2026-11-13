@@ -23,6 +23,7 @@
     "prisma:seed": "node prisma/seed.js",
     "test:prisma-routes": "node test-prisma-routes.js",
     "test:prisma-simple": "node test-prisma-simple.js",
+    "backfill-item-icons": "node scripts/backfill-item-icons.js",
     "rollback:routes": "node scripts/rollback-to-postgres.js"
   },
   "prisma": {

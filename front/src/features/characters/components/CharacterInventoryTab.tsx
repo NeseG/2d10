@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowDown, ArrowUp, ArrowUpDown, Funnel, GripVertical, Shapes } from 'lucide-react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { ArrowDown, Backpack, ArrowUp, ArrowUpDown, Funnel, GripVertical, Shapes } from 'lucide-react'
 import {
   normalizeItemTypeKey,
   translateItemCategory,
@@ -8,11 +8,14 @@ import {
   translateMagicItemRarity,
 } from '../../../shared/inventory/itemDisplayLabels'
 import { getItemTypeIcon } from '../../../shared/inventory/itemTypeIcon'
+import { itemImageSrc } from '../../../shared/inventory/itemIcons'
 import { apiDelete, apiGet, apiPost, apiPut } from '../../../shared/api/client'
 import { parseLocalizedDecimalString } from '../../../shared/utils/parseLocalizedDecimal'
 import { useAuth } from '../../../app/hooks/useAuth'
 import { useSnackbar } from '../../../app/hooks/useSnackbar'
 import { ItemDetailsModal, type ItemDetail } from '../../inventory/components/ItemDetailsModal'
+import { InventoryBagGrid } from '../../inventory/components/InventoryBagGrid'
+import type { BagSlotChange } from '../../inventory/bagSlots'
 import {
   ItemEditModal,
   RemoveFromInventoryConfirmModal,
@@ -26,6 +29,8 @@ type CharacterPurse = {
   gold_pieces: number
   platinum_pieces: number
 }
+
+const INVENTORY_VIEW_KEY = 'inventory-view-v1'
 
 type InventoryItem = {
   id: number
@@ -54,6 +59,7 @@ type Dnd5eEquipmentListItem = {
   subcategory?: string | null
   weight?: number | null
   cost?: string | null
+  image_url?: string | null
 }
 
 type Dnd5eMagicItemListItem = {
@@ -63,6 +69,7 @@ type Dnd5eMagicItemListItem = {
   categoryIndex?: string | null
   categoryName?: string | null
   rarity?: string | null
+  image_url?: string | null
 }
 
 /** Réponse détail GET /api/dnd5e/equipment/:index (champs Prisma / JSON). */
@@ -113,19 +120,6 @@ function formatJsonOrDash(value: unknown): string {
   } catch {
     return String(value)
   }
-}
-
-function findInventoryRowElementFromPoint(clientX: number, clientY: number): HTMLElement | null {
-  if (typeof document.elementsFromPoint === 'function') {
-    for (const el of document.elementsFromPoint(clientX, clientY)) {
-      const tr = el.closest?.('tr[data-inventory-line-id]')
-      if (tr instanceof HTMLElement) return tr
-    }
-    return null
-  }
-  const hit = document.elementFromPoint(clientX, clientY)
-  const tr = hit?.closest?.('tr[data-inventory-line-id]')
-  return tr instanceof HTMLElement ? tr : null
 }
 
 function isEquipableItemType(typeValue?: string | null): boolean {
@@ -225,6 +219,13 @@ function serializeItemRange(normal: string, long: string): string | null {
     normal: trimmedNormal ? Number(trimmedNormal) || trimmedNormal : null,
     long: trimmedLong ? Number(trimmedLong) || trimmedLong : null,
   })
+}
+
+/** Icône du catalogue D&D (correspondance par nom, calculée par l'API). */
+function CatalogIcon({ url }: { url?: string | null }) {
+  return url ? (
+    <img src={url} alt="" loading="lazy" style={{ width: 22, height: 22, objectFit: 'contain', verticalAlign: 'middle', marginRight: 6 }} />
+  ) : null
 }
 
 function emptyEditItemForm(): EditItemFormState {
@@ -386,6 +387,13 @@ export function CharacterInventoryTab(props: {
   }, [])
 
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([])
+  const [inventoryView, setInventoryView] = useState<'list' | 'bag'>(() => {
+    try {
+      return localStorage.getItem(INVENTORY_VIEW_KEY) === 'bag' ? 'bag' : 'list'
+    } catch {
+      return 'list'
+    }
+  })
   const [inventoryQuantityDraft, setInventoryQuantityDraft] = useState<Record<number, string>>({})
   const [savingQuantityId, setSavingQuantityId] = useState<number | null>(null)
   const [inventorySearch, setInventorySearch] = useState('')
@@ -397,11 +405,17 @@ export function CharacterInventoryTab(props: {
   }>({ key: null, dir: 'asc' })
   const [draggingInventoryId, setDraggingInventoryId] = useState<number | null>(null)
   const [dragOverInventoryId, setDragOverInventoryId] = useState<number | null>(null)
+  /** Glisser : la ligne suit le pointeur (dragDelta.y), les autres se décalent de dragDelta.rowHeight. */
+  const [dragDelta, setDragDelta] = useState({ y: 0, rowHeight: 0 })
   const reorderPointerRef = useRef<{
     pointerId: number
     sourceId: number
     captureTarget: HTMLElement | null
+    startY: number
+    rowHeight: number
   } | null>(null)
+  /** Au lâcher : position affichée de la ligne, pour l'animer jusqu'à sa place (FLIP). */
+  const dropFlipRef = useRef<{ id: number; top: number } | null>(null)
   const dragOverInventoryIdRef = useRef<number | null>(null)
   /** Évite d’ouvrir la fiche item juste après un relâchement de glisser (mobile / souris). */
   const skipNextInventoryRowClickRef = useRef(false)
@@ -651,6 +665,70 @@ export function CharacterInventoryTab(props: {
     }
   }
 
+  function renderQuantityControl(item: InventoryItem) {
+    return (
+      <div className="inventory-qty-control" onClick={(event) => event.stopPropagation()}>
+        <button
+          type="button"
+          className="inventory-qty-step"
+          disabled={savingQuantityId === item.id}
+          onClick={() => void handleInventoryQuantityStep(item.id, -1)}
+          aria-label={`Diminuer la quantité de ${item.name ?? 'cet objet'}`}
+        >
+          -
+        </button>
+        <input
+          type="number"
+          className="inventory-qty-input"
+          min={0}
+          disabled={savingQuantityId === item.id}
+          value={inventoryQuantityDraft[item.id] ?? String(item.quantity)}
+          onChange={(event) =>
+            setInventoryQuantityDraft((d) => ({
+              ...d,
+              [item.id]: event.target.value,
+            }))
+          }
+          onBlur={() => void handleInventoryQuantityBlur(item.id)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              ;(event.target as HTMLInputElement).blur()
+            }
+          }}
+        />
+        <button
+          type="button"
+          className="inventory-qty-step"
+          disabled={savingQuantityId === item.id}
+          onClick={() => void handleInventoryQuantityStep(item.id, 1)}
+          aria-label={`Augmenter la quantité de ${item.name ?? 'cet objet'}`}
+        >
+          +
+        </button>
+      </div>
+    )
+  }
+
+  /** Vue sac : le sort_order devient le n° de case (trous permis) ; la liste suit le même ordre. */
+  async function applyBagMove(changes: BagSlotChange[]) {
+    if (!characterId || changes.length === 0) return
+    const prev = inventoryItems
+    const slotById = new Map(changes.map((c) => [c.id, c.slot]))
+    const next = prev
+      .map((it) => (slotById.has(it.id) ? { ...it, sort_order: slotById.get(it.id) } : it))
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.id - b.id)
+    setInventoryItems(next)
+    try {
+      await apiPut(`/api/inventory/${characterId}/slots`, { slots: changes }, token)
+    } catch (err) {
+      setInventoryItems(prev)
+      showSnackbar({
+        message: err instanceof Error ? err.message : 'Erreur lors du déplacement dans le sac',
+        severity: 'error',
+      })
+    }
+  }
+
   function handleInventoryReorderPointerDown(
     event: React.PointerEvent<HTMLTableCellElement>,
     sourceId: number,
@@ -661,11 +739,15 @@ export function CharacterInventoryTab(props: {
     event.stopPropagation()
     const el = event.currentTarget
     el.setPointerCapture(event.pointerId)
+    const rowHeight = el.closest('tr')?.getBoundingClientRect().height || 40
     reorderPointerRef.current = {
       pointerId: event.pointerId,
       sourceId,
       captureTarget: el,
+      startY: event.clientY,
+      rowHeight,
     }
+    setDragDelta({ y: 0, rowHeight })
     dragOverInventoryIdRef.current = sourceId
     setDraggingInventoryId(sourceId)
     setDragOverInventoryId(sourceId)
@@ -674,10 +756,13 @@ export function CharacterInventoryTab(props: {
   function handleInventoryReorderPointerMove(event: React.PointerEvent<HTMLTableCellElement>) {
     const st = reorderPointerRef.current
     if (!st || event.pointerId !== st.pointerId) return
-    const tr = findInventoryRowElementFromPoint(event.clientX, event.clientY)
-    const raw = tr?.dataset?.inventoryLineId
-    const overId = raw != null ? Number.parseInt(raw, 10) : Number.NaN
-    if (!Number.isFinite(overId)) return
+    const y = event.clientY - st.startY
+    setDragDelta({ y, rowHeight: st.rowHeight })
+    // Ligne survolée déduite du déplacement (la ligne glissée est sous le pointeur, elementFromPoint la renverrait)
+    const from = filteredInventoryItems.findIndex((i) => i.id === st.sourceId)
+    const to = Math.min(filteredInventoryItems.length - 1, Math.max(0, from + Math.round(y / st.rowHeight)))
+    const overId = filteredInventoryItems[to]?.id
+    if (from < 0 || overId == null) return
     if (dragOverInventoryIdRef.current !== overId) {
       dragOverInventoryIdRef.current = overId
       setDragOverInventoryId(overId)
@@ -695,6 +780,8 @@ export function CharacterInventoryTab(props: {
     }
     const sourceId = st.sourceId
     const targetId = dragOverInventoryIdRef.current
+    const top = st.captureTarget?.closest('tr')?.getBoundingClientRect().top
+    if (top != null) dropFlipRef.current = { id: sourceId, top }
     reorderPointerRef.current = null
     dragOverInventoryIdRef.current = null
     setDraggingInventoryId(null)
@@ -707,6 +794,21 @@ export function CharacterInventoryTab(props: {
       void applyInventoryReorder(sourceId, targetId)
     }
   }
+
+  // Lâcher : la ligne part de là où elle était affichée et glisse jusqu'à sa nouvelle place.
+  useLayoutEffect(() => {
+    const flip = dropFlipRef.current
+    if (!flip || draggingInventoryId != null) return
+    dropFlipRef.current = null
+    const tr = document.querySelector(`tr[data-inventory-line-id="${flip.id}"]`)
+    if (!(tr instanceof HTMLElement) || typeof tr.animate !== 'function') return
+    const dy = flip.top - tr.getBoundingClientRect().top
+    if (Math.abs(dy) < 1 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    tr.animate([{ transform: `translateY(${dy}px) scale(1.02)` }, { transform: 'none' }], {
+      duration: 220,
+      easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)',
+    })
+  }, [inventoryItems, draggingInventoryId])
 
   function abortInventoryReorderPointer(event: React.PointerEvent<HTMLTableCellElement>) {
     const st = reorderPointerRef.current
@@ -880,6 +982,8 @@ export function CharacterInventoryTab(props: {
     setTransferQuantityDraft(String(item.quantity))
     setTransferModalOpen(true)
   }
+
+  const itemDetailsLine = inventoryItems.find((x) => x.id === itemDetailsInventoryLineId)
 
   function openTransferFromItemDetailsModal() {
     const lineId = itemDetailsInventoryLineId
@@ -1441,6 +1545,40 @@ export function CharacterInventoryTab(props: {
           ) : filteredInventoryItems.length === 0 ? (
             <p>Aucun item ne correspond à la recherche ou aux filtres.</p>
           ) : (
+            <>
+            <div className="inventory-view-switch">
+              <button
+                type="button"
+                className={`btn btn-small inventory-bag-toggle ${inventoryView === 'bag' ? '' : 'btn-secondary'}`}
+                aria-pressed={inventoryView === 'bag'}
+                aria-label="Affichage en sac"
+                title={inventoryView === 'bag' ? 'Revenir à la liste' : 'Afficher en sac'}
+                onClick={() => {
+                  const v = inventoryView === 'bag' ? 'list' : 'bag'
+                  setInventoryView(v)
+                  try {
+                    localStorage.setItem(INVENTORY_VIEW_KEY, v)
+                  } catch {
+                    /* préférence non mémorisée */
+                  }
+                }}
+              >
+                <Backpack size={18} aria-hidden="true" />
+              </button>
+            </div>
+            {inventoryView === 'bag' ? (
+              <InventoryBagGrid
+                items={filteredInventoryItems}
+                canMove={!inventorySearch.trim() && selectedTypes.length === 0}
+                moveHint="Retirez la recherche et les filtres pour déplacer les objets."
+
+                onOpen={(id) => {
+                  const line = inventoryItems.find((x) => x.id === id)
+                  if (line) void openItemDetailsModal(line)
+                }}
+                onMove={(changes) => void applyBagMove(changes)}
+              />
+            ) : (
             <div className="table-wrap inventory-table-wrap">
               <table className="table inventory-items-table">
                 <thead>
@@ -1532,25 +1670,29 @@ export function CharacterInventoryTab(props: {
                     <th className="inventory-drag-handle-th" aria-label="Réordonner" title="Réordonner">
                       <GripVertical size={16} aria-hidden="true" className="inventory-drag-header-icon" />
                     </th>
-                    <th className="inventory-actions-col">Actions</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {filteredInventoryItems.map((item) => (
+                <tbody className={draggingInventoryId != null ? 'inventory-rows-reordering' : undefined}>
+                  {filteredInventoryItems.map((item, rowIndex) => (
                     <tr
                       key={item.id}
                       data-inventory-line-id={String(item.id)}
                       className={[
                         item.item_id ? 'clickable-row' : '',
                         draggingInventoryId === item.id ? 'inventory-row-dragging' : '',
-                        draggingInventoryId != null &&
-                        dragOverInventoryId === item.id &&
-                        draggingInventoryId !== item.id
-                          ? 'inventory-row-drag-over'
-                          : '',
                       ]
                         .filter(Boolean)
                         .join(' ')}
+                      style={(() => {
+                        if (draggingInventoryId == null) return undefined
+                        if (item.id === draggingInventoryId) return { transform: `translateY(${dragDelta.y}px) scale(1.02)` }
+                        const from = filteredInventoryItems.findIndex((i) => i.id === draggingInventoryId)
+                        const over = filteredInventoryItems.findIndex((i) => i.id === dragOverInventoryId)
+                        // Les lignes entre la place d'origine et la ligne survolée se décalent pour faire la place
+                        if (from < over && rowIndex > from && rowIndex <= over) return { transform: `translateY(${-dragDelta.rowHeight}px)` }
+                        if (over >= 0 && from > over && rowIndex >= over && rowIndex < from) return { transform: `translateY(${dragDelta.rowHeight}px)` }
+                        return undefined
+                      })()}
                       onClick={() => {
                         if (skipNextInventoryRowClickRef.current) return
                         if (!item.item_id) return
@@ -1561,62 +1703,22 @@ export function CharacterInventoryTab(props: {
                     >
                       <td className="inventory-name-col" data-label="Nom">
                         <span className="inventory-item-name">
-                          {(() => {
-                            const icon = getItemTypeIcon(item.type)
-                            const typeTitle = translateItemType(item.type)
-                            return (
-                              <span className="inventory-item-type-icon" title={typeTitle} aria-label={typeTitle}>
-                                {item.image_url ? (
-                                  <img src={item.image_url} alt="" style={{ width: 24, height: 24, objectFit: 'contain' }} />
-                                ) : (
-                                  icon.icon
-                                )}
-                              </span>
-                            )
-                          })()}
+                          <span
+                            className="inventory-item-type-icon"
+                            title={translateItemType(item.type)}
+                            aria-label={translateItemType(item.type)}
+                          >
+                            {item.image_url ? (
+                              <img src={itemImageSrc(item.image_url)} alt="" style={{ width: 24, height: 24, objectFit: 'contain' }} />
+                            ) : (
+                              getItemTypeIcon(item.type).icon
+                            )}
+                          </span>
                           <span>{item.name ?? '—'}</span>
                         </span>
                       </td>
                       <td className="inventory-qty-col" data-label="Qty">
-                        <div className="inventory-qty-control" onClick={(event) => event.stopPropagation()}>
-                          <button
-                            type="button"
-                            className="inventory-qty-step"
-                            disabled={savingQuantityId === item.id}
-                            onClick={() => void handleInventoryQuantityStep(item.id, -1)}
-                            aria-label={`Diminuer la quantité de ${item.name ?? 'cet objet'}`}
-                          >
-                            -
-                          </button>
-                          <input
-                            type="number"
-                            className="inventory-qty-input"
-                            min={0}
-                            disabled={savingQuantityId === item.id}
-                            value={inventoryQuantityDraft[item.id] ?? String(item.quantity)}
-                            onChange={(event) =>
-                              setInventoryQuantityDraft((d) => ({
-                                ...d,
-                                [item.id]: event.target.value,
-                              }))
-                            }
-                            onBlur={() => void handleInventoryQuantityBlur(item.id)}
-                            onKeyDown={(event) => {
-                              if (event.key === 'Enter') {
-                                ;(event.target as HTMLInputElement).blur()
-                              }
-                            }}
-                          />
-                          <button
-                            type="button"
-                            className="inventory-qty-step"
-                            disabled={savingQuantityId === item.id}
-                            onClick={() => void handleInventoryQuantityStep(item.id, 1)}
-                            aria-label={`Augmenter la quantité de ${item.name ?? 'cet objet'}`}
-                          >
-                            +
-                          </button>
-                        </div>
+                        {renderQuantityControl(item)}
                       </td>
                       <td className="inventory-equipped-col" data-label="Équipé">
                         <input
@@ -1667,24 +1769,13 @@ export function CharacterInventoryTab(props: {
                           <GripVertical size={18} aria-hidden="true" />
                         </span>
                       </td>
-                      <td data-label="Actions" className="inventory-actions-col">
-                        <button
-                          className="btn btn-secondary btn-small"
-                          type="button"
-                          disabled={!item.item_id}
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            if (item.item_id) void openEditItemModal({ itemId: item.item_id, inventoryLineId: item.id })
-                          }}
-                        >
-                          Éditer
-                        </button>
-                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+            )}
+            </>
           )}
         </>
       )}
@@ -1766,6 +1857,10 @@ export function CharacterInventoryTab(props: {
           editDisabled={!itemDetails?.id || !itemDetailsInventoryLineId}
           onTransfer={canSessionTransfer ? () => openTransferFromItemDetailsModal() : undefined}
           transferDisabled={!itemDetailsInventoryLineId}
+          quantityControl={itemDetailsLine ? renderQuantityControl(itemDetailsLine) : undefined}
+          equipped={itemDetailsLine?.is_equipped}
+          equipDisabled={!itemDetailsLine || !isEquipableItemType(itemDetailsLine.type)}
+          onToggleEquipped={itemDetailsLine ? (next) => void handleToggleEquipped(itemDetailsLine, next) : undefined}
         />
       )}
 
@@ -1957,6 +2052,7 @@ export function CharacterInventoryTab(props: {
                             onClick={() => void openDndCatalogEquipmentDetail(eq.index)}
                           >
                             <td>
+                              <CatalogIcon url={eq.image_url} />
                               {eq.name}
                               {eq.index.startsWith('validated-item-') && (
                                 <span className="badge-homebrew">Maison</span>
@@ -2073,7 +2169,10 @@ export function CharacterInventoryTab(props: {
                             title="Cliquer pour la fiche complète"
                             onClick={() => void openDndCatalogMagicDetail(m.index)}
                           >
-                            <td>{m.name}</td>
+                            <td>
+                              <CatalogIcon url={m.image_url} />
+                              {m.name}
+                            </td>
                             <td>{translateItemCategory(m.categoryName ?? m.categoryIndex)}</td>
                             <td>{m.rarity?.trim() ? translateMagicItemRarity(m.rarity) : '—'}</td>
                             <td>

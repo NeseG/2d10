@@ -1,20 +1,45 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ITEM_ICONS_CREDIT, itemIconUrl, loadItemIconPaths, parseItemIconPath } from '../../../shared/inventory/itemIcons'
+import { useAuth } from '../../../app/hooks/useAuth'
+import { apiGet, apiPostFormData } from '../../../shared/api/client'
+import { ITEM_ICONS_CREDIT, parseItemIconPath, type ItemIcon } from '../../../shared/inventory/itemIcons'
+import { shrinkImage } from '../../maps/tokenLibrary'
 
 const MAX_SHOWN = 200
 
 export function ItemIconPickerModal(props: { onPick: (url: string) => void; onClose: () => void; initialQuery?: string }) {
   const { onPick, onClose, initialQuery = '' } = props
-  const [paths, setPaths] = useState<string[] | null>(null)
+  const { token } = useAuth()
+  const [paths, setPaths] = useState<ItemIcon[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
   const [query, setQuery] = useState(initialQuery)
   const [category, setCategory] = useState('')
 
   useEffect(() => {
-    loadItemIconPaths().then(setPaths, () => setError('Liste des icônes indisponible.'))
-  }, [])
+    apiGet<{ icons: ItemIcon[] }>('/api/items/icons', token).then(
+      (r) => setPaths(r.icons),
+      () => setError('Liste des icônes indisponible.'),
+    )
+  }, [token])
 
-  const icons = useMemo(() => (paths ?? []).map((path) => ({ path, ...parseItemIconPath(path) })), [paths])
+  async function upload(file: File | undefined) {
+    if (!file) return
+    setUploading(true)
+    setError(null)
+    try {
+      const blob = await shrinkImage(file, 256)
+      const fd = new FormData()
+      fd.append('image', blob, blob.type === 'image/webp' ? 'item.webp' : 'item.png')
+      const r = await apiPostFormData<{ url: string }>('/api/items/images', fd, token)
+      onPick(r.url)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Import impossible.')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const icons = useMemo(() => (paths ?? []).map((icon) => ({ ...icon, ...parseItemIconPath(icon.path) })), [paths])
   const categories = useMemo(() => Array.from(new Set(icons.map((i) => i.category.split(' · ')[0]))), [icons])
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -36,6 +61,10 @@ export function ItemIconPickerModal(props: { onPick: (url: string) => void; onCl
               </option>
             ))}
           </select>
+          <label className={`btn btn-secondary btn-small${uploading ? ' disabled' : ''}`} style={{ alignSelf: 'center' }}>
+            {uploading ? 'Import…' : 'Importer une image'}
+            <input type="file" hidden accept="image/png,image/webp,image/jpeg" disabled={uploading} onChange={(e) => void upload(e.target.files?.[0])} />
+          </label>
         </div>
 
         {error ? <p style={{ color: 'var(--danger, #ef4444)' }}>{error}</p> : null}
@@ -48,11 +77,11 @@ export function ItemIconPickerModal(props: { onPick: (url: string) => void; onCl
               key={i.path}
               type="button"
               className="btn btn-secondary"
-              onClick={() => onPick(itemIconUrl(i.path))}
+              onClick={() => onPick(i.url)}
               title={`${i.name} — ${i.category}`}
               style={{ width: '100%', display: 'grid', justifyItems: 'center', gap: 4, padding: 6 }}
             >
-              <img src={itemIconUrl(i.path)} alt="" loading="lazy" style={{ width: 64, height: 64, objectFit: 'contain' }} />
+              <img src={i.url} alt="" loading="lazy" style={{ width: 64, height: 64, objectFit: 'contain' }} />
               <span style={{ fontSize: 11, lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{i.name}</span>
             </button>
           ))}

@@ -1,5 +1,6 @@
 const express = require('express');
 const prisma = require('../lib/prisma');
+const { matchItemIcon } = require('../lib/item-icons');
 const { nextInventorySortOrder } = require('../lib/next-inventory-sort-order');
 const { authenticateToken, requireRole } = require('../middleware/auth');
 
@@ -100,7 +101,7 @@ router.get('/magic-items', authenticateToken, async (req, res) => {
     ]);
 
     res.json({
-      items,
+      items: items.map((it) => ({ ...it, image_url: matchItemIcon(it.name) })),
       pagination: {
         page,
         limit,
@@ -175,6 +176,7 @@ router.post(
         data: {
           index: makeUniqueItemIndex(magicItem.index),
           name: magicItem.name,
+          imageUrl: matchItemIcon(magicItem.name),
           type: itemType,
           category: magicItem.categoryName,
           subcategory: magicItem.rarity,

@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useSnackbar } from '../../../app/hooks/useSnackbar'
 import { translateItemCategory, translateItemType } from '../../../shared/inventory/itemDisplayLabels'
 import { getItemTypeIcon } from '../../../shared/inventory/itemTypeIcon'
+import { itemImageSrc } from '../../../shared/inventory/itemIcons'
 import { apiGet, apiPut, apiPutFormData, getApiBaseUrl } from '../../../shared/api/client'
 import { ItemDetailsModal, type ItemDetail } from '../../inventory/components/ItemDetailsModal'
 import type { AuthUser } from '../../../shared/types'
@@ -364,12 +365,14 @@ type InventoryLineForSession = {
   is_equipped?: boolean
   properties?: unknown
   quantity?: number
+  image_url?: string | null
 }
 
 type SessionEquippedWeaponRow = {
   id: number
   item_id: number | null
   name: string
+  imageUrl: string | null
   damage: string
   propertiesLabel: string
 }
@@ -401,6 +404,7 @@ type SessionConsumableRow = {
   id: number
   item_id: number | null
   name: string
+  imageUrl: string | null
   quantity: number
   categoryLabel: string
 }
@@ -409,6 +413,7 @@ type SessionEquippedOtherRow = {
   id: number
   item_id: number | null
   name: string
+  imageUrl: string | null
   /** Type technique (weapon, armor…) pour l’icône — traduire à l’affichage. */
   itemType: string | null
   itemCategory: string | null
@@ -521,6 +526,8 @@ export function CharacterCharacteristicsTab(props: {
   onAvatarLoadedRef.current = onAvatarLoaded
 
   const [sessionEquippedWeapons, setSessionEquippedWeapons] = useState<SessionEquippedWeaponRow[]>([])
+  const [sessionDetailsLineId, setSessionDetailsLineId] = useState<number | null>(null)
+  const [sessionUnequippedLineIds, setSessionUnequippedLineIds] = useState<Set<number>>(() => new Set())
   const [sessionConsumables, setSessionConsumables] = useState<SessionConsumableRow[]>([])
   const [sessionEquippedOtherItems, setSessionEquippedOtherItems] = useState<SessionEquippedOtherRow[]>([])
   const [isWeaponItemDetailsOpen, setIsWeaponItemDetailsOpen] = useState(false)
@@ -788,12 +795,14 @@ export function CharacterCharacteristicsTab(props: {
                 id: line.id,
                 item_id: line.item_id != null ? line.item_id : null,
                 name: line.name?.trim() ? line.name : '—',
+                imageUrl: line.image_url ?? null,
                 damage,
                 propertiesLabel: formatDnDWeaponPropertyNames(line.properties),
               }
             }),
           )
           setSessionEquippedWeapons(rows)
+          setSessionUnequippedLineIds(new Set())
 
           const consumableLines = lines.filter(isConsumableRow).sort((a, b) =>
             String(a.name || '').localeCompare(String(b.name || ''), 'fr', { sensitivity: 'base' }),
@@ -803,6 +812,7 @@ export function CharacterCharacteristicsTab(props: {
               id: line.id,
               item_id: line.item_id != null ? line.item_id : null,
               name: line.name?.trim() ? line.name : '—',
+              imageUrl: line.image_url ?? null,
               quantity: typeof line.quantity === 'number' && line.quantity >= 0 ? line.quantity : 1,
               categoryLabel: line.category?.trim() ? line.category : '—',
             })),
@@ -816,6 +826,7 @@ export function CharacterCharacteristicsTab(props: {
               id: line.id,
               item_id: line.item_id != null ? line.item_id : null,
               name: line.name?.trim() ? line.name : '—',
+              imageUrl: line.image_url ?? null,
               itemType: line.type?.trim() ? String(line.type) : null,
               itemCategory: line.category?.trim() ? String(line.category) : null,
             })),
@@ -990,7 +1001,33 @@ export function CharacterCharacteristicsTab(props: {
     return rows
   }, [skillsState, form, proficiencyBonus])
 
-  async function openSessionItemDetailsModal(itemId: number) {
+  const sessionEquippedWeaponsShown = sessionEquippedWeapons.filter((r) => !sessionUnequippedLineIds.has(r.id))
+  const sessionConsumablesShown = sessionConsumables.filter((r) => !sessionUnequippedLineIds.has(r.id))
+  const sessionEquippedOtherItemsShown = sessionEquippedOtherItems.filter((r) => !sessionUnequippedLineIds.has(r.id))
+
+  async function toggleSessionDetailsEquipped(next: boolean) {
+    const lineId = sessionDetailsLineId
+    if (lineId == null) return
+    try {
+      await apiPut(`/api/inventory/${characterId}/items/${lineId}`, { is_equipped: next }, token)
+      // Ligne gardée en mémoire : la décocher la masque des listes, la recocher la réaffiche.
+      setSessionUnequippedLineIds((prev) => {
+        const s = new Set(prev)
+        if (next) s.delete(lineId)
+        else s.add(lineId)
+        return s
+      })
+      showSnackbar({ message: next ? 'Objet équipé.' : 'Objet déséquipé.', severity: 'success' })
+    } catch (err) {
+      showSnackbar({
+        message: err instanceof Error ? err.message : 'Erreur lors de la mise à jour de l’état équipé.',
+        severity: 'error',
+      })
+    }
+  }
+
+  async function openSessionItemDetailsModal(itemId: number, inventoryLineId: number) {
+    setSessionDetailsLineId(inventoryLineId)
     setIsWeaponItemDetailsOpen(true)
     setWeaponItemDetails(null)
     setWeaponItemDetailsLoading(true)
@@ -1482,7 +1519,7 @@ export function CharacterCharacteristicsTab(props: {
             >
               <summary className="character-skills-accordion-summary session-weapons-title">Armes</summary>
               <div className="character-skills-accordion-panel">
-                {sessionEquippedWeapons.length === 0 ? (
+                {sessionEquippedWeaponsShown.length === 0 ? (
                   <p className="session-weapons-empty">Aucune arme équipée.</p>
                 ) : (
                   <div className="table-wrap">
@@ -1495,14 +1532,14 @@ export function CharacterCharacteristicsTab(props: {
                         </tr>
                       </thead>
                       <tbody>
-                        {sessionEquippedWeapons.map((w) => (
+                        {sessionEquippedWeaponsShown.map((w) => (
                           <tr
                             key={w.id}
                             className={
                               w.item_id != null ? 'clickable-row session-weapons-row' : 'session-weapons-row'
                             }
                             onClick={() => {
-                              if (w.item_id != null) void openSessionItemDetailsModal(w.item_id)
+                              if (w.item_id != null) void openSessionItemDetailsModal(w.item_id, w.id)
                             }}
                           >
                             <td data-label="Nom">
@@ -1512,7 +1549,11 @@ export function CharacterCharacteristicsTab(props: {
                                   title={translateItemType('weapon')}
                                   aria-label={translateItemType('weapon')}
                                 >
-                                  {getItemTypeIcon('weapon').icon}
+                                  {w.imageUrl ? (
+                                    <img src={itemImageSrc(w.imageUrl)} alt="" style={{ width: 24, height: 24, objectFit: 'contain' }} />
+                                  ) : (
+                                    getItemTypeIcon('weapon').icon
+                                  )}
                                 </span>
                                 <span>{w.name}</span>
                               </span>
@@ -1535,7 +1576,7 @@ export function CharacterCharacteristicsTab(props: {
             >
               <summary className="character-skills-accordion-summary session-consumables-title">Consommables</summary>
               <div className="character-skills-accordion-panel">
-                {sessionConsumables.length === 0 ? (
+                {sessionConsumablesShown.length === 0 ? (
                   <p className="session-consumables-empty">Aucun consommable dans l&apos;inventaire.</p>
                 ) : (
                   <div className="table-wrap">
@@ -1548,14 +1589,14 @@ export function CharacterCharacteristicsTab(props: {
                         </tr>
                       </thead>
                       <tbody>
-                        {sessionConsumables.map((c) => (
+                        {sessionConsumablesShown.map((c) => (
                           <tr
                             key={c.id}
                             className={
                               c.item_id != null ? 'clickable-row session-consumables-row' : 'session-consumables-row'
                             }
                             onClick={() => {
-                              if (c.item_id != null) void openSessionItemDetailsModal(c.item_id)
+                              if (c.item_id != null) void openSessionItemDetailsModal(c.item_id, c.id)
                             }}
                           >
                             <td data-label="Nom">
@@ -1565,7 +1606,11 @@ export function CharacterCharacteristicsTab(props: {
                                   title={translateItemType('consumable')}
                                   aria-label={translateItemType('consumable')}
                                 >
-                                  {getItemTypeIcon('consumable').icon}
+                                  {c.imageUrl ? (
+                                    <img src={itemImageSrc(c.imageUrl)} alt="" style={{ width: 24, height: 24, objectFit: 'contain' }} />
+                                  ) : (
+                                    getItemTypeIcon('consumable').icon
+                                  )}
                                 </span>
                                 <span>{c.name}</span>
                               </span>
@@ -1628,7 +1673,7 @@ export function CharacterCharacteristicsTab(props: {
             >
               <summary className="character-skills-accordion-summary session-items-title">Items</summary>
               <div className="character-skills-accordion-panel">
-                {sessionEquippedOtherItems.length === 0 ? (
+                {sessionEquippedOtherItemsShown.length === 0 ? (
                   <p className="session-items-empty">Aucun autre objet équipé.</p>
                 ) : (
                   <div className="table-wrap">
@@ -1641,12 +1686,12 @@ export function CharacterCharacteristicsTab(props: {
                         </tr>
                       </thead>
                       <tbody>
-                        {sessionEquippedOtherItems.map((it) => (
+                        {sessionEquippedOtherItemsShown.map((it) => (
                           <tr
                             key={it.id}
                             className={it.item_id != null ? 'clickable-row session-items-row' : 'session-items-row'}
                             onClick={() => {
-                              if (it.item_id != null) void openSessionItemDetailsModal(it.item_id)
+                              if (it.item_id != null) void openSessionItemDetailsModal(it.item_id, it.id)
                             }}
                           >
                             <td data-label="Nom">
@@ -1656,7 +1701,11 @@ export function CharacterCharacteristicsTab(props: {
                                   title={translateItemType(it.itemType)}
                                   aria-label={translateItemType(it.itemType)}
                                 >
-                                  {getItemTypeIcon(it.itemType).icon}
+                                  {it.imageUrl ? (
+                                    <img src={itemImageSrc(it.imageUrl)} alt="" style={{ width: 24, height: 24, objectFit: 'contain' }} />
+                                  ) : (
+                                    getItemTypeIcon(it.itemType).icon
+                                  )}
                                 </span>
                                 <span>{it.name}</span>
                               </span>
@@ -1787,6 +1836,8 @@ export function CharacterCharacteristicsTab(props: {
         loading={weaponItemDetailsLoading}
         itemDetails={weaponItemDetails}
         onClose={() => setIsWeaponItemDetailsOpen(false)}
+        equipped={sessionDetailsLineId != null && !sessionUnequippedLineIds.has(sessionDetailsLineId)}
+        onToggleEquipped={sessionDetailsLineId != null ? (next) => void toggleSessionDetailsEquipped(next) : undefined}
       />
     </form>
   )

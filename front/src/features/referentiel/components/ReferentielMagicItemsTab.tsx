@@ -45,6 +45,7 @@ type DndMagicItemListItem = {
   categoryNameFr: string | null
   rarity: string | null
   rarityFr: string | null
+  image_url?: string | null
 }
 
 export function ReferentielMagicItemsTab() {
@@ -225,7 +226,12 @@ export function ReferentielMagicItemsTab() {
             <tbody>
               {importedItems.map((item) => (
                 <tr key={item.id} className="clickable-row" onClick={() => void openImportedDetail(item.index)}>
-                  <td data-label="Nom">{pickLang(language, item.nameFr, item.name)}</td>
+                  <td data-label="Nom">
+                    {item.image_url ? (
+                      <img src={item.image_url} alt="" loading="lazy" style={{ width: 22, height: 22, objectFit: 'contain', verticalAlign: 'middle', marginRight: 6 }} />
+                    ) : null}
+                    {pickLang(language, item.nameFr, item.name)}
+                  </td>
                   <td data-label="Catégorie">{pickLang(language, item.categoryNameFr, item.categoryName) ?? '—'}</td>
                   <td data-label="Rareté">{pickLang(language, item.rarityFr, item.rarity) ?? '—'}</td>
                 </tr>
