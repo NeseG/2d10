@@ -12,6 +12,12 @@ test('chemin Forgotten Adventures : nom, catégorie, taille', () => {
   assert.equal(parseTokenPath('FA_Tokens/Creatures/Monstrosity/Astral_Dreadnought_A2_Gargantuan_Monstrosity_Titan_16x28_01.png').size, 'gargantuan')
 })
 
+test('« ! » et « _ » retirés des noms et catégories', () => {
+  const p = parseTokenPath('FA_Tokens/Adventurers/!Core_Adventurers/!Core_Barbarian_A1_Greataxe_01.png')
+  assert.equal(p.name, 'Core Barbarian')
+  assert.equal(p.category, 'Adventurers · Core Adventurers')
+})
+
 test('autre fichier : nom du fichier, taille moyenne', () => {
   assert.deepEqual(parseTokenPath('Mon gobelin.png'), { name: 'Mon gobelin', category: null, size: 'medium', scale: 1 })
   assert.deepEqual(parseTokenPath('Jetons/Boss/liche.webp'), { name: 'liche', category: 'Jetons · Boss', size: 'medium', scale: 1 })

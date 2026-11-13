@@ -13,6 +13,8 @@ const SIZES = Object.keys(SIZE_CELLS) as TokenSize[]
  * → « Brown Scavver », « Creatures · Monstrosity », large, illustration à 1,2 × l'emprise. Tout autre nom → nom du fichier, taille moyenne.
  */
 export function parseTokenPath(path: string): { name: string; category: string | null; size: TokenSize; scale: number } {
+  // « !Core_Adventurers » → « Core Adventurers » (le « ! » sert au tri dans les dossiers FA)
+  const clean = (s: string) => s.replace(/_/g, ' ').replace(/^!+/, '').replace(/\s+/g, ' ').trim()
   const parts = path.split('/').filter(Boolean)
   const file = (parts.pop() ?? '').replace(/\.[^.]+$/, '')
   const folders = parts[0] === 'FA_Tokens' ? parts.slice(1) : parts.slice(-2)
@@ -21,8 +23,8 @@ export function parseTokenPath(path: string): { name: string; category: string |
   const size = words.map((w) => w.toLowerCase()).find((w): w is TokenSize => (SIZES as string[]).includes(w)) ?? 'medium'
   const scaleWord = words.find((w) => /^Scale\d+$/.test(w))
   const scale = scaleWord ? Number.parseInt(scaleWord.slice(5), 10) / 100 : 1
-  const name = (variant > 0 ? words.slice(0, variant) : words).join(' ').trim() || file
-  return { name, category: folders.length ? folders.join(' · ') : null, size, scale: scale > 0 ? scale : 1 }
+  const name = clean((variant > 0 ? words.slice(0, variant) : words).join(' ')) || file
+  return { name, category: folders.length ? folders.map(clean).join(' · ') : null, size, scale: scale > 0 ? scale : 1 }
 }
 
 /** Réduit une image (côté le plus long) et la réencode en WebP, ou PNG si le navigateur ne sait pas (Safari). */
