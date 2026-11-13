@@ -83,6 +83,7 @@ function mapInventoryRow(inv, eqByItem) {
     cost: inv.item?.cost,
     category: inv.item?.category,
     type: inv.item?.type,
+    image_url: inv.item?.imageUrl ?? null,
     damage_dice: null,
     damage_type: null,
     weapon_range: null,

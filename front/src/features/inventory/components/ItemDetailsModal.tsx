@@ -17,6 +17,7 @@ export type ItemDetail = {
   armorClass?: number | null
   stealthDisadvantage?: boolean | null
   properties?: unknown
+  imageUrl?: string | null
   raw?: unknown
   /** `custom` | `dnd5e` — aligné sur le modèle Prisma `Item`. */
   source?: string | null
@@ -148,6 +149,10 @@ export function ItemDetailsModal(props: {
         {!loading && itemDetails ? (
           <>
             <div className="item-details-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              {itemDetails.imageUrl ? (
+                <img src={itemDetails.imageUrl} alt="" style={{ width: 56, height: 56, objectFit: 'contain', flex: '0 0 auto' }} />
+              ) : null}
               <div>
                 <div className="item-details-header-name" style={{ fontSize: '1.12rem' }}>
                   {itemDetails.name}
@@ -155,6 +160,7 @@ export function ItemDetailsModal(props: {
                 <div className="item-details-header-submeta">
                   {itemDetails.cost ?? '—'} · {itemDetails.weight != null ? `${itemDetails.weight} kg` : '—'}
                 </div>
+              </div>
               </div>
               <div className="item-details-header-meta">
                 <span className="item-details-header-type" title="Type">

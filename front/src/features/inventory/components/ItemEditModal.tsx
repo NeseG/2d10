@@ -1,4 +1,5 @@
 import React from 'react'
+import { ItemIconPickerModal } from './ItemIconPickerModal'
 
 const WEAPON_PROPERTIES = [
   'Ammunition',
@@ -119,6 +120,8 @@ export type EditItemFormState = {
   armorDexBonus: boolean
   stealthDisadvantage: boolean
   propertiesJson: string
+  /** URL de l'image (icône), '' = aucune */
+  imageUrl: string
 }
 
 export function ItemEditModal(props: {
@@ -175,6 +178,7 @@ export function ItemEditModal(props: {
   const busy = saving || duplicateSaving || validateCatalogSaving
   const selectedWeaponProperties = getSelectedWeaponProperties(form.propertiesJson)
   const [weaponPropertyDraft, setWeaponPropertyDraft] = React.useState('')
+  const [iconPickerOpen, setIconPickerOpen] = React.useState(false)
   const meleeWeapon = isMeleeWeapon(form.category, form.subcategory)
 
   function replaceWeaponProperties(next: string[]) {
@@ -220,6 +224,23 @@ export function ItemEditModal(props: {
         {loading ? <p>Chargement…</p> : null}
 
         <form className="login-form item-edit-form" onSubmit={onSubmit}>
+          <div className="item-edit-form-row">
+            <span>Image</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              {form.imageUrl ? (
+                <img src={form.imageUrl} alt="" style={{ width: 48, height: 48, objectFit: 'contain' }} />
+              ) : null}
+              <button type="button" className="btn btn-secondary btn-small" disabled={loading || busy} onClick={() => setIconPickerOpen(true)}>
+                {form.imageUrl ? 'Changer' : 'Choisir une image'}
+              </button>
+              {form.imageUrl ? (
+                <button type="button" className="btn btn-secondary btn-small" disabled={loading || busy} onClick={() => setForm((p) => ({ ...p, imageUrl: '' }))}>
+                  Retirer
+                </button>
+              ) : null}
+            </div>
+          </div>
+
           <label className="item-edit-form-row" htmlFor="edit-item-type">
             <span>Type</span>
           <select
@@ -508,6 +529,15 @@ export function ItemEditModal(props: {
           </div>
         </form>
       </div>
+      {iconPickerOpen ? (
+        <ItemIconPickerModal
+          onClose={() => setIconPickerOpen(false)}
+          onPick={(url) => {
+            setForm((p) => ({ ...p, imageUrl: url }))
+            setIconPickerOpen(false)
+          }}
+        />
+      ) : null}
     </div>
   )
 }

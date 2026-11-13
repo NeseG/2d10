@@ -254,6 +254,12 @@ router.post('/:id/validate-catalog', authenticateToken, requireAdmin, async (req
   }
 });
 
+/** null/'' = pas d'image ; sinon URL https courte (affichée en <img src>). */
+function isValidImageUrl(value) {
+  if (value == null || value === '') return true;
+  return typeof value === 'string' && value.length <= 500 && /^https:\/\/[^\s"'<>]+$/.test(value);
+}
+
 // Créer un nouvel objet — tout utilisateur authentifié (index toujours auto-généré hors admin/gm)
 router.post('/', authenticateToken, async (req, res) => {
   try {
@@ -273,11 +279,15 @@ router.post('/', authenticateToken, async (req, res) => {
       range,
       armorClass,
       stealthDisadvantage,
+      imageUrl,
       raw,
     } = req.body;
 
     if (!name) {
       return res.status(400).json({ error: 'Nom requis' });
+    }
+    if (!isValidImageUrl(imageUrl)) {
+      return res.status(400).json({ error: 'imageUrl invalide (URL https attendue)' });
     }
 
     // `index` est unique globalement. Admin/GM peuvent proposer un index ; les joueurs : toujours auto.
@@ -312,6 +322,7 @@ router.post('/', authenticateToken, async (req, res) => {
             armorClass: armorClass != null ? Number.parseInt(String(armorClass), 10) : null,
             stealthDisadvantage: stealthDisadvantage != null ? Boolean(stealthDisadvantage) : null,
             properties: properties ?? null,
+            imageUrl: imageUrl || null,
             raw: privileged && raw !== undefined ? raw : null,
             source: 'custom',
           },
@@ -359,6 +370,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
       range,
       armorClass,
       stealthDisadvantage,
+      imageUrl,
       raw,
     } = req.body;
 
@@ -397,6 +409,10 @@ router.put('/:id', authenticateToken, async (req, res) => {
     if (armorClass !== undefined) data.armorClass = armorClass != null ? Number.parseInt(String(armorClass), 10) : null;
     if (stealthDisadvantage !== undefined) data.stealthDisadvantage = stealthDisadvantage != null ? Boolean(stealthDisadvantage) : null;
     if (properties !== undefined) data.properties = properties;
+    if (imageUrl !== undefined) {
+      if (!isValidImageUrl(imageUrl)) return res.status(400).json({ error: 'imageUrl invalide (URL https attendue)' });
+      data.imageUrl = imageUrl || null;
+    }
     if (raw !== undefined && privileged) data.raw = raw;
 
     if (Object.keys(data).length === 0) {

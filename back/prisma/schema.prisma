@@ -248,6 +248,9 @@ model Item {
   properties Json?
   raw        Json?
 
+  /// Illustration (ex. icône Gwillewyn sur jsDelivr), URL https.
+  imageUrl    String?  @map("image_url")
+
   // custom = créé via API / fiche ; dnd5e = copie catalogue ou validé admin → dnd5e_equipment
   source      String?
 

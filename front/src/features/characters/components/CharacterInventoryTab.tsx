@@ -40,6 +40,7 @@ type InventoryItem = {
   category?: string | null
   cost?: string | null
   properties?: unknown
+  image_url?: string | null
 }
 
 type InventoryTableSortKey = 'name' | 'quantity' | 'equipped'
@@ -243,6 +244,7 @@ function emptyEditItemForm(): EditItemFormState {
     armorDexBonus: false,
     stealthDisadvantage: false,
     propertiesJson: '',
+    imageUrl: '',
   }
 }
 
@@ -303,6 +305,7 @@ function buildItemApiPayloadFromForm(
       armorClass: form.armorClass.trim() === '' ? null : Number.parseInt(form.armorClass, 10),
       armorDexBonus: Boolean(form.armorDexBonus),
       stealthDisadvantage: Boolean(form.stealthDisadvantage),
+      imageUrl: form.imageUrl || null,
       properties,
     },
   }
@@ -439,6 +442,7 @@ export function CharacterInventoryTab(props: {
     armorDexBonus: false,
     stealthDisadvantage: false,
     propertiesJson: '',
+    imageUrl: '',
   })
   const [removeFromInventoryConfirmOpen, setRemoveFromInventoryConfirmOpen] = useState(false)
   const [removingFromInventory, setRemovingFromInventory] = useState(false)
@@ -1037,6 +1041,7 @@ export function CharacterInventoryTab(props: {
         armorDexBonus,
         stealthDisadvantage: Boolean(it.stealthDisadvantage),
         propertiesJson: it.properties ? JSON.stringify(it.properties, null, 2) : '',
+        imageUrl: it.imageUrl ?? '',
       })
     } catch (err) {
       showSnackbar({
@@ -1561,7 +1566,11 @@ export function CharacterInventoryTab(props: {
                             const typeTitle = translateItemType(item.type)
                             return (
                               <span className="inventory-item-type-icon" title={typeTitle} aria-label={typeTitle}>
-                                {icon.icon}
+                                {item.image_url ? (
+                                  <img src={item.image_url} alt="" style={{ width: 24, height: 24, objectFit: 'contain' }} />
+                                ) : (
+                                  icon.icon
+                                )}
                               </span>
                             )
                           })()}
