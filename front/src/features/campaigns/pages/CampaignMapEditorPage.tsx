@@ -7,6 +7,8 @@ import { useSnackbar } from '../../../app/hooks/useSnackbar'
 import { MapCanvas, type MapCanvasTool, type MapToken } from '../../maps/components/MapCanvas'
 import { EMPTY_SCENE, SIZE_PRESETS, clamp, fogStateOf, parseScene, tokensStateOf, type CampaignMap, type Scene } from '../../maps/scene'
 import { FogToolbar } from '../../maps/components/FogToolbar'
+import { TokenLibraryModal } from '../../maps/components/TokenLibraryModal'
+import { SIZE_CELLS, type LibraryToken } from '../../maps/tokenLibrary'
 import { useFogEditor } from '../../maps/useFogEditor'
 import type { FogBitmap, FogShape } from '../../maps/fog'
 
@@ -51,6 +53,7 @@ export function CampaignMapEditorPage() {
   const [scene, setScene] = useState<Scene>(EMPTY_SCENE)
   const [tool, setTool] = useState<MapCanvasTool>('tokens')
   const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null)
+  const [libraryOpen, setLibraryOpen] = useState(false)
   const [lightRadius, setLightRadius] = useState(8)
   const [fogShape, setFogShape] = useState<FogShape>('rect')
   const [fogBrush, setFogBrush] = useState(2)
@@ -126,6 +129,28 @@ export function CampaignMapEditorPage() {
       ],
     }))
     setSelectedTokenId(id)
+  }
+
+  function addLibraryToken(t: LibraryToken) {
+    const id = uid('tok')
+    setScene((prev) => ({
+      ...prev,
+      tokens: [
+        ...prev.tokens,
+        {
+          id,
+          label: t.name,
+          x: clamp(0.1 + prev.tokens.length * prev.grid.size, 0, 0.9),
+          y: 0.1,
+          color: '#7c3aed',
+          size: SIZE_CELLS[t.size] * prev.grid.size,
+          image: t.url, imageScale: t.scale,
+        },
+      ],
+    }))
+    setTool('tokens')
+    setSelectedTokenId(id)
+    setLibraryOpen(false)
   }
 
   const { grid } = scene
@@ -204,7 +229,13 @@ export function CampaignMapEditorPage() {
             >
               + Token
             </button>
+            <button className="btn btn-secondary" type="button" onClick={() => setLibraryOpen(true)}>
+              + Depuis la bibliothèque
+            </button>
           </div>
+          {libraryOpen && token ? (
+            <TokenLibraryModal token={token} canImport onPick={addLibraryToken} onClose={() => setLibraryOpen(false)} />
+          ) : null}
 
           {TOOL_HINTS[tool] ? <p style={{ margin: '0 0 0.5rem', color: 'var(--muted)', fontSize: 13 }}>{TOOL_HINTS[tool]}</p> : null}
 

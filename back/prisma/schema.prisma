@@ -778,3 +778,21 @@ model Dnd5eMagicItem {
 
   @@map("dnd5e_magic_items")
 }
+
+/// Bibliothèque de jetons commune à toutes les campagnes (images importées par un MJ, ex. Forgotten Adventures).
+model TokenImage {
+  id         Int      @id @default(autoincrement())
+  name       String
+  category   String?
+  /// Taille D&D : tiny, small, medium, large, huge, gargantuan
+  size       String   @default("medium")
+  /// Taille de l'illustration / emprise au sol (FA « Scale200 » = 2) : l'image déborde de ses cases
+  scale      Float    @default(1)
+  /// Chemin d'origine (dossier/fichier) : rend le réimport idempotent
+  sourcePath String   @unique @map("source_path")
+  fileKey    String   @map("file_key")
+  createdAt  DateTime @default(now())
+
+  @@index([name])
+  @@map("token_images")
+}

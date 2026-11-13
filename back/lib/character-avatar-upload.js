@@ -61,7 +61,14 @@ function characterAvatarUploadMiddleware(req, res, next) {
   });
 }
 
+/** URL publique de l'avatar (servi en statique sous /uploads), ou null. */
+function buildCharacterAvatarUrl(character) {
+  if (!character?.id || !character?.avatarImageKey) return null;
+  return `/uploads/character-avatars/${character.id}/${character.avatarImageKey}`;
+}
+
 module.exports = {
+  buildCharacterAvatarUrl,
   CHARACTER_AVATAR_UPLOAD_ROOT,
   characterAvatarUploadMiddleware,
 };

@@ -28,6 +28,7 @@ const dnd5eSpellsRoutes = require('./routes/dnd5e-spells-prisma');
 const dnd5eMonstersRoutes = require('./routes/dnd5e-monsters-prisma');
 const spellRoutes = require('./routes/spells-prisma');
 const monsterRoutes = require('./routes/monsters-prisma');
+const tokenLibraryRoutes = require('./routes/token-library');
 
 const app = express();
 const server = http.createServer(app);
@@ -75,6 +76,7 @@ app.use('/api/dnd5e', dnd5eSpellsRoutes);
 app.use('/api/dnd5e', dnd5eMonstersRoutes);
 app.use('/api/spells', spellRoutes);
 app.use('/api/monsters', monsterRoutes);
+app.use('/api/token-library', tokenLibraryRoutes);
 
 const wsPaths = [
   attachSessionChatWss,

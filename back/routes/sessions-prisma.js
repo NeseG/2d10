@@ -18,6 +18,7 @@ const { CHAT_UPLOAD_ROOT, chatImageUploadMiddleware } = require('../lib/session-
 const { nextInventorySortOrder } = require('../lib/next-inventory-sort-order');
 const { effectiveMapState, nextPlayState, withExploration } = require('../lib/map-play-state');
 const { revealFrom } = require('../lib/map-visibility');
+const { buildCharacterAvatarUrl } = require('../lib/character-avatar-upload');
 const { Prisma } = require('@prisma/client');
 
 const router = express.Router();
@@ -84,6 +85,7 @@ async function buildAttendancePayload(sessionId, attendanceRows) {
       level: a.character?.level,
       character_user_id: a.character?.user?.id ?? null,
       player_username: a.character?.user?.username,
+      avatar_url: buildCharacterAvatarUrl(a.character),
     });
 
     const masterUserId = a.character?.user?.id ?? null;
@@ -104,6 +106,7 @@ async function buildAttendancePayload(sessionId, attendanceRows) {
         level: pet.level,
         character_user_id: pet.userId,
         player_username: pet.user?.username ?? null,
+        avatar_url: buildCharacterAvatarUrl(pet),
         is_companion: true,
         master_character_id: a.characterId,
       });
@@ -1271,6 +1274,7 @@ router.get('/:sessionId', authenticateToken, async (req, res) => {
           level: a.character?.level,
           character_user_id: a.character?.user?.id ?? null,
           player_username: a.character?.user?.username,
+          avatar_url: buildCharacterAvatarUrl(a.character),
         }));
 
     const campaignCharacters = (session.campaign.characters || []).map((link) => ({

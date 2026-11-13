@@ -15,6 +15,8 @@ export type MapToken = {
   characterId?: number | null // personnage lié : son joueur peut déplacer le jeton, et il sert de source de vision
   darkvision?: number // en cases
   light?: number // lumière portée, en cases
+  image?: string // image de la bibliothèque de jetons (chemin servi par l'API)
+  imageScale?: number // taille de l'image / emprise (FA « Scale200 » = 2), l'image déborde autour du jeton
 }
 
 export type MapFogRect = {
@@ -163,6 +165,8 @@ export function MapCanvas(props: {
   myCharacterIds?: number[]
   onPlayerTokenMove?: (id: string, x: number, y: number) => void
   tokenStatus?: Record<string, MapTokenStatus>
+  /** Image des jetons liés à un personnage (avatar), par id de personnage. */
+  characterImages?: Record<number, string>
   pings?: MapPing[]
   onPing?: (x: number, y: number) => void
 }) {
@@ -201,6 +205,7 @@ export function MapCanvas(props: {
     sharedVision = false,
     onPlayerTokenMove,
     tokenStatus = {},
+    characterImages = {},
     pings = [],
     onPing,
   } = props
@@ -824,6 +829,9 @@ export function MapCanvas(props: {
               const s = tokenSizePx(t, box.w)
               const st = tokenStatus[t.id]
               const showHp = st?.maxHp != null && st.maxHp > 0 && st.hp != null && (canEdit || isMine(t))
+              const img = t.characterId != null ? characterImages[t.characterId] : undefined
+              // Jeton de bibliothèque : image détourée, affichée entière, sans rond de couleur
+              const art = !img && t.image ? `${getApiBaseUrl()}${t.image}` : undefined
               const selected =
                 canEdit && ((tool === 'tokens' && selectedTokenId === t.id) || (tool === 'move' && moveSelectedIds.includes(t.id)))
               return (
@@ -838,8 +846,12 @@ export function MapCanvas(props: {
                     top: box.top + t.y * box.h,
                     width: s,
                     height: s,
-                    borderRadius: 999,
-                    background: t.color ?? '#7c3aed',
+                    borderRadius: art ? 0 : 999,
+                    background: art
+                      ? undefined
+                      : img ? `center / cover no-repeat url("${img}"), ${t.color ?? '#7c3aed'}` : (t.color ?? '#7c3aed'),
+                    // Bord à la couleur du jeton pour garder le repère de couleur sur l'avatar
+                    border: img ? `2px solid ${t.color ?? '#7c3aed'}` : undefined,
                     color: 'white',
                     display: 'grid',
                     placeItems: 'center',
@@ -847,11 +859,25 @@ export function MapCanvas(props: {
                     fontWeight: 700,
                     opacity: t.hidden ? 0.5 : 1,
                     cursor: canMoveToken(t) ? 'grab' : 'default',
-                    boxShadow: st?.active ? '0 0 0 3px #facc15, 0 0 16px 4px rgba(250,204,21,0.8)' : '0 6px 18px rgba(0,0,0,0.35)',
+                    // Image détourée : l'ombre suit la silhouette plutôt que la boîte
+                    boxShadow: art ? undefined : st?.active ? '0 0 0 3px #facc15, 0 0 16px 4px rgba(250,204,21,0.8)' : '0 6px 18px rgba(0,0,0,0.35)',
+                    filter: art ? (st?.active ? 'drop-shadow(0 0 6px #facc15) drop-shadow(0 0 3px #facc15)' : 'drop-shadow(0 4px 6px rgba(0,0,0,0.55))') : undefined,
                     outline: selected ? '2px solid rgba(255,255,255,0.9)' : t.hidden ? '2px dashed rgba(255,255,255,0.8)' : undefined,
                   }}
                 >
-                  {(t.label ?? 'T').slice(0, 2).toUpperCase()}
+                  {art ? (
+                    <div
+                      aria-hidden="true"
+                      style={{
+                        position: 'absolute',
+                        // Centrée sur l'emprise, agrandie de `imageScale`
+                        inset: `${(-((t.imageScale ?? 1) - 1) * 50).toFixed(2)}%`,
+                        background: `center / contain no-repeat url("${art}")`,
+                        pointerEvents: 'none',
+                      }}
+                    />
+                  ) : null}
+                  {img || art ? null : (t.label ?? 'T').slice(0, 2).toUpperCase()}
                   {showHp ? (
                     <div
                       style={{ position: 'absolute', left: 0, right: 0, top: -8, height: 5, borderRadius: 3, background: 'rgba(0,0,0,0.7)', overflow: 'hidden' }}

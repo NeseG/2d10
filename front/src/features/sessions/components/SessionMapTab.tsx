@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { apiDelete, apiGet, apiPost, apiPut } from '../../../shared/api/client'
+import { apiDelete, apiGet, apiPost, apiPut, getApiBaseUrl } from '../../../shared/api/client'
 import { useSnackbar } from '../../../app/hooks/useSnackbar'
 import {
   MapCanvas,
@@ -23,6 +23,8 @@ import {
   type Scene,
 } from '../../maps/scene'
 import { FogToolbar } from '../../maps/components/FogToolbar'
+import { TokenLibraryModal } from '../../maps/components/TokenLibraryModal'
+import { SIZE_CELLS, type LibraryToken } from '../../maps/tokenLibrary'
 import { useFogEditor, useFogMask } from '../../maps/useFogEditor'
 import type { FogBitmap, FogShape } from '../../maps/fog'
 import { useSessionSocket } from '../useSessionSocket'
@@ -34,7 +36,7 @@ type MapWsPayload = {
   view_state?: unknown
 }
 
-type SessionCharacter = { character_id: number; character_name?: string | null; character_user_id?: number | null }
+type SessionCharacter = { character_id: number; character_name?: string | null; character_user_id?: number | null; avatar_url?: string | null }
 
 /** Sous-ensemble de l'état du tracker d'initiative utile à la carte. */
 type Combatant = { id: string; name: string; hp?: number | null; maxHp?: number | null; conditions?: string | null; isPc?: boolean; hidden?: boolean }
@@ -89,6 +91,7 @@ export function SessionMapTab(props: {
   const [fogBrush, setFogBrush] = useState(2)
   const [aspect, setAspect] = useState<number | null>(null)
   // Vue joueur (MJ) : la carte telle qu'un joueur la voit ; `null` = vue de groupe, sinon le personnage choisi.
+  const [libraryOpen, setLibraryOpen] = useState(false)
   const [playerView, setPlayerView] = useState<{ characterId: number | null } | null>(null)
 
   // Vrai seulement après une modification locale du MJ : évite de renvoyer au serveur ce qu'il vient de nous pousser.
@@ -267,6 +270,10 @@ export function SessionMapTab(props: {
     () => (currentUserId == null ? [] : characters.filter((c) => c.character_user_id === currentUserId).map((c) => c.character_id)),
     [characters, currentUserId],
   )
+  const characterImages = useMemo(
+    () => Object.fromEntries(characters.filter((c) => c.avatar_url).map((c) => [c.character_id, `${getApiBaseUrl()}${c.avatar_url}`])),
+    [characters],
+  )
 
   // Lien jeton ↔ tracker d'initiative : par nom (le tracker n'a pas d'autre identifiant commun avec la carte).
   const tokenStatus = useMemo(() => {
@@ -293,6 +300,19 @@ export function SessionMapTab(props: {
       tokens: [...prev.tokens, { id, label: 'Token', ...newTokenPosition(prev.tokens.length), color: '#7c3aed', size: prev.grid.size }],
     }))
     setSelectedTokenId(id)
+  }
+
+  function addLibraryToken(t: LibraryToken) {
+    const id = uid('tok')
+    edit((prev) => ({
+      tokens: [
+        ...prev.tokens,
+        { id, label: t.name, ...newTokenPosition(prev.tokens.length), color: '#7c3aed', size: SIZE_CELLS[t.size] * prev.grid.size, image: t.url, imageScale: t.scale },
+      ],
+    }))
+    setTool('tokens')
+    setSelectedTokenId(id)
+    setLibraryOpen(false)
   }
 
   function addTokensFromInitiative() {
@@ -383,6 +403,9 @@ export function SessionMapTab(props: {
             disabled={!canShowMap}
           >
             + Token
+          </button>
+          <button className="btn btn-secondary" type="button" onClick={() => setLibraryOpen(true)} disabled={!canShowMap}>
+            + Depuis la bibliothèque
           </button>
           <button
             className="btn btn-secondary"
@@ -590,6 +613,8 @@ export function SessionMapTab(props: {
         </div>
       ) : null}
 
+      {libraryOpen ? <TokenLibraryModal token={token} canImport onPick={addLibraryToken} onClose={() => setLibraryOpen(false)} /> : null}
+
       {!loading && !canShowMap ? <p>Aucune map active.</p> : null}
 
       {!loading && canShowMap ? (
@@ -638,6 +663,7 @@ export function SessionMapTab(props: {
           myCharacterIds={playerView ? (playerView.characterId == null ? [] : [playerView.characterId]) : myCharacterIds}
           onPlayerTokenMove={(id, x, y) => void movePlayerToken(id, x, y)}
           tokenStatus={tokenStatus}
+          characterImages={characterImages}
           pings={pings}
           onPing={(x, y) => sendMapWs({ type: 'ping', x, y })}
         />

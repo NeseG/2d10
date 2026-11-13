@@ -6,6 +6,7 @@ const { authenticateToken } = require('../middleware/auth');
 const {
   CHARACTER_AVATAR_UPLOAD_ROOT,
   characterAvatarUploadMiddleware,
+  buildCharacterAvatarUrl,
 } = require('../lib/character-avatar-upload');
 
 const router = express.Router();
@@ -45,11 +46,6 @@ async function getAccessibleCharacterOrNull(characterId, user) {
     ...(user.role_name !== 'admin' && user.role_name !== 'gm' ? { userId: user.id } : {}),
   };
   return prisma.character.findFirst({ where, select: { id: true } });
-}
-
-function buildCharacterAvatarUrl(character) {
-  if (!character?.id || !character?.avatarImageKey) return null;
-  return `/uploads/character-avatars/${character.id}/${character.avatarImageKey}`;
 }
 
 function normalizeSkills(skillsInput) {
